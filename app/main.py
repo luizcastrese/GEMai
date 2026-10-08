@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from . import models  # noqa: F401  (registra as tabelas)
 from .config import get_settings
 from .database import Base, engine
-from .routers import apontamentos, auth, cadastros, diagnostico, empresa, gemeo, gestao, ia, ordens, processos
+from .routers import apontamentos, auth, cadastros, diagnostico, empresa, gemeo, gestao, ia, inicio, ordens, processos
 
 log = logging.getLogger("erp")
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -73,7 +73,7 @@ def criar_app() -> FastAPI:
         log.exception("Erro não tratado em %s", request.url.path)
         return JSONResponse({"detail": "Erro interno do servidor."}, status_code=500)
 
-    for r in (auth, empresa, cadastros, diagnostico, processos, gemeo, ordens, apontamentos, ia, gestao):
+    for r in (auth, empresa, cadastros, diagnostico, processos, gemeo, ordens, apontamentos, ia, gestao, inicio):
         app.include_router(r.router, prefix="/api/v1")
 
     @app.get("/api/v1/saude", tags=["infra"])

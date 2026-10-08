@@ -82,7 +82,7 @@ export const badge = (txt, tipo = '') => h('span', { class: `badge ${tipo}` }, t
 const STATUS = {
   planejada: ['', 'Planejada'], liberada: ['b-pri', 'Liberada'], em_producao: ['b-pri', 'Em produção'],
   parada: ['b-warn', 'Parada'], concluida: ['b-ok', 'Concluída'], cancelada: ['b-err', 'Cancelada'],
-  rascunho: ['b-warn', 'Rascunho'], ativo: ['b-ok', 'Ativo'], substituido: ['', 'Substituído'], arquivado: ['', 'Arquivado'],
+  rascunho: ['b-warn', 'Em preparação'], ativo: ['b-ok', 'Publicado'], substituido: ['', 'Versão antiga'], arquivado: ['', 'Arquivado'],
   pendente: ['b-warn', 'Pendente'], em_andamento: ['b-pri', 'Em andamento'], pulada: ['', 'Pulada'],
   registrado: ['b-warn', 'A aprovar'], aprovado: ['b-ok', 'Aprovado'], rejeitado: ['b-err', 'Rejeitado'],
   aplicada: ['b-ok', 'Aplicada'], aprovada: ['b-ok', 'Aprovada'], rejeitada: ['b-err', 'Rejeitada'],
@@ -141,4 +141,16 @@ export function barras(rotulos, valores, { sufixo = '', cor = '#1f5fbf' } = {}) 
 export function avisoIA(texto) {
   return h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão gerada por IA. '),
     texto || 'Não é um fato: precisa ser revisada e validada por um responsável antes de ser usada.');
+}
+
+// Bloco recolhível: guarda o técnico fora da vista de quem não precisa dele.
+export const detalhes = (titulo, ...filhos) => h('details', { class: 'det' }, h('summary', null, titulo), ...filhos);
+
+// "Previsto 19 min, real 25 min" em linguagem comum.
+export function frasePrevistoReal(previsto, real) {
+  if (previsto === null || previsto === undefined || real === null || real === undefined) return '';
+  if (!previsto) return `Real: ${fmtMin(real)}.`;
+  const dif = Math.round(((real - previsto) / previsto) * 100);
+  const sentido = Math.abs(dif) < 5 ? 'dentro do previsto' : dif > 0 ? `${dif}% acima do previsto` : `${-dif}% abaixo do previsto`;
+  return `Previsto ${fmtMin(previsto)}, real ${fmtMin(real)}: ${sentido}.`;
 }

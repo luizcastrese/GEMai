@@ -17,7 +17,7 @@ export async function painel(el) {
       h('option', { value: 'atual' }, 'Unidade selecionada'), h('option', { value: 'todas' }, 'Todas as minhas unidades'))),
     h('button', { class: 'ia', onclick: () => gerarAnalise('relatorio_gestor', { unidade_id: estado.unidadeId, de: f.de, ate: f.ate }) }, 'Relatório em linguagem simples (IA)'),
     h('button', { class: 'ia', onclick: () => gerarAnalise('analise_gargalo', { unidade_id: estado.unidadeId, de: f.de, ate: f.ate }) }, 'Possíveis gargalos (IA)'));
-  montar(el, h('h1', null, 'Painel do gestor'), ctl, area);
+  montar(el, h('h1', null, 'Análises completas'), ctl, area);
 
   async function carregar() {
     const d = await tentar(() => get(`/dashboard${qs({ unidade_id: f.todas ? '' : estado.unidadeId, de: f.de, ate: f.ate })}`));
@@ -78,13 +78,13 @@ export async function implantacao(el) {
   const area = h('div');
   const abas = h('div', { class: 'tabs' });
   const desenhar = async () => {
-    montar(abas, [['descricao', '1. Descrição da empresa'], ['diagnostico', '2. Diagnóstico inteligente'], ['estrutura', '3. Estrutura do processo']].map(([k, r]) =>
+    montar(abas, [['descricao', '1. Conte sobre sua operação'], ['diagnostico', '2. Responda às perguntas da IA'], ['estrutura', '3. Revise o processo']].map(([k, r]) =>
       h('button', { class: aba === k ? 'on' : '', onclick: () => { aba = k; desenhar(); } }, r)));
     montar(area, h('p', { class: 'muted' }, 'Carregando…'));
     await ({ descricao: telaDescricao, diagnostico: telaDiagnostico, estrutura: telaEstrutura }[aba])(area, u, (a) => { aba = a; desenhar(); });
   };
-  montar(el, h('h1', null, `Implantação — ${u.nome}`),
-    h('p', { class: 'muted' }, 'Descreva a operação com suas palavras; a IA sugere perguntas e uma estrutura, e você valida antes de qualquer coisa ser criada.'), abas, area);
+  montar(el, h('h1', null, `Configurar com a IA — ${u.nome}`),
+    h('p', { class: 'muted' }, 'Conte como sua operação funciona, com suas palavras. A IA monta o processo e prevê os tempos; você só confere.'), abas, area);
   await desenhar();
 }
 
@@ -145,8 +145,8 @@ async function telaEstrutura(area, u, ir) {
           h('button', { class: 'sm dng', onclick: () => { p.etapas.splice(ei, 1); redesenhar(); } }, 'Remover')),
         e.operacoes.map((o, oi) => h('div', { class: 'op row' },
           h('div', null, h('label', null, 'Operação'), h('input', { value: o.nome, onchange: (ev) => { o.nome = ev.target.value; } })),
-          h('div', null, h('label', null, 'Recurso padrão (opcional)'), h('input', { value: o.recurso || '', onchange: (ev) => { o.recurso = ev.target.value || null; } })),
-          h('div', { class: 'small muted' }, `Parâmetros a medir: ${(o.parametros || []).map((x) => x.nome).join(', ') || '—'}`),
+          estado.avancado ? h('div', null, h('label', null, 'Recurso padrão (opcional)'), h('input', { value: o.recurso || '', onchange: (ev) => { o.recurso = ev.target.value || null; } })) : null,
+          estado.avancado ? h('div', { class: 'small muted' }, `Parâmetros a medir: ${(o.parametros || []).map((x) => x.nome).join(', ') || '—'}`) : null,
           h('button', { class: 'sm dng', onclick: () => { e.operacoes.splice(oi, 1); redesenhar(); } }, 'Remover'))),
         h('button', { class: 'sm', onclick: () => { e.operacoes.push({ nome: 'Nova operação', descricao: '', recurso: null, formula_tipo: 'linear', unidade_medida: 'un', dados_medidos: ['tempo', 'quantidade'], parametros: [{ nome: 'tempo_preparacao_min', unidade: 'min', valor: null, justificativa: '' }, { nome: 'tempo_unitario_min', unidade: 'min/un', valor: null, justificativa: '' }] }); redesenhar(); } }, '+ Operação'))),
       h('button', { onclick: () => { p.etapas.push({ nome: 'Nova etapa', descricao: '', entradas: [], saidas: [], opcional: false, condicao: '', operacoes: [{ nome: 'Nova etapa', descricao: '', recurso: null, formula_tipo: 'linear', unidade_medida: 'un', dados_medidos: ['tempo', 'quantidade'], parametros: [{ nome: 'tempo_preparacao_min', unidade: 'min', valor: null, justificativa: '' }, { nome: 'tempo_unitario_min', unidade: 'min/un', valor: null, justificativa: '' }] }] }); redesenhar(); } }, '+ Etapa'))),
@@ -159,17 +159,22 @@ async function telaEstrutura(area, u, ir) {
       c.etapas_possivelmente_omitidas.map((n) => h('div', { class: 'inline' }, n, h('button', { class: 'sm', onclick: () => {
         c.processos[0]?.etapas.push({ nome: n, descricao: '', entradas: [], saidas: [], opcional: false, condicao: '', operacoes: [{ nome: n, descricao: '', recurso: null, formula_tipo: 'linear', unidade_medida: 'un', dados_medidos: ['tempo', 'quantidade'], parametros: [] }] });
         c.etapas_possivelmente_omitidas = c.etapas_possivelmente_omitidas.filter((x) => x !== n); redesenhar(); } }, 'Adicionar ao processo')))) : null,
-    c.perguntas_pendentes.length ? h('div', { class: 'card' }, h('h3', null, 'Ainda por responder'), h('ul', null, c.perguntas_pendentes.map((x) => h('li', null, x)))) : null,
-    c.indicadores_sugeridos.length ? h('div', { class: 'card' }, h('h3', null, 'Indicadores sugeridos'), h('ul', null, c.indicadores_sugeridos.map((x) => h('li', null, x)))) : null);
+    estado.avancado && c.perguntas_pendentes.length ? h('div', { class: 'card' }, h('h3', null, 'Ainda por responder'), h('ul', null, c.perguntas_pendentes.map((x) => h('li', null, x)))) : null,
+    estado.avancado && c.indicadores_sugeridos.length ? h('div', { class: 'card' }, h('h3', null, 'Indicadores sugeridos'), h('ul', null, c.indicadores_sugeridos.map((x) => h('li', null, x)))) : null);
   redesenhar();
   const aprovar = async () => {
     if (!c.processos.length || !c.processos.some((p) => p.etapas.length)) return toast('Inclua ao menos um processo com etapas.', true);
     if (!await tentar(() => patch(`/recomendacoes/${rec.id}`, { conteudo: c }))) return;
     const r = await tentar(() => post(`/recomendacoes/${rec.id}/aprovar`, { observacao: 'Revisada no assistente de implantação.' }));
-    if (r) { toast('Processo criado como RASCUNHO. Defina os parâmetros e publique.'); location.hash = '#/processos'; }
+    if (r) {
+      toast('Processo montado. Confira e publique: a IA prevê o tempo de cada tarefa na publicação.');
+      const ps = await get(`/processos${qs({ unidade_id: u.id, status: 'rascunho' })}`);
+      const novo = ps.filter((x) => x.origem === 'ia').sort((a, b) => b.id - a.id)[0];
+      location.hash = novo ? `#/processos/${novo.id}` : '#/processos';
+    }
   };
   montar(area, geradora, avisoIA(rec.justificativa), h('p', { class: 'muted small' }, `Fonte: ${rec.provedor}. ${c.observacoes || ''}`), editor,
     h('div', { class: 'card inline' },
-      h('button', { class: 'pri', onclick: aprovar }, 'Aprovar e criar processo (rascunho)'),
+      h('button', { class: 'pri', onclick: aprovar }, 'Aprovar e montar o processo'),
       h('button', { class: 'dng', onclick: () => confirmar('Rejeitar esta proposta?', async () => { if (await tentar(() => post(`/recomendacoes/${rec.id}/rejeitar`), 'Proposta rejeitada.')) ir('estrutura'); }) }, 'Rejeitar')));
 }

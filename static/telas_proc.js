@@ -1,6 +1,6 @@
 import { api, get, patch, post, qs } from './api.js';
-import { estado } from './estado.js';
-import { avisoIA, confirmar, fmtMin, fonteBadge, formulario, h, modal, montar, origemBadge, statusBadge, tabela, tentar, toast, badge, fmtNum, fmtData } from './ui.js';
+import { estado, ehGestor } from './estado.js';
+import { avisoIA, confirmar, detalhes, fmtMin, fonteBadge, formulario, h, modal, montar, origemBadge, statusBadge, tabela, tentar, toast, badge, fmtNum, fmtData } from './ui.js';
 import { gerarAnalise } from './ia_view.js';
 
 const PARAMS = {
@@ -25,39 +25,70 @@ export async function lista(el) {
 }
 
 // ---------------------------------------------------------------- detalhe
+const textoPrevisao = (est) => {
+  if (!est || est.fonte === 'sem_base') return h('span', { class: 'prev' }, 'Sem previsão de tempo ainda');
+  const rot = { modelo_ia: est.validada ? badge('Previsão da IA confirmada', 'b-ok') : badge('Previsão da IA — falta confirmar', 'b-warn'),
+    parametro: badge('Tempo informado', 'b-pri'), historico: badge('Baseada no histórico real', 'b-ok') }[est.fonte];
+  return h('span', { class: 'prev' }, `Previsão: ${fmtMin(est.total_min)} para ${fmtNum(est.quantidade, 0)} un `, rot);
+};
+
 export async function detalhe(el, id) {
   const [p, recursos] = await Promise.all([get(`/processos/${id}`), get(`/recursos${qs({ unidade_id: estado.unidadeId, ativo: true })}`)]);
   const edit = p.status === 'rascunho';
   const recarregar = () => detalhe(el, id);
   const cmd = (fn, ok) => async () => { if (await tentar(fn, ok) !== undefined) recarregar(); };
+  const todasOps = p.etapas.flatMap((e) => e.operacoes.map((o) => ({ o, e })));
+  const previsoes = new Map(await Promise.all(todasOps.map(async ({ o }) => [o.id, await get(`/operacoes/${o.id}/estimativa?quantidade=10`).catch(() => null)])));
 
+  // Um único "Publicar": pede a previsão de tempo à IA onde faltar e publica.
+  const publicar = async () => {
+    try { await post(`/processos/${id}/modelar-tempos`); } catch { /* sem IA ou sem dados: segue só com a publicação */ }
+    const r = await tentar(() => post(`/processos/${id}/publicar`));
+    if (r) { toast('Processo publicado. Confirme as previsões de tempo da IA abaixo.'); recarregar(); }
+  };
   const cab = h('div', { class: 'card' }, h('div', { class: 'top' },
-    h('div', null, h('h1', null, p.nome), h('div', { class: 'inline' }, statusBadge(p.status), `v${p.versao}`, p.macroprocesso ? `· ${p.macroprocesso}` : '', p.origem === 'ia' ? badge('Estrutura sugerida pela IA', 'b-ia') : null)),
-    h('div', { class: 'inline' },
-      edit ? h('button', { class: 'pri', onclick: async () => {
-        const r = await tentar(() => post(`/processos/${id}/publicar`));
-        if (r) { toast('Processo publicado.'); r.avisos.forEach((a) => toast(a, true)); recarregar(); }
-      } }, 'Publicar') : null,
-      !edit && p.status !== 'arquivado' ? h('button', { onclick: async () => { const r = await tentar(() => post(`/processos/${id}/nova-versao`), 'Nova versão (rascunho) criada.'); if (r) location.hash = `#/processos/${r.id}`; } }, 'Nova versão') : null,
-      p.status !== 'arquivado' ? h('button', { class: 'dng', onclick: () => confirmar('Arquivar este processo? Ele deixa de aceitar novas ordens.', cmd(() => post(`/processos/${id}/arquivar`), 'Arquivado.')) }, 'Arquivar') : null)),
-    edit ? h('div', { class: 'aviso' }, 'Rascunho: edite etapas e operações livremente. Ao publicar, a estrutura fica fixa (parâmetros continuam editáveis, com versionamento).') : null);
+    h('div', null, h('h1', null, p.nome), h('div', { class: 'inline' }, statusBadge(p.status), `versão ${p.versao}`, p.origem === 'ia' ? badge('Montado com a IA', 'b-ia') : null)),
+    ehGestor() ? h('div', { class: 'inline' },
+      edit ? h('button', { class: 'pri big', onclick: publicar }, 'Publicar') : null,
+      !edit && p.status !== 'arquivado' ? h('button', { onclick: async () => { const r = await tentar(() => post(`/processos/${id}/nova-versao`), 'Nova versão criada para edição.'); if (r) location.hash = `#/processos/${r.id}`; } }, 'Editar (nova versão)') : null,
+      p.status !== 'arquivado' ? h('button', { class: 'dng', onclick: () => confirmar('Arquivar este processo? Ele deixa de aceitar novas ordens.', cmd(() => post(`/processos/${id}/arquivar`), 'Arquivado.')) }, 'Arquivar') : null) : null),
+    edit ? h('div', { class: 'aviso' }, 'Em preparação: ajuste as tarefas à vontade. Ao publicar, a IA prevê o tempo de cada tarefa e o processo passa a aceitar ordens.') : null);
 
-  const pront = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Calculando prontidão…'));
-  prontidaoPainel(pront, p, recarregar);
+  const pront = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Verificando…'));
+  prontidaoPainel(pront, p, recarregar, todasOps);
 
   const blocos = p.etapas.map((e, ei) => h('div', { class: 'etapa' },
-    h('div', { class: 'top' }, h('strong', null, `${e.sequencia}. ${e.nome}`, e.opcional ? ` (opcional${e.condicao ? `: ${e.condicao}` : ''})` : ''),
+    h('div', { class: 'top' }, h('strong', null, `${e.sequencia}. ${e.nome}`, e.opcional ? ' (opcional)' : ''),
       edit ? h('div', { class: 'inline' },
         h('button', { class: 'sm', disabled: ei === 0, onclick: cmd(() => patch(`/etapas/${e.id}`, { sequencia: e.sequencia - 1 })) }, '↑'),
         h('button', { class: 'sm', disabled: ei === p.etapas.length - 1, onclick: cmd(() => patch(`/etapas/${e.id}`, { sequencia: e.sequencia + 1 })) }, '↓'),
-        h('button', { class: 'sm', onclick: () => formEtapa(e, recarregar) }, 'Editar'),
-        h('button', { class: 'sm', onclick: () => formOperacao(e, null, recursos, recarregar) }, '+ Operação'),
+        h('button', { class: 'sm', onclick: () => formEtapa(e, recarregar) }, 'Renomear'),
+        h('button', { class: 'sm', onclick: () => formOperacao(e, null, recursos, recarregar) }, '+ Tarefa'),
         h('button', { class: 'sm dng', onclick: () => confirmar(`Remover a etapa "${e.nome}"?`, cmd(() => api('DELETE', `/etapas/${e.id}`), 'Etapa removida.')) }, '✕')) : null),
-    (e.entradas.length || e.saidas.length) ? h('div', { class: 'muted small' }, `Entradas: ${e.entradas.join(', ') || '—'} · Saídas: ${e.saidas.join(', ') || '—'}`) : null,
-    e.operacoes.map((o) => h('div', { class: 'op' }, operacaoView(o, p, edit, recursos, recarregar)))));
+    e.operacoes.map((o) => h('div', { class: 'op' },
+      h('div', { class: 'top' }, h('div', null, h('strong', null, o.nome), ' ', o.alerta_ergonomia ? badge('Atenção: esforço físico', 'b-warn') : null, h('div', null, textoPrevisao(previsoes.get(o.id)))),
+        ehGestor() ? h('div', { class: 'inline' },
+          h('button', { class: 'sm', onclick: () => formTempoSimples(o, recarregar) }, 'Já sei o tempo'),
+          edit ? [h('button', { class: 'sm', onclick: () => formOperacao(e, o, recursos, recarregar) }, 'Editar'),
+            h('button', { class: 'sm dng', onclick: () => confirmar(`Remover "${o.nome}"?`, cmd(() => api('DELETE', `/operacoes/${o.id}`), 'Tarefa removida.')) }, '✕')] : null) : null),
+      estado.avancado ? detalhes('Detalhes técnicos', operacaoView(o, p, edit, recursos, recarregar)) : null))));
 
-  montar(el, cab, pront, h('h2', null, 'Etapas e operações'), blocos.length ? blocos : h('p', { class: 'muted' }, 'Sem etapas.'),
+  montar(el, cab, pront, h('h2', null, 'Etapas e tarefas'), blocos.length ? blocos : h('p', { class: 'muted' }, 'Sem etapas.'),
     edit ? h('p', null, h('button', { onclick: () => formEtapa(null, recarregar, id) }, '+ Etapa')) : null);
+}
+
+// "Já sei o tempo": o usuário informa o tempo medido e ele passa a valer no lugar da estimativa da IA.
+function formTempoSimples(o, aoSalvar) {
+  const f = formulario([{ k: 'unit', rotulo: 'Tempo por unidade (minutos)', tipo: 'number' }, { k: 'prep', rotulo: 'Tempo de preparação por ordem (minutos, opcional)', tipo: 'number', nulo: true }]);
+  modal(`Tempo de "${o.nome}"`, h('div', null, f.el, h('p', { class: 'muted small' }, 'O tempo que você informar passa a valer no lugar da estimativa da IA.')),
+    { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'), h('button', { class: 'pri', onclick: async () => {
+      const v = f.valores();
+      if (!v.unit || v.unit <= 0) return toast('Informe o tempo por unidade.', true);
+      const base = { escopo_tipo: 'operacao', escopo_id: o.id, origem: 'informado', justificativa: 'Informado pelo usuário.' };
+      const ok1 = await tentar(() => post('/parametros', { ...base, nome: 'tempo_unitario_min', valor_num: v.unit }));
+      const ok2 = v.prep ? await tentar(() => post('/parametros', { ...base, nome: 'tempo_preparacao_min', valor_num: v.prep })) : true;
+      if (ok1 && ok2) { toast('Tempo registrado.'); fechar(); aoSalvar(); }
+    } }, 'Salvar')] });
 }
 
 function operacaoView(o, p, edit, recursos, recarregar) {
@@ -99,57 +130,72 @@ function formEtapa(e, aoSalvar, processoId) {
 }
 
 async function formOperacao(etapa, op, recursos, aoSalvar) {
-  const niveis = [['', '—'], ['baixo', 'Baixo'], ['medio', 'Médio'], ['alto', 'Alto']];
-  const erg = op?.ergonomia || {};
-  const espacos = await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
-  const optEsp = [['', '—'], ...espacos.map((x) => [x.id, x.nome])];
-  const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
-  const lev0 = op?.levantamento || {};
-  const f = formulario([
-    { k: 'nome', rotulo: 'Nome da operação' }, { k: 'descricao', rotulo: 'Descrição', tipo: 'textarea' },
-    { k: 'funcao_requerida', rotulo: 'Mão de obra: função responsável', dica: 'ex.: marceneiro, auxiliar' },
-    { k: 'num_pessoas', rotulo: 'Nº de pessoas na operação', tipo: 'number', padrao: 1, min: 1 },
-    { k: 'perfil_id', rotulo: 'Perfil de mão de obra (ritmo e limites de carga)', tipo: 'select', num: true, opcoes: [['', '—'], ...perfis.map((x) => [x.id, x.nome])] },
-    { k: 'tipo_movimento', rotulo: 'Tipo de movimento predominante (define o tempo de movimento por índices)', tipo: 'select', opcoes: [['', '—'], ['alcance_curto', 'Alcance curto (objeto leve ao alcance)'], ['transporte_passos', 'Transporte a poucos passos'], ['levantamento_curvado', 'Curvar e levantar'], ['posicionamento_preciso', 'Posicionamento de precisão'], ['empurrar_puxar', 'Empurrar / puxar'], ['giro_tronco', 'Giro de tronco'], ['repetitivo_fino', 'Repetitivo fino'], ['outro', 'Outro']] },
-    { k: 'postura_trabalho', rotulo: 'Postura de trabalho', tipo: 'select', opcoes: [['', '—'], ['em_pe', 'Em pé'], ['sentado', 'Sentado'], ['alternada', 'Alternada'], ['agachado', 'Agachado'], ['curvado', 'Curvado']] },
-    { k: 'altura_trabalho_m', rotulo: 'Altura da superfície de trabalho (m)', tipo: 'number', nulo: true },
-    { k: 'gasto_energetico_kcal_min', rotulo: 'Gasto energético da atividade (kcal/min) — informado/medido', tipo: 'number', nulo: true },
-    { k: 'recurso_padrao_id', rotulo: 'Equipamento / posto padrão', tipo: 'select', num: true, opcoes: [['', '—'], ...recursos.map((r) => [r.id, r.nome])] },
-    { k: 'espaco_origem_id', rotulo: 'Espaço de origem (de onde vem o item)', tipo: 'select', num: true, opcoes: optEsp },
-    { k: 'espaco_destino_id', rotulo: 'Espaço de destino (para onde vai)', tipo: 'select', num: true, opcoes: optEsp },
-    { k: 'distancia_m', rotulo: 'Distância manual (m) — só se diferente da tabela de distâncias', tipo: 'number', nulo: true },
-    { k: 'item_peso_kg', rotulo: 'Item típico: peso (kg)', tipo: 'number', nulo: true }, { k: 'item_comprimento_m', rotulo: 'Comprimento (m)', tipo: 'number', nulo: true },
-    { k: 'item_largura_m', rotulo: 'Largura (m)', tipo: 'number', nulo: true }, { k: 'item_altura_m', rotulo: 'Altura (m)', tipo: 'number', nulo: true },
-    { k: 'lev_carga_kg', rotulo: 'Levantamento manual (NIOSH) — carga (kg); deixe em branco se não houver', tipo: 'number', nulo: true },
-    { k: 'lev_h_cm', rotulo: 'Distância horizontal da carga ao corpo, H (cm)', tipo: 'number', nulo: true }, { k: 'lev_v_cm', rotulo: 'Altura vertical da pega, V (cm)', tipo: 'number', nulo: true },
-    { k: 'lev_d_cm', rotulo: 'Deslocamento vertical, D (cm)', tipo: 'number', nulo: true }, { k: 'lev_a_graus', rotulo: 'Assimetria, A (graus)', tipo: 'number', nulo: true },
-    { k: 'lev_freq_por_min', rotulo: 'Frequência (levantamentos por minuto)', tipo: 'number', nulo: true },
-    { k: 'lev_duracao', rotulo: 'Duração do trabalho com levantamento', tipo: 'select', opcoes: [['', '—'], ['ate_1h', 'Até 1 h'], ['1_2h', 'Mais de 1 h até 2 h'], ['2_8h', 'Mais de 2 h até 8 h']] },
-    { k: 'lev_pega', rotulo: 'Qualidade da pega', tipo: 'select', opcoes: [['', '—'], ['boa', 'Boa'], ['regular', 'Regular'], ['ruim', 'Ruim']] },
-    { k: 'inicio_marco', rotulo: 'Marco de INÍCIO do apontamento', dica: 'ex.: quando o operador pega a primeira chapa' },
-    { k: 'fim_marco', rotulo: 'Marco de FIM do apontamento', dica: 'ex.: quando a última peça cortada é depositada na bancada' },
-    { k: 'formula_tipo', rotulo: 'Como o tempo manual/parâmetro é calculado', tipo: 'select', opcoes: [['linear', 'Linear: preparação + tempo × quantidade'], ['lote', 'Por lote: preparação + tempo × nº de lotes'], ['fixo', 'Fixo: preparação + tempo único']] },
-    { k: 'unidade_medida', rotulo: 'Unidade de contagem' },
-    { k: 'campos', rotulo: 'Campos extras de apontamento (um por linha: nome|numero/texto/booleano|unidade|obrigatorio)', tipo: 'textarea', dica: 'temperatura|numero|°C|obrigatorio' },
-    { k: 'e_rep', rotulo: 'Ergonomia — repetitividade', tipo: 'select', opcoes: niveis }, { k: 'e_esf', rotulo: 'Esforço físico', tipo: 'select', opcoes: niveis },
-    { k: 'e_pos', rotulo: 'Postura', tipo: 'select', opcoes: niveis }, { k: 'e_des', rotulo: 'Deslocamento', tipo: 'select', opcoes: niveis },
-    { k: 'e_pau', rotulo: 'Pausas', tipo: 'select', opcoes: [['', '—'], ['adequadas', 'Adequadas'], ['insuficientes', 'Insuficientes']] }],
-  { ...(op || {}), campos: (op?.campos_extras || []).map((c) => [c.nome, c.tipo, c.unidade, c.obrigatorio ? 'obrigatorio' : ''].join('|')).join('\n'),
-    e_rep: erg.repetitividade, e_esf: erg.esforco_fisico, e_pos: erg.postura, e_des: erg.deslocamento, e_pau: erg.pausas,
-    lev_carga_kg: lev0.carga_kg, lev_h_cm: lev0.h_cm, lev_v_cm: lev0.v_cm, lev_d_cm: lev0.d_cm, lev_a_graus: lev0.a_graus, lev_freq_por_min: lev0.freq_por_min, lev_duracao: lev0.duracao, lev_pega: lev0.pega });
-  modal(op ? 'Editar operação' : 'Nova operação', h('div', null, h('p', { class: 'muted small' }, 'Uma operação é a reunião de blocos: mão de obra + atividade + equipamento + espaços + item. Quanto mais completo o contorno físico, mais consistente o tempo planejado.'), f.el),
-    { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
+  const esp = await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+  const optEsp = [['', '—'], ...esp.map((x) => [x.id, x.nome])];
+  // Essencial: o que qualquer pessoa sabe responder.
+  const basico = formulario([
+    { k: 'nome', rotulo: 'O que é feito nesta tarefa?', dica: 'ex.: Cortar chapas' },
+    { k: 'funcao_requerida', rotulo: 'Quem executa? (função)', dica: 'ex.: auxiliar, marceneiro' },
+    { k: 'num_pessoas', rotulo: 'Quantas pessoas fazem juntas?', tipo: 'number', padrao: 1, min: 1 },
+    { k: 'recurso_padrao_id', rotulo: 'Equipamento ou posto usado', tipo: 'select', num: true, opcoes: [['', 'Nenhum (trabalho manual)'], ...recursos.map((r) => [r.id, r.nome])] },
+    { k: 'espaco_origem_id', rotulo: 'De onde a peça sai?', tipo: 'select', num: true, opcoes: optEsp },
+    { k: 'espaco_destino_id', rotulo: 'Para onde ela vai?', tipo: 'select', num: true, opcoes: optEsp },
+    { k: 'item_peso_kg', rotulo: 'Peso de cada peça (kg)', tipo: 'number', nulo: true },
+    { k: 'unidade_medida', rotulo: 'Contar em quê?', dica: 'ex.: peças, chapas, kg', padrao: 'un' },
+    { k: 'inicio_marco', rotulo: 'Quando a tarefa COMEÇA?', dica: 'ex.: quando pega a primeira chapa' },
+    { k: 'fim_marco', rotulo: 'Quando ela TERMINA?', dica: 'ex.: quando solta a última peça cortada' }], op || {});
+
+  // Modo especialista: o restante (fatores técnicos, ergonomia, campos extras).
+  let avancado = null;
+  if (estado.avancado) {
+    const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+    const niveis = [['', '—'], ['baixo', 'Baixo'], ['medio', 'Médio'], ['alto', 'Alto']];
+    const erg = op?.ergonomia || {};
+    const lev0 = op?.levantamento || {};
+    avancado = formulario([
+      { k: 'descricao', rotulo: 'Descrição', tipo: 'textarea' },
+      { k: 'perfil_id', rotulo: 'Perfil de mão de obra (ritmo e limites de carga)', tipo: 'select', num: true, opcoes: [['', '—'], ...perfis.map((x) => [x.id, x.nome])] },
+      { k: 'tipo_movimento', rotulo: 'Tipo de movimento predominante', tipo: 'select', opcoes: [['', '—'], ['alcance_curto', 'Alcance curto'], ['transporte_passos', 'Transporte a poucos passos'], ['levantamento_curvado', 'Curvar e levantar'], ['posicionamento_preciso', 'Posicionamento de precisão'], ['empurrar_puxar', 'Empurrar / puxar'], ['giro_tronco', 'Giro de tronco'], ['repetitivo_fino', 'Repetitivo fino'], ['outro', 'Outro']] },
+      { k: 'postura_trabalho', rotulo: 'Postura de trabalho', tipo: 'select', opcoes: [['', '—'], ['em_pe', 'Em pé'], ['sentado', 'Sentado'], ['alternada', 'Alternada'], ['agachado', 'Agachado'], ['curvado', 'Curvado']] },
+      { k: 'altura_trabalho_m', rotulo: 'Altura da superfície de trabalho (m)', tipo: 'number', nulo: true },
+      { k: 'gasto_energetico_kcal_min', rotulo: 'Gasto energético (kcal/min)', tipo: 'number', nulo: true },
+      { k: 'distancia_m', rotulo: 'Distância manual (m), se diferente da tabela de distâncias', tipo: 'number', nulo: true },
+      { k: 'item_comprimento_m', rotulo: 'Peça: comprimento (m)', tipo: 'number', nulo: true }, { k: 'item_largura_m', rotulo: 'Largura (m)', tipo: 'number', nulo: true }, { k: 'item_altura_m', rotulo: 'Altura (m)', tipo: 'number', nulo: true },
+      { k: 'lev_carga_kg', rotulo: 'Levantamento manual (NIOSH): carga (kg)', tipo: 'number', nulo: true },
+      { k: 'lev_h_cm', rotulo: 'H: distância horizontal (cm)', tipo: 'number', nulo: true }, { k: 'lev_v_cm', rotulo: 'V: altura da pega (cm)', tipo: 'number', nulo: true },
+      { k: 'lev_d_cm', rotulo: 'D: deslocamento vertical (cm)', tipo: 'number', nulo: true }, { k: 'lev_a_graus', rotulo: 'A: assimetria (graus)', tipo: 'number', nulo: true },
+      { k: 'lev_freq_por_min', rotulo: 'Frequência (levantamentos/min)', tipo: 'number', nulo: true },
+      { k: 'lev_duracao', rotulo: 'Duração do trabalho com levantamento', tipo: 'select', opcoes: [['', '—'], ['ate_1h', 'Até 1 h'], ['1_2h', '1 a 2 h'], ['2_8h', '2 a 8 h']] },
+      { k: 'lev_pega', rotulo: 'Qualidade da pega', tipo: 'select', opcoes: [['', '—'], ['boa', 'Boa'], ['regular', 'Regular'], ['ruim', 'Ruim']] },
+      { k: 'formula_tipo', rotulo: 'Cálculo do tempo manual/parâmetro', tipo: 'select', opcoes: [['linear', 'Linear'], ['lote', 'Por lote'], ['fixo', 'Fixo']] },
+      { k: 'campos', rotulo: 'Campos extras de apontamento (nome|numero/texto/booleano|unidade|obrigatorio)', tipo: 'textarea' },
+      { k: 'e_rep', rotulo: 'Ergonomia: repetitividade', tipo: 'select', opcoes: niveis }, { k: 'e_esf', rotulo: 'Esforço físico', tipo: 'select', opcoes: niveis },
+      { k: 'e_pos', rotulo: 'Postura', tipo: 'select', opcoes: niveis }, { k: 'e_des', rotulo: 'Deslocamento', tipo: 'select', opcoes: niveis },
+      { k: 'e_pau', rotulo: 'Pausas', tipo: 'select', opcoes: [['', '—'], ['adequadas', 'Adequadas'], ['insuficientes', 'Insuficientes']] }],
+    { ...(op || {}), campos: (op?.campos_extras || []).map((c) => [c.nome, c.tipo, c.unidade, c.obrigatorio ? 'obrigatorio' : ''].join('|')).join('\n'),
+      e_rep: erg.repetitividade, e_esf: erg.esforco_fisico, e_pos: erg.postura, e_des: erg.deslocamento, e_pau: erg.pausas,
+      lev_carga_kg: lev0.carga_kg, lev_h_cm: lev0.h_cm, lev_v_cm: lev0.v_cm, lev_d_cm: lev0.d_cm, lev_a_graus: lev0.a_graus, lev_freq_por_min: lev0.freq_por_min, lev_duracao: lev0.duracao, lev_pega: lev0.pega });
+  }
+  const corpoModal = h('div', null,
+    h('p', { class: 'muted small' }, 'Responda o que souber. A IA usa estas respostas para prever o tempo; o que faltar ela avisa depois.'),
+    basico.el, avancado ? detalhes('Opções de especialista', avancado.el) : null);
+  modal(op ? 'Editar tarefa' : 'Nova tarefa', corpoModal, { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async () => {
-      const v = f.valores();
-      const campos_extras = v.campos.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
-        const [nome, tipo, unidade, obr] = l.split('|').map((x) => (x || '').trim());
-        return { nome, tipo: tipo || 'numero', unidade: unidade || '', obrigatorio: obr === 'obrigatorio' };
-      });
-      const ergonomia = Object.fromEntries(Object.entries({ repetitividade: v.e_rep, esforco_fisico: v.e_esf, postura: v.e_pos, deslocamento: v.e_des, pausas: v.e_pau }).filter(([, x]) => x));
-      const levBruto = { carga_kg: v.lev_carga_kg, h_cm: v.lev_h_cm, v_cm: v.lev_v_cm, d_cm: v.lev_d_cm, a_graus: v.lev_a_graus, freq_por_min: v.lev_freq_por_min, duracao: v.lev_duracao, pega: v.lev_pega };
-      const levantamento = Object.values(levBruto).some((x) => x !== null && x !== '') ? Object.fromEntries(Object.entries(levBruto).filter(([, x]) => x !== null && x !== '')) : null;
-      const { campos, e_rep, e_esf, e_pos, e_des, e_pau, lev_carga_kg, lev_h_cm, lev_v_cm, lev_d_cm, lev_a_graus, lev_freq_por_min, lev_duracao, lev_pega, ...resto } = v;
-      const corpo = { ...resto, levantamento, num_pessoas: Math.max(1, Math.round(v.num_pessoas || 1)), unidade_medida: v.unidade_medida || 'un', campos_extras, ergonomia };
+      const b = basico.valores();
+      if (!b.nome) return toast('Diga o que é feito nesta tarefa.', true);
+      const corpo = { ...b, num_pessoas: Math.max(1, Math.round(b.num_pessoas || 1)), unidade_medida: b.unidade_medida || 'un' };
+      if (avancado) {
+        const v = avancado.valores();
+        const levBruto = { carga_kg: v.lev_carga_kg, h_cm: v.lev_h_cm, v_cm: v.lev_v_cm, d_cm: v.lev_d_cm, a_graus: v.lev_a_graus, freq_por_min: v.lev_freq_por_min, duracao: v.lev_duracao, pega: v.lev_pega };
+        const lev = Object.fromEntries(Object.entries(levBruto).filter(([, x]) => x !== null && x !== ''));
+        const campos_extras = v.campos.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => {
+          const [nome, tipo, unidade, obr] = l.split('|').map((x) => (x || '').trim());
+          return { nome, tipo: tipo || 'numero', unidade: unidade || '', obrigatorio: obr === 'obrigatorio' };
+        });
+        const ergonomia = Object.fromEntries(Object.entries({ repetitividade: v.e_rep, esforco_fisico: v.e_esf, postura: v.e_pos, deslocamento: v.e_des, pausas: v.e_pau }).filter(([, x]) => x));
+        const { campos, e_rep, e_esf, e_pos, e_des, e_pau, lev_carga_kg, lev_h_cm, lev_v_cm, lev_d_cm, lev_a_graus, lev_freq_por_min, lev_duracao, lev_pega, ...resto } = v;
+        Object.assign(corpo, resto, { campos_extras, ergonomia, levantamento: Object.keys(lev).length ? lev : null });
+      }
       const r = await tentar(() => (op ? patch(`/operacoes/${op.id}`, corpo) : post(`/etapas/${etapa.id}/operacoes`, corpo)), 'Salvo.');
       if (r) { fechar(); aoSalvar(); }
     } }, 'Salvar')] });
@@ -209,16 +255,27 @@ const ENT = {
     cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Peso', f: (r) => (r.peso_kg === null ? '—' : `${r.peso_kg} kg`) }, { t: 'Descrição', f: (r) => r.descricao }] },
 };
 
+// Campos e colunas que só aparecem no modo especialista.
+const AVANCADO = {
+  recursos: ['processos_relacionados', 'equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao', 'capacidade_unidade'],
+  espacos: ['pe_direito_m', 'piso', 'temperatura_c', 'umidade_pct', 'ruido_db', 'iluminancia_lux', 'observacoes'],
+  pessoas: ['habilitacoes'], produtos: ['comprimento_m', 'largura_m', 'altura_m'],
+};
+const COLS_SIMPLES = { recursos: 3, espacos: 3, pessoas: 3, 'perfis-mao-de-obra': 6 };
+const ROTULOS = { recursos: 'Equipamentos', espacos: 'Locais', pessoas: 'Equipe', materiais: 'Materiais', produtos: 'Produtos e serviços', 'perfis-mao-de-obra': 'Perfis de mão de obra' };
+const AJUSTES = { recursos: { capacidade: 'Quantas peças por hora faz? (opcional, ajuda a IA a prever o tempo)' }, espacos: { nome: 'Nome do local (ex.: Estoque de chapas)' } };
+
 export async function cadastros(el) {
   let aba = 'recursos';
   const area = h('div'); const abas = h('div', { class: 'tabs' });
   const desenhar = async () => {
-    montar(abas, Object.entries(ENT).map(([k, e]) => h('button', { class: aba === k ? 'on' : '', onclick: () => { aba = k; desenhar(); } }, e.rot)));
+    montar(abas, Object.entries(ENT).filter(([k]) => estado.avancado || k !== 'perfis-mao-de-obra').map(([k, e]) => h('button', { class: aba === k ? 'on' : '', onclick: () => { aba = k; desenhar(); } }, ROTULOS[k] || e.rot)));
     const e = ENT[aba];
     const itens = await get(`/${aba}${qs({ unidade_id: e.un ? estado.unidadeId : '' })}`);
     const espacos = aba === 'recursos' ? await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`) : [];
     const abrir = (item) => {
-      const campos = aba === 'recursos' ? [...e.campos, { k: 'espaco_id', rotulo: 'Onde está (espaço)', tipo: 'select', num: true, opcoes: [['', '—'], ...espacos.map((x) => [x.id, x.nome])] }] : e.campos;
+      let campos = aba === 'recursos' ? [...e.campos, { k: 'espaco_id', rotulo: 'Em que local fica?', tipo: 'select', num: true, opcoes: [['', '—'], ...espacos.map((x) => [x.id, x.nome])] }] : e.campos;
+      campos = campos.filter((c) => estado.avancado || !(AVANCADO[aba] || []).includes(c.k)).map((c) => ((AJUSTES[aba] || {})[c.k] ? { ...c, rotulo: AJUSTES[aba][c.k] } : c));
       const f = formulario(campos, item || {});
       modal(item ? `Editar — ${item.nome}` : `Novo — ${e.rot}`, f.el, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
         h('button', { class: 'pri', onclick: async () => {
@@ -226,34 +283,48 @@ export async function cadastros(el) {
           if (await tentar(() => (item ? patch(`/${aba}/${item.id}`, v) : post(`/${aba}`, v)), 'Salvo.')) { fechar(); desenhar(); }
         } }, 'Salvar')] });
     };
-    montar(area, e.aviso ? h('div', { class: 'aviso' }, e.aviso) : null, h('p', null, h('button', { class: 'pri', onclick: () => abrir() }, `+ Novo`)),
-      h('div', { class: 'card' }, tabela([...e.cols, { t: 'Situação', f: (r) => (r.ativo ? badge('Ativo', 'b-ok') : badge('Inativo')) },
+    montar(area, e.aviso ? h('div', { class: 'aviso' }, e.aviso) : null, h('p', null, h('button', { class: 'pri', onclick: () => abrir() }, '+ Adicionar')),
+      h('div', { class: 'card' }, tabela([...(estado.avancado ? e.cols : e.cols.slice(0, COLS_SIMPLES[aba] || 99)), { t: 'Situação', f: (r) => (r.ativo ? badge('Ativo', 'b-ok') : badge('Inativo')) },
         { t: '', f: (r) => h('div', { class: 'inline' }, h('button', { class: 'sm', onclick: () => abrir(r) }, 'Editar'),
           h('button', { class: 'sm', onclick: async () => { if (await tentar(() => patch(`/${aba}/${r.id}`, { ativo: !r.ativo }))) desenhar(); } }, r.ativo ? 'Desativar' : 'Reativar')) }], itens)),
       aba === 'espacos' ? await painelDistancias(itens, desenhar) : null,
       h('p', { class: 'muted small' }, 'Itens não são excluídos para preservar o histórico; desative o que não for mais usado.'));
   };
-  montar(el, h('h1', null, 'Recursos e cadastros'), abas, area);
+  montar(el, h('h1', null, 'Equipamentos e locais'), h('p', { class: 'muted' }, 'Cadastre o que existe na sua operação. Quanto mais a IA souber (capacidades, locais, distâncias, pesos), melhor ela prevê o tempo.'), abas, area);
   await desenhar();
 }
 
 
 // ---------------------------------------------------------------- gêmeo digital
-async function prontidaoPainel(alvo, p, recarregar) {
+async function prontidaoPainel(alvo, p, recarregar, todasOps) {
   const r = await get(`/processos/${p.id}/prontidao`);
-  const graves = r.operacoes.filter((o) => o.itens.some((i) => i.nivel === 'atencao'));
-  montar(alvo, h('div', { class: 'top' },
-    h('div', null, h('h2', null, 'Prontidão do gêmeo digital'),
-      h('div', { class: 'muted small' }, `${r.operacoes_ok} de ${r.total_operacoes} operações sem pendências de atenção (${fmtNum(r.pontuacao_pct, 0)}%).`)),
-    h('div', { class: 'inline' },
-      h('button', { class: 'ia', onclick: async () => {
+  const visivel = (i) => (estado.avancado || i.categoria !== 'tecnico') && (i.nivel !== 'info' || estado.avancado || i.msg.includes('aguarda'));
+  const linhas = r.operacoes.map((o) => ({ o, itens: o.itens.filter(visivel) })).filter((x) => x.itens.length);
+  const aConfirmar = r.operacoes.filter((o) => o.itens.some((i) => i.msg.includes('aguarda a sua confirmação'))).length;
+  const semPrevisao = r.operacoes.some((o) => o.itens.some((i) => i.msg.includes('sem previsão de tempo')));
+  const edit = p.status === 'rascunho';
+  const etapaDe = (opId) => p.etapas.find((e) => e.operacoes.some((x) => x.id === opId));
+  const opDe = (opId) => p.etapas.flatMap((e) => e.operacoes).find((x) => x.id === opId);
+  montar(alvo, h('div', { class: 'top' }, h('h2', null, 'Está tudo pronto?'),
+    ehGestor() ? h('div', { class: 'inline' },
+      h('button', { class: semPrevisao ? 'ia' : '', onclick: async () => {
         const c = await tentar(() => post(`/processos/${p.id}/modelar-tempos`));
-        if (c) { toast(c.length ? `${c.length} modelo(s) de tempo gerado(s) (${c[0].provedor}). Revise e valide.` : 'Todas as operações já têm modelo.'); recarregar(); }
-      } }, 'Modelar tempos com IA'),
-      h('button', { class: 'ia', onclick: () => gerarAnalise('revisao_processo', { unidade_id: p.unidade_id, processo_id: p.id }) }, 'Como deixar o processo consistente? (IA)'))),
-    (() => { const b = h('div', { class: 'bar' }, h('i')); b.firstChild.style.width = `${r.pontuacao_pct}%`; return b; })(),
-    graves.length ? h('details', null, h('summary', { class: 'small' }, `${graves.length} operação(ões) com pendências de atenção`),
-      graves.map((o) => h('div', null, h('strong', null, o.nome), h('ul', null, o.itens.filter((i) => i.nivel !== 'info').map((i) => h('li', { class: i.nivel === 'atencao' ? '' : 'muted' }, i.msg)))))) : h('p', { class: 'muted small' }, 'Nenhuma pendência de atenção.'));
+        if (c) { toast(c.length ? 'A IA preparou as previsões de tempo. Confira e confirme.' : 'Todas as tarefas já têm previsão.'); recarregar(); }
+      } }, 'Pedir previsão de tempo à IA'),
+      aConfirmar ? h('button', { class: 'pri', onclick: async () => {
+        const c = await tentar(() => post(`/processos/${p.id}/confirmar-previsoes`));
+        if (c) { toast(`${c.confirmadas} previsão(ões) confirmada(s).`); recarregar(); }
+      } }, `Confirmar ${aConfirmar} previsão(ões)`) : null,
+      estado.avancado ? h('button', { class: 'ia', onclick: () => gerarAnalise('revisao_processo', { unidade_id: p.unidade_id, processo_id: p.id }) }, 'Como deixar o processo consistente? (IA)') : null) : null),
+    linhas.length ? h('div', { class: 'pronto' }, linhas.map(({ o, itens }) => h('div', null, h('strong', null, o.nome),
+      h('ul', null, itens.map((i) => h('li', { class: i.categoria === 'seguranca' ? 'seg' : '' }, i.categoria === 'seguranca' ? '⚠ ' : '', i.msg, estado.avancado && i.detalhe ? h('div', { class: 'muted small' }, i.detalhe) : null))),
+      edit && ehGestor() && etapaDe(o.operacao_id) ? h('button', { class: 'sm', onclick: () => formOperacaoPorId(etapaDe(o.operacao_id), opDe(o.operacao_id), recarregar) }, 'Editar tarefa') : null)))
+      : h('div', { class: 'ok-box card' }, h('strong', null, '✓ Tudo certo.'), ' Nenhuma pendência nas tarefas deste processo.'));
+}
+
+async function formOperacaoPorId(etapa, op, recarregar) {
+  const recursos = await get(`/recursos${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+  formOperacao(etapa, op, recursos, recarregar);
 }
 
 function modeloTempoView(o, p, recarregar) {

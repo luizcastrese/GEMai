@@ -188,3 +188,18 @@ def ergonomia_operacao(oid: int, ctx: Ctx = Depends(get_ctx)):
     perfil = ctx.db.get(PerfilMaoDeObra, op.perfil_id) if op.perfil_id else None
     espacos = [ctx.db.get(Espaco, i) for i in (op.espaco_origem_id, op.espaco_destino_id) if i]
     return ergonomia.avaliar_operacao(op, perfil, espacos, op.item_peso_kg)
+
+
+@router.post("/processos/{pid}/confirmar-previsoes")
+def confirmar_previsoes(pid: int, ctx: Ctx = Depends(requer_gestor)):
+    """Confirma, de uma vez, as previsões de tempo da IA ainda pendentes das operações deste processo."""
+    proc = ctx.obter(Processo, pid)
+    n = 0
+    for e in proc.etapas:
+        for op in e.operacoes:
+            m = modelo_tempo.modelo_ativo(ctx.db, ctx.empresa_id, op.id)
+            if m is not None and m.status_validacao == "pendente":
+                _decidir(ctx, m.id, "validado", "Confirmação em lote do processo.")
+                n += 1
+    ctx.db.commit()
+    return {"confirmadas": n}

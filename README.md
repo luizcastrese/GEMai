@@ -9,6 +9,18 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 - Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
 - **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
 
+## Experiência do usuário: simples por padrão, técnica sob demanda
+
+O usuário comum **não precisa saber o que há por trás**. A interface fala a língua da operação e esconde a engenharia:
+
+| Quem | O que vê |
+|---|---|
+| **Gestor** | **Início** com "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar), atalhos e 4 números. Um assistente para **configurar com a IA**. Em cada processo, um checklist "**Está tudo pronto?**" em português comum e **um único botão Publicar** (a IA prevê o tempo das tarefas na publicação). Quem já sabe o tempo usa **"Já sei o tempo"** e ele passa a valer no lugar da IA |
+| **Operador** | **Minha fila**: ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar". Nada de tipos, fórmulas ou parâmetros |
+| **Especialista** (opção "Modo especialista" no topo) | Tolerâncias, composição do tempo por elemento, NIOSH/MOST, perfis de mão de obra, parâmetros versionados, sugestões da IA, análises completas e auditoria |
+
+Regras dessa camada: o **alerta de segurança** (carga acima do limite, ruído, esforço) aparece para todos, **em linguagem simples**; o resto do técnico fica só no modo especialista. Os textos das pendências vêm do backend já separados por categoria (`simples`, `seguranca`, `tecnico`).
+
 ## Gêmeo digital: como o tempo planejado nasce
 
 ```
@@ -114,7 +126,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: o admin define/redefine senhas. Se for relevante, são os próximos passos naturais.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 73 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 79 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

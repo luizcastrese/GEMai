@@ -138,7 +138,7 @@ def test_prontidao_e_revisao_por_ia(gestor, unidade_id):
     pid, op, *_ = _cenario(gestor, unidade_id)
     r = gestor.get(f"/processos/{pid}/prontidao").json()
     msgs = " ".join(i["msg"] for o in r["operacoes"] for i in o["itens"] if i["nivel"] == "atencao")
-    assert "marcos" in msgs and "Sem base de tempo" in msgs and r["pontuacao_pct"] == 0
+    assert "quando a tarefa começa" in msgs and "sem previsão de tempo" in msgs and r["pontuacao_pct"] == 0
     gestor.post(f"/processos/{pid}/modelar-tempos")
     gestor.patch(f"/operacoes/{op}", {"inicio_marco": "Pega a chapa", "fim_marco": "Deposita a peça cortada"})
     r2 = gestor.get(f"/processos/{pid}/prontidao").json()

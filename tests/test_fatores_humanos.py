@@ -133,16 +133,18 @@ def test_niosh_na_operacao_gera_tolerancia_e_alerta_na_prontidao(gestor, unidade
     m = gestor.post(f"/operacoes/{op}/modelo-tempo/gerar").json()
     cats = {t["categoria"]: t["percentual"] for t in m["tolerancias"]}
     assert cats["trabalho em pé"] == 2.0 and cats["fadiga por carga (LI)"] == 5.0 and cats["necessidades pessoais"] == 5.0
-    msgs = " ".join(i["msg"] for o in gestor.get(f"/processos/{pid}/prontidao").json()["operacoes"] for i in o["itens"])
-    assert "Índice de levantamento" in msgs
+    itens = [i for o in gestor.get(f"/processos/{pid}/prontidao").json()["operacoes"] for i in o["itens"]]
+    assert any("Índice de levantamento" in i["detalhe"] for i in itens)  # técnico, para o especialista
+    assert any(i["categoria"] == "seguranca" and "limite recomendado" in i["msg"] for i in itens)  # simples, para todos
 
 
 def test_levantamento_incompleto_e_ruido_geram_pendencias(gestor, unidade_id):
     esp = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Prensa", "ruido_db": 92, "temperatura_c": 35}).json()
     pid, op = _op(gestor, unidade_id, None, espaco_origem_id=esp["id"], espaco_destino_id=esp["id"], levantamento={"h_cm": 30})
     itens = [i for o in gestor.get(f"/processos/{pid}/prontidao").json()["operacoes"] for i in o["itens"]]
-    msgs = " ".join(i["msg"] for i in itens)
+    msgs = " ".join(i["msg"] + " " + i["detalhe"] for i in itens)
     assert "Sem perfil de mão de obra" in msgs and "levantamento (NIOSH) incompletos" in msgs and "NR-15" in msgs
+    assert any(i["categoria"] == "seguranca" and "ruído" in i["msg"] for i in itens)
     m = gestor.post(f"/operacoes/{op}/modelo-tempo/gerar").json()
     assert any("temperatura" in f for f in m["dados_faltantes"])  # não inventa tolerância para ambiente: pede avaliação
     assert gestor.get(f"/operacoes/{op}/ergonomia").json()["niosh"]["completo"] is False

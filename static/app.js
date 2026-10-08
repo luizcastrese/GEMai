@@ -1,7 +1,8 @@
 import { get, post, quandoExpirar, setToken, temToken } from './api.js';
-import { estado, carregarBase, escolherUnidade, ehAdmin, ehGestor } from './estado.js';
+import { estado, carregarBase, definirAvancado, escolherUnidade, ehAdmin, ehGestor } from './estado.js';
 import { h, montar, tentar, toast } from './ui.js';
 import * as gestao from './telas_gestao.js';
+import * as inicio from './telas_inicio.js';
 import * as proc from './telas_proc.js';
 import * as prod from './telas_prod.js';
 import * as admin from './telas_admin.js';
@@ -10,24 +11,26 @@ const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
 
 const ROTAS = [
-  // [padrão, função, perfis, menu]
-  [/^#\/painel$/, gestao.painel, 'g', ['Gestão', 'Painel', '#/painel']],
-  [/^#\/implantacao$/, gestao.implantacao, 'g', ['Gestão', 'Implantação com IA', '#/implantacao']],
-  [/^#\/processos$/, proc.lista, 'g', ['Gestão', 'Processos', '#/processos']],
-  [/^#\/processos\/(\d+)$/, proc.detalhe, 'g'],
-  [/^#\/cadastros$/, proc.cadastros, 'g', ['Gestão', 'Recursos e cadastros', '#/cadastros']],
-  [/^#\/ordens$/, prod.ordens, 'g', ['Produção', 'Ordens', '#/ordens']],
+  // [padrão, função, perfis (a=todos, g=gestor, admin), menu: [grupo, rótulo, href, soEspecialista?]]
+  [/^#\/inicio$/, inicio.inicio, 'g', ['Dia a dia', 'Início', '#/inicio']],
+  [/^#\/ordens$/, prod.ordens, 'g', ['Dia a dia', 'Ordens de produção', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe, 'a'],
-  [/^#\/aprovacoes$/, prod.aprovacoes, 'g', ['Produção', 'Apontamentos a aprovar', '#/aprovacoes']],
-  [/^#\/fila$/, prod.fila, 'a', ['Produção', 'Minha fila (chão de fábrica)', '#/fila']],
-  [/^#\/ia$/, admin.recomendacoes, 'g', ['Inteligência', 'Sugestões da IA', '#/ia']],
-  [/^#\/usuarios$/, admin.usuarios, 'admin', ['Administração', 'Usuários', '#/usuarios']],
+  [/^#\/fila$/, prod.fila, 'a', ['Dia a dia', 'Minha fila', '#/fila']],
+  [/^#\/aprovacoes$/, prod.aprovacoes, 'g', ['Dia a dia', 'Aprovar registros', '#/aprovacoes']],
+  [/^#\/implantacao$/, gestao.implantacao, 'g', ['Configurar', 'Configurar com a IA', '#/implantacao']],
+  [/^#\/processos$/, proc.lista, 'g', ['Configurar', 'Processos', '#/processos']],
+  [/^#\/processos\/(\d+)$/, proc.detalhe, 'g'],
+  [/^#\/cadastros$/, proc.cadastros, 'g', ['Configurar', 'Equipamentos e locais', '#/cadastros']],
+  [/^#\/usuarios$/, admin.usuarios, 'admin', ['Administração', 'Equipe e acessos', '#/usuarios']],
   [/^#\/empresa$/, admin.empresa, 'admin', ['Administração', 'Empresa e unidades', '#/empresa']],
-  [/^#\/auditoria$/, admin.auditoria, 'admin', ['Administração', 'Auditoria', '#/auditoria']],
+  [/^#\/analises$/, gestao.painel, 'g', ['Especialista', 'Análises completas', '#/analises', true]],
+  [/^#\/painel$/, gestao.painel, 'g'],
+  [/^#\/ia$/, admin.recomendacoes, 'g', ['Especialista', 'Sugestões da IA', '#/ia', true]],
+  [/^#\/auditoria$/, admin.auditoria, 'admin', ['Especialista', 'Auditoria', '#/auditoria', true]],
 ];
 const permitido = (p) => p === 'a' || (p === 'g' && ehGestor()) || (p === 'admin' && ehAdmin());
 
-function inicial() { return ehGestor() ? '#/painel' : '#/fila'; }
+function inicial() { return ehGestor() ? '#/inicio' : '#/fila'; }
 
 async function rotear() {
   if (!temToken()) return telaAuth();
@@ -48,7 +51,7 @@ async function rotear() {
 
 function casca(conteudo, hash) {
   const grupos = {};
-  ROTAS.filter((r) => r[3] && permitido(r[2])).forEach((r) => {
+  ROTAS.filter((r) => r[3] && permitido(r[2]) && (!r[3][3] || estado.avancado)).forEach((r) => {
     const [grupo, rotulo, href] = r[3];
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
@@ -57,9 +60,10 @@ function casca(conteudo, hash) {
     Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
+  const modo = h('label', { class: 'modo', title: 'Mostra detalhes técnicos (fórmulas, tolerâncias, normas, auditoria).' },
+    h('input', { type: 'checkbox', checked: estado.avancado, onchange: (e) => { definirAvancado(e.target.checked); rotear(); } }), 'Modo especialista');
   const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, 'Unidade:', sel),
-    h('div', { class: 'who' }, `${estado.usuario.nome} · ${estado.usuario.perfil}`,
-      h('button', { class: 'sm', onclick: sair }, 'Sair')));
+    h('div', { class: 'who' }, ehGestor() ? modo : null, `${estado.usuario.nome}`, h('button', { class: 'sm', onclick: sair }, 'Sair')));
   return h('div', { class: 'shell' }, nav, h('main', null, topo, conteudo));
 }
 
