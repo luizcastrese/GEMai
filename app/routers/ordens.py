@@ -101,13 +101,14 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(requer_gestor)):
         raise HTTPException(422, "O processo não pertence a esta unidade.")
     if proc.status != "ativo":
         raise HTTPException(409, "Somente processos ativos (publicados) podem gerar ordens.")
+    pr = None
     if dados.produto_id is not None:
         pr = ctx.db.get(Produto, dados.produto_id)
         if not pr or pr.empresa_id != ctx.empresa_id:
             raise HTTPException(422, "Produto inválido.")
     ops_proc = [op for e in proc.etapas for op in e.operacoes]
     ids_validos = {op.id for op in ops_proc}
-    recursos_sel = {}
+    recursos_sel, recursos_obj = {}, {}
     for r in dados.recursos:
         if r.operacao_id not in ids_validos:
             raise HTTPException(422, "Operação não pertence ao processo.")
@@ -115,6 +116,7 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(requer_gestor)):
         if not rec or rec.empresa_id != ctx.empresa_id or rec.unidade_id != uni.id or not rec.ativo:
             raise HTTPException(422, "Recurso inválido para esta unidade.")
         recursos_sel[r.operacao_id] = rec.id
+        recursos_obj[r.operacao_id] = rec
     opcionais = {op.id for e in proc.etapas if e.opcional for op in e.operacoes}
     for pid in dados.pular_operacoes:
         if pid not in opcionais:
@@ -132,7 +134,7 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(requer_gestor)):
         for op in e.operacoes:
             seq += 1
             pulada = op.id in dados.pular_operacoes
-            est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, dados.quantidade)
+            est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, dados.quantidade, pr, recursos_obj.get(op.id))
             if not pulada and est.exec is not None:
                 total += (est.prep or 0.0) + est.exec
                 algum = True
@@ -142,6 +144,7 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(requer_gestor)):
                 qtd_planejada=dados.quantidade, formula_tipo=op.formula_tipo,
                 tempo_prep_est_min=est.prep if est.exec is not None else None, tempo_exec_est_min=est.exec,
                 fonte_estimativa=est.fonte, amostras=est.amostras, opcional=e.opcional,
+                detalhe_estimativa=est.detalhe, estimativa_validada=est.validada,
                 status="pulada" if pulada else "pendente"))
     o.tempo_estimado_min = round(total, 2) if algum else None
     ctx.db.flush()

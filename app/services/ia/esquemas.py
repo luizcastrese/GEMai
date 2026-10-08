@@ -32,6 +32,12 @@ class OperacaoIA(BaseModel):
     unidade_medida: str = "un"
     dados_medidos: list[str] = Field(default_factory=lambda: ["tempo", "quantidade"])
     parametros: list[ParametroIA] = Field(default_factory=list)
+    funcao_requerida: str = ""  # mão de obra (ex.: marceneiro, auxiliar)
+    num_pessoas: int = 1
+    espaco_origem: str | None = None
+    espaco_destino: str | None = None
+    inicio_marco: str = ""  # quando o apontamento começa (consistência dos parâmetros)
+    fim_marco: str = ""
 
 
 class EtapaIA(BaseModel):
@@ -56,6 +62,11 @@ class RecursoIA(BaseModel):
     tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] = "maquina"
 
 
+class EspacoIA(BaseModel):
+    nome: str
+    tipo: Literal["area", "posto", "estoque", "expedicao"] = "area"
+
+
 class MaterialIA(BaseModel):
     nome: str
     unidade_medida: str = "un"
@@ -65,6 +76,7 @@ class EstruturaProposta(BaseModel):
     processos: list[ProcessoIA] = Field(default_factory=list)
     recursos: list[RecursoIA] = Field(default_factory=list)
     materiais: list[MaterialIA] = Field(default_factory=list)
+    espacos: list[EspacoIA] = Field(default_factory=list)
     indicadores_sugeridos: list[str] = Field(default_factory=list)
     etapas_possivelmente_omitidas: list[str] = Field(default_factory=list)
     perguntas_pendentes: list[str] = Field(default_factory=list)
@@ -109,7 +121,10 @@ def sanear_estrutura(e: EstruturaProposta) -> EstruturaProposta:
                 ops.append(OperacaoIA(
                     nome=_t(op.nome, 200), descricao=_t(op.descricao, 2000), recurso=_t(op.recurso, 200) or None,
                     formula_tipo=op.formula_tipo, unidade_medida=_t(op.unidade_medida, 30) or "un",
-                    dados_medidos=[_t(d, 40) for d in op.dados_medidos[:30] if _t(d, 40)], parametros=params))
+                    dados_medidos=[_t(d, 40) for d in op.dados_medidos[:30] if _t(d, 40)], parametros=params,
+                    funcao_requerida=_t(op.funcao_requerida, 120), num_pessoas=min(max(op.num_pessoas or 1, 1), 50),
+                    espaco_origem=_t(op.espaco_origem, 200) or None, espaco_destino=_t(op.espaco_destino, 200) or None,
+                    inicio_marco=_t(op.inicio_marco, 300), fim_marco=_t(op.fim_marco, 300)))
             etapas.append(EtapaIA(
                 nome=_t(et.nome, 200), descricao=_t(et.descricao, 2000),
                 entradas=[_t(x, 300) for x in et.entradas[:50] if _t(x, 300)],
@@ -123,6 +138,7 @@ def sanear_estrutura(e: EstruturaProposta) -> EstruturaProposta:
         recursos=[RecursoIA(nome=_t(r.nome, 200), tipo=r.tipo) for r in e.recursos[:MAX_LISTA] if _t(r.nome, 200)],
         materiais=[MaterialIA(nome=_t(m.nome, 200), unidade_medida=_t(m.unidade_medida, 30) or "un")
                    for m in e.materiais[:MAX_LISTA] if _t(m.nome, 200)],
+        espacos=[EspacoIA(nome=_t(x.nome, 200), tipo=x.tipo) for x in e.espacos[:MAX_LISTA] if _t(x.nome, 200)],
         indicadores_sugeridos=[_t(x, 300) for x in e.indicadores_sugeridos[:30] if _t(x, 300)],
         etapas_possivelmente_omitidas=[_t(x, 300) for x in e.etapas_possivelmente_omitidas[:30] if _t(x, 300)],
         perguntas_pendentes=[_t(x, 500) for x in e.perguntas_pendentes[:30] if _t(x, 500)],

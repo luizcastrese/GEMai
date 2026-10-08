@@ -22,6 +22,9 @@ class Settings(BaseSettings):
 
     # Estimativas
     min_amostras_historico: int = 3
+    # Se verdadeiro, o modelo de tempo proposto pela IA e ainda não validado já serve de tempo planejado
+    # (rotulado como tal). Se falso, só modelos validados por um gestor entram nas estimativas.
+    usar_modelo_ia_nao_validado: bool = True
 
     # IA
     ia_provedor: str = "auto"  # auto | heuristica | claude

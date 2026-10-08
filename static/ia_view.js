@@ -3,7 +3,7 @@ import { h, avisoIA, badge, fmtData, modal, statusBadge, tentar } from './ui.js'
 
 const ROT = {
   estrutura_processo: 'Estrutura de processo', analise_desvio: 'Análise de desvios', analise_gargalo: 'Possíveis gargalos',
-  relatorio_gestor: 'Relatório do gestor', indicadores_sugeridos: 'Indicadores sugeridos', processos_semelhantes: 'Operações semelhantes',
+  relatorio_gestor: 'Relatório do gestor', indicadores_sugeridos: 'Indicadores sugeridos', processos_semelhantes: 'Operações semelhantes', revisao_processo: 'Revisão de prontidão do processo',
 };
 export const rotuloTipo = (t) => ROT[t] || t;
 

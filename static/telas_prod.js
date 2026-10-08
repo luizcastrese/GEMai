@@ -68,7 +68,9 @@ export async function ordemDetalhe(el, id) {
 
   const roteiro = h('div', { class: 'card' }, h('h2', null, 'Roteiro'), tabela([
     { t: '#', f: (x) => x.sequencia }, { t: 'Etapa › operação', f: (x) => `${x.etapa_nome} › ${x.nome}` }, { t: 'Recurso', f: (x) => nomeRec(x.recurso_id) },
-    { t: 'Estimado', f: (x) => h('span', null, x.tempo_exec_est_min === null ? '—' : fmtMin((x.tempo_prep_est_min || 0) + x.tempo_exec_est_min), ' ', fonteBadge(x.fonte_estimativa), x.fonte_estimativa === 'historico' ? ` (${x.amostras} amostras)` : '') },
+    { t: 'Planejado', f: (x) => h('span', null, x.tempo_exec_est_min === null ? '—' : fmtMin((x.tempo_prep_est_min || 0) + x.tempo_exec_est_min), ' ', fonteBadge(x.fonte_estimativa),
+      x.fonte_estimativa === 'modelo_ia' && !x.estimativa_validada ? [' ', badge('não validado', 'b-warn')] : null, x.fonte_estimativa === 'historico' ? ` (${x.amostras} amostras)` : '',
+      x.detalhe_estimativa ? h('details', { class: 'small muted' }, h('summary', null, 'composição'), h('ul', null, x.detalhe_estimativa.map((e) => h('li', null, `${e.nome}: ${e.minutos === null ? 'falta dado' : fmtMin(e.minutos)}`)))) : null) },
     { t: 'Apontado', f: (x) => fmtMin(x.tempo_apontado_min) }, { t: 'Boas / refugo', f: (x) => `${fmtNum(x.qtd_boa, 2)} / ${fmtNum(x.qtd_refugo, 2)}` }, { t: 'Status', f: (x) => statusBadge(x.status) },
     { t: '', f: (x) => aberta ? h('div', { class: 'inline' },
       ['pendente', 'em_andamento'].includes(x.status) ? [
@@ -107,7 +109,7 @@ async function analisar(alvo, o) {
       kpi('Eficiência', r.eficiencia_pct === null ? '—' : `${fmtNum(r.eficiencia_pct)}%`),
       kpi('Retrabalho', fmtMin(r.retrabalho_min)), kpi('Espera registrada', fmtMin(r.espera_registrada_min)), kpi('Fila entre operações', fmtMin(r.espera_fila_min)), kpi('Paradas', fmtMin(r.paradas_min))),
     r.comparacao_parcial || r.operacoes_sem_estimativa ? h('div', { class: 'aviso' }, 'Comparação parcial: há operações sem estimativa ou ainda não concluídas.') : null,
-    tabela([{ t: 'Operação', f: (m) => m.operacao }, { t: 'Estimado', f: (m) => fmtMin(m.estimado_min) }, { t: 'Preparação', f: (m) => fmtMin(m.preparacao_min) },
+    tabela([{ t: 'Operação', f: (m) => m.operacao }, { t: 'Planejado', f: (m) => h('span', null, fmtMin(m.estimado_min), ' ', fonteBadge(m.fonte_estimativa)) }, { t: 'Preparação', f: (m) => fmtMin(m.preparacao_min) },
       { t: 'Execução', f: (m) => fmtMin(m.execucao_min) }, { t: 'Retrabalho', f: (m) => fmtMin(m.retrabalho_min) }, { t: 'Desvio', f: (m) => (m.desvio_pct === null ? '—' : `${fmtNum(m.desvio_pct)}%`) }], a.operacoes));
 }
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from ..modelo_tempo import REFERENCIAS, ElementoTempo, ModeloTempoIA
 from .esquemas import (AnaliseTexto, EstruturaProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
@@ -163,7 +164,9 @@ def estruturar(ctx: dict) -> EstruturaProposta:
                                 justificativa="A medir: tempo de preparação informado/medido pela empresa."),
                     ParametroIA(nome="tempo_unitario_min", unidade="min/un",
                                 justificativa="A medir: tempo de execução por unidade."),
-                ])]))
+                ],
+                inicio_marco=f"Quando a primeira unidade de '{n}' é iniciada",
+                fim_marco=f"Quando a última unidade de '{n}' é concluída e liberada para a próxima etapa")]))
     base_texto = _norm(" ".join([ctx.get("descricao", "")] + [q.get("resposta") or "" for q in qa]))
     omitidas = [nome for padrao, nome in LACUNAS if not re.search(padrao, base_texto)]
     todas = {g for g in BASE}
@@ -178,6 +181,68 @@ def estruturar(ctx: dict) -> EstruturaProposta:
         etapas_possivelmente_omitidas=omitidas, perguntas_pendentes=pend,
         observacoes=("Rascunho gerado por regras locais (sem IA externa) a partir do texto informado. "
                      "Revise nomes, ordem e vínculos de recursos antes de ativar. Nenhum tempo foi estimado."))
+
+
+def modelar(ctx: dict) -> ModeloTempoIA:
+    """Modelo de tempo por regras e referências genéricas (confiança baixa). Nunca chuta o que falta:
+    lista o dado do contorno físico necessário para o cálculo ficar consistente."""
+    op, rec, item = ctx["operacao"], ctx.get("recurso"), ctx.get("item", {})
+    org, dst, dist = ctx.get("espaco_origem"), ctx.get("espaco_destino"), ctx.get("distancia_m")
+    pessoas = max(int(op.get("num_pessoas") or 1), 1)
+    peso = item.get("peso_kg")
+    els: list[ElementoTempo] = []
+    faltam: list[str] = []
+    prem: list[str] = []
+    if rec:
+        prep = REFERENCIAS["preparacao_maquina_min"] if rec.get("tipo") in ("maquina", "ferramenta") else REFERENCIAS["preparacao_posto_min"]
+        els.append(ElementoTempo(nome=f"Preparação de {rec['nome']}", tipo="preparacao", metodo="fixo", a_min=prep,
+                                 justificativa="Valor de referência genérico; meça o setup real da sua operação."))
+        prem.append(f"Preparação de {prep:g} min por ordem é uma referência genérica, não um dado da empresa.")
+        if rec.get("capacidade_un_h"):
+            els.append(ElementoTempo(nome=f"Processamento em {rec['nome']}", tipo="processamento",
+                                     metodo="capacidade_recurso", justificativa="Usa a capacidade informada do equipamento."))
+        else:
+            faltam.append(f"Capacidade (un/h) do equipamento '{rec['nome']}'")
+    if org or dst:
+        if dist is not None:
+            itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pessoas // peso), 1) if peso else 1
+            els.append(ElementoTempo(nome=f"Deslocar de {org['nome'] if org else '?'} até {dst['nome'] if dst else '?'}",
+                                     tipo="deslocamento", metodo="deslocamento", velocidade_m_min=REFERENCIAS["velocidade_caminhada_m_min"],
+                                     itens_por_viagem=itens, ida_e_volta=True,
+                                     justificativa=f"{dist:g} m entre os espaços; {itens} item(ns) por viagem."))
+            prem.append(f"Caminhada a {REFERENCIAS['velocidade_caminhada_m_min']:g} m/min e carga manual de até "
+                        f"{REFERENCIAS['carga_manual_max_kg']:g} kg por pessoa (referências genéricas).")
+        else:
+            faltam.append("Distância entre os espaços de origem e destino" if org and dst else "Espaço de origem e de destino da operação")
+    if peso:
+        els.append(ElementoTempo(nome="Manuseio do item", tipo="manuseio", metodo="linear_driver", por_unidade=True,
+                                 driver="peso_kg", a_min=REFERENCIAS["manuseio_base_min"], b_min=REFERENCIAS["manuseio_min_por_kg"],
+                                 paralelizavel=pessoas > 1,
+                                 justificativa="Pegar, posicionar e soltar: tempo-base mais acréscimo proporcional ao peso."))
+        prem.append("Manuseio: 0,15 min + 0,012 min/kg por unidade (referência genérica).")
+    elif not rec or not rec.get("capacidade_un_h"):
+        faltam.append("Peso e dimensões do item manuseado")
+    if not els:
+        faltam.append("Equipamento/posto ou espaços e item físico da operação")
+    amb = [e for e in (org, dst) if e]
+    altos = sum(1 for k in ("repetitividade", "esforco_fisico", "postura", "deslocamento", "tempo_em_pe")
+                if (op.get("ergonomia") or {}).get(k) == "alto")
+    quente = any((e.get("temperatura_c") or 0) > 32 for e in amb)
+    fator = round(1.0 + 0.05 * min(altos, 4) + (0.05 if quente else 0), 3)
+    if fator != 1.0:
+        prem.append(f"Fator de ambiente {fator:g}: +5% por fator ergonômico alto e/ou temperatura acima de 32 °C (referência genérica).")
+    if not op.get("funcao_requerida"):
+        faltam.append("Função (mão de obra) responsável pela operação")
+    if not op.get("inicio_marco") or not op.get("fim_marco"):
+        faltam.append("Marcos de início e fim do apontamento (quando começa e quando termina a operação)")
+    nome = op["nome"]
+    return ModeloTempoIA(
+        elementos=els, fator_ambiente=fator, premissas=prem, dados_faltantes=faltam,
+        padrao_apontamento_inicio=op.get("inicio_marco") or f"Quando {op.get('funcao_requerida') or 'o operador'} pega o primeiro item de '{nome}'",
+        padrao_apontamento_fim=op.get("fim_marco") or f"Quando o último item de '{nome}' é depositado no destino{' (' + dst['nome'] + ')' if dst else ''}",
+        unidade_contagem=op.get("unidade_medida") or "un", confianca="baixa",
+        justificativa=("Modelo montado por regras locais a partir do contorno físico cadastrado, com referências genéricas "
+                       "declaradas nas premissas. Substitua por medições reais assim que existirem."))
 
 
 def _fmt(v, suf=" min"):
@@ -235,6 +300,18 @@ def analisar(tipo: str, fatos: dict) -> AnaliseTexto:
                                  evidencia=f"Desvio de {_fmt(d['desvio_pct'], '%')} no período.")
                for d in pxr["maiores_desvios"][:3]]
         return AnaliseTexto(resumo=" ".join(linhas), pontos_investigacao=pts)
+    if tipo == "revisao_processo":
+        r = fatos["prontidao"]
+        pts = []
+        for o in r["operacoes"]:
+            graves = [i for i in o["itens"] if i["nivel"] == "atencao"]
+            if graves:
+                pts.append(PontoInvestigacao(titulo=o["nome"], evidencia="; ".join(i["msg"] for i in graves[:4]),
+                                             hipotese="Sem isso o tempo planejado fica menos consistente e a comparação com o real perde valor."))
+        return AnaliseTexto(
+            resumo=f"Prontidão do processo para o gêmeo digital: {r['pontuacao_pct']:g}% das operações sem pendências de atenção. "
+                   + ("Priorize os pontos abaixo antes de publicar." if pts else "Nenhuma pendência de atenção."),
+            pontos_investigacao=pts[:10])
     if tipo == "indicadores_sugeridos":
         return AnaliseTexto(resumo="Indicadores sugeridos a partir do perfil da operação.",
                             indicadores_sugeridos=INDICADORES)

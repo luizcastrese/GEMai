@@ -1,6 +1,6 @@
 import { get, patch, post, qs } from './api.js';
 import { estado, unidadeAtual } from './estado.js';
-import { barras, fmtDia, fmtMin, fmtNum, fmtPct, formulario, h, kpi, limpar, montar, statusBadge, tabela, tentar, toast, avisoIA, badge, confirmar } from './ui.js';
+import { fonteBadge, barras, fmtDia, fmtMin, fmtNum, fmtPct, formulario, h, kpi, limpar, montar, statusBadge, tabela, tentar, toast, avisoIA, badge, confirmar } from './ui.js';
 import { gerarAnalise } from './ia_view.js';
 
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -43,6 +43,10 @@ export async function painel(el) {
           { t: 'Etapa › operação', f: (x) => `${x.etapa} › ${x.operacao}` }, { t: 'Previsto', f: (x) => fmtMin(x.estimado_min) },
           { t: 'Realizado', f: (x) => fmtMin(x.realizado_min) }, { t: 'Desvio', f: (x) => h('span', { class: x.desvio_min > 0 ? 'badge b-err' : 'badge b-ok' }, fmtPct(x.desvio_pct)) }],
           d.planejado_x_realizado.maiores_desvios, 'Sem operações concluídas com estimativa no período.')),
+        h('div', { class: 'card' }, h('h3', null, 'Quão bem o tempo planejado acerta?'), tabela([
+          { t: 'Fonte do planejado', f: (x) => fonteBadge(x.fonte) }, { t: 'Operações', f: (x) => x.operacoes },
+          { t: 'Desvio médio', f: (x) => fmtPct(x.desvio_medio_pct) }, { t: 'Erro absoluto médio', f: (x) => fmtPct(x.erro_absoluto_medio_pct) }], d.acuracia_por_fonte, 'Conclua operações com estimativa para medir a acurácia.'),
+          h('p', { class: 'muted small' }, 'Desvio médio positivo = o real demorou mais que o planejado. Com mais ordens aprovadas, o histórico passa a substituir o modelo da IA.')),
         h('div', { class: 'card' }, h('h3', null, 'Gargalos (espera e ocupação por etapa)'), tabela([
           { t: 'Etapa', f: (x) => x.etapa }, { t: 'Fila', f: (x) => fmtMin(x.espera_fila_min) },
           { t: 'Espera reg.', f: (x) => fmtMin(x.espera_registrada_min) }, { t: 'Ocupação', f: (x) => fmtMin(x.ocupacao_min) }], d.gargalos),

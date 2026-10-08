@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from .. import audit
 from ..deps import Ctx
-from ..models import Etapa, Material, Operacao, Parametro, Processo, Recurso, RecomendacaoIA
+from ..models import Espaco, Etapa, Material, Operacao, Parametro, Processo, Recurso, RecomendacaoIA
 from .ia.esquemas import EstruturaProposta
 
 
@@ -30,7 +30,22 @@ def aplicar(ctx: Ctx, rec: RecomendacaoIA, est: EstruturaProposta) -> dict:
     recursos = {_chave(r.nome): r for r in ctx.db.scalars(
         select(Recurso).where(Recurso.empresa_id == ctx.empresa_id, Recurso.unidade_id == uid))}
     materiais = {_chave(m.nome) for m in ctx.db.scalars(select(Material).where(Material.empresa_id == ctx.empresa_id))}
-    cont = {"processos": 0, "etapas": 0, "operacoes": 0, "parametros": 0, "recursos": 0, "materiais": 0}
+    espacos = {_chave(e.nome): e for e in ctx.db.scalars(
+        select(Espaco).where(Espaco.empresa_id == ctx.empresa_id, Espaco.unidade_id == uid))}
+    cont = {"processos": 0, "etapas": 0, "operacoes": 0, "parametros": 0, "recursos": 0, "materiais": 0, "espacos": 0}
+
+    def espaco(nome: str | None, tipo: str = "area") -> int | None:
+        if not nome:
+            return None
+        k = _chave(nome)
+        if k not in espacos:
+            e = Espaco(empresa_id=ctx.empresa_id, unidade_id=uid, nome=nome, tipo=tipo, origem="ia")
+            ctx.db.add(e)
+            ctx.db.flush()
+            espacos[k] = e
+            cont["espacos"] += 1
+            ctx.auditar("espaco.criar_por_ia", "espaco", e.id, None, audit.snap(e))
+        return espacos[k].id
 
     def recurso(nome: str, tipo: str = "maquina") -> Recurso:
         k = _chave(nome)
@@ -43,6 +58,8 @@ def aplicar(ctx: Ctx, rec: RecomendacaoIA, est: EstruturaProposta) -> dict:
             ctx.auditar("recurso.criar_por_ia", "recurso", r.id, None, audit.snap(r))
         return recursos[k]
 
+    for e in est.espacos:
+        espaco(e.nome, e.tipo)
     for r in est.recursos:
         recurso(r.nome, r.tipo)
     for m in est.materiais:
@@ -71,7 +88,10 @@ def aplicar(ctx: Ctx, rec: RecomendacaoIA, est: EstruturaProposta) -> dict:
                 op = Operacao(empresa_id=ctx.empresa_id, etapa_id=e.id, sequencia=j, nome=oi.nome,
                               descricao=oi.descricao, formula_tipo=oi.formula_tipo, unidade_medida=oi.unidade_medida,
                               dados_medidos=oi.dados_medidos or ["tempo", "quantidade"],
-                              recurso_padrao_id=recurso(oi.recurso).id if oi.recurso else None)
+                              recurso_padrao_id=recurso(oi.recurso).id if oi.recurso else None,
+                              funcao_requerida=oi.funcao_requerida, num_pessoas=oi.num_pessoas,
+                              espaco_origem_id=espaco(oi.espaco_origem), espaco_destino_id=espaco(oi.espaco_destino),
+                              inicio_marco=oi.inicio_marco, fim_marco=oi.fim_marco)
                 ctx.db.add(op)
                 ctx.db.flush()
                 cont["operacoes"] += 1

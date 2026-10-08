@@ -176,6 +176,19 @@ class Operacao(Base):
     dados_medidos: Mapped[list] = mapped_column(JSON, default=lambda: ["tempo", "quantidade"])
     campos_extras: Mapped[list] = mapped_column(JSON, default=list)
     ergonomia: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Blocos do "lego": mão de obra, espaços e item físico típico
+    funcao_requerida: Mapped[str] = mapped_column(String(120), default="")
+    num_pessoas: Mapped[int] = mapped_column(Integer, default=1)
+    espaco_origem_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
+    espaco_destino_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
+    distancia_m: Mapped[float | None] = mapped_column(Float)  # sobrepõe a tabela de distâncias
+    item_peso_kg: Mapped[float | None] = mapped_column(Float)
+    item_comprimento_m: Mapped[float | None] = mapped_column(Float)
+    item_largura_m: Mapped[float | None] = mapped_column(Float)
+    item_altura_m: Mapped[float | None] = mapped_column(Float)
+    # Padrão de apontamento: quando começa/termina, para que o parâmetro seja medido de forma consistente
+    inicio_marco: Mapped[str] = mapped_column(String(300), default="")
+    fim_marco: Mapped[str] = mapped_column(String(300), default="")
 
     etapa: Mapped[Etapa] = relationship(back_populates="operacoes")
 
@@ -195,6 +208,7 @@ class Recurso(Base):
     equipes_habilitadas: Mapped[list] = mapped_column(JSON, default=list)
     local_posto: Mapped[str] = mapped_column(String(200), default="")
     horas_disponiveis_dia: Mapped[float] = mapped_column(Float, default=8.0)
+    espaco_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
     ultima_manutencao: Mapped[date | None] = mapped_column(Date)
     proxima_manutencao: Mapped[date | None] = mapped_column(Date)
     origem: Mapped[str] = mapped_column(String(20), default="manual")
@@ -236,7 +250,77 @@ class Produto(Base):
     tipo: Mapped[str] = mapped_column(String(20), default="produto")  # produto | servico
     descricao: Mapped[str] = mapped_column(Text, default="")
     caracteristicas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Contorno físico do item (sobrepõe o item típico da operação no cálculo do modelo de tempo)
+    peso_kg: Mapped[float | None] = mapped_column(Float)
+    comprimento_m: Mapped[float | None] = mapped_column(Float)
+    largura_m: Mapped[float | None] = mapped_column(Float)
+    altura_m: Mapped[float | None] = mapped_column(Float)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+# ---------------------------------------------------------------- gêmeo digital
+class Espaco(Base):
+    """Contorno físico: área/posto/estoque onde as atividades acontecem."""
+
+    __tablename__ = "espacos"
+    __table_args__ = (UniqueConstraint("unidade_id", "nome"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    tipo: Mapped[str] = mapped_column(String(30), default="area")  # area | posto | estoque | expedicao
+    comprimento_m: Mapped[float | None] = mapped_column(Float)
+    largura_m: Mapped[float | None] = mapped_column(Float)
+    pe_direito_m: Mapped[float | None] = mapped_column(Float)
+    piso: Mapped[str] = mapped_column(String(80), default="")
+    temperatura_c: Mapped[float | None] = mapped_column(Float)
+    observacoes: Mapped[str] = mapped_column(Text, default="")
+    origem: Mapped[str] = mapped_column(String(20), default="manual")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Distancia(Base):
+    """Distância (m) entre dois espaços. Vale nos dois sentidos."""
+
+    __tablename__ = "distancias"
+    __table_args__ = (UniqueConstraint("origem_id", "destino_id"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    origem_id: Mapped[int] = mapped_column(ForeignKey("espacos.id"))
+    destino_id: Mapped[int] = mapped_column(ForeignKey("espacos.id"))
+    metros: Mapped[float] = mapped_column(Float)
+
+
+class ModeloTempo(Base):
+    """Modelo de tempo de uma operação: elementos com fórmulas de vocabulário FECHADO.
+
+    A IA propõe os elementos e coeficientes; o sistema calcula (sem executar código da IA).
+    Cada nova geração cria uma versão; a ativa é a mais recente não rejeitada.
+    """
+
+    __tablename__ = "modelos_tempo"
+    __table_args__ = (Index("ix_modelo_op", "empresa_id", "operacao_id"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    operacao_id: Mapped[int] = mapped_column(ForeignKey("operacoes.id"))
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    elementos: Mapped[list] = mapped_column(JSON, default=list)
+    fator_ambiente: Mapped[float] = mapped_column(Float, default=1.0)
+    premissas: Mapped[list] = mapped_column(JSON, default=list)
+    dados_faltantes: Mapped[list] = mapped_column(JSON, default=list)
+    padrao_apontamento: Mapped[dict] = mapped_column(JSON, default=dict)
+    confianca: Mapped[str] = mapped_column(String(10), default="baixa")  # baixa | media | alta
+    justificativa: Mapped[str] = mapped_column(Text, default="")
+    origem: Mapped[str] = mapped_column(String(20), default="ia")  # ia | manual
+    provedor: Mapped[str] = mapped_column(String(80), default="")
+    status_validacao: Mapped[str] = mapped_column(String(20), default="pendente")
+    contexto: Mapped[dict] = mapped_column(JSON, default=dict)  # retrato do contorno físico usado pela IA
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 # ---------------------------------------------------------------- parâmetros
@@ -316,6 +400,8 @@ class OrdemOperacao(Base):
     tempo_exec_est_min: Mapped[float | None] = mapped_column(Float)
     fonte_estimativa: Mapped[str] = mapped_column(String(20), default="sem_base")
     amostras: Mapped[int] = mapped_column(Integer, default=0)
+    detalhe_estimativa: Mapped[list | None] = mapped_column(JSON)  # elementos do modelo, em minutos
+    estimativa_validada: Mapped[bool] = mapped_column(Boolean, default=True)
     opcional: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="pendente")
     iniciada_em: Mapped[datetime | None] = mapped_column(UTCDateTime)

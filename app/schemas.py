@@ -210,6 +210,17 @@ class OperacaoIn(In):
         default_factory=lambda: ["tempo", "quantidade"], max_length=30)
     campos_extras: list[CampoExtra] = Field(default_factory=list, max_length=30)
     ergonomia: Ergonomia = Field(default_factory=Ergonomia)
+    funcao_requerida: Annotated[str, Field(max_length=120)] = ""
+    num_pessoas: int = Field(1, ge=1, le=50)
+    espaco_origem_id: int | None = None
+    espaco_destino_id: int | None = None
+    distancia_m: float | None = Field(None, ge=0, le=100000)
+    item_peso_kg: float | None = Field(None, ge=0, le=100000)
+    item_comprimento_m: float | None = Field(None, ge=0, le=1000)
+    item_largura_m: float | None = Field(None, ge=0, le=1000)
+    item_altura_m: float | None = Field(None, ge=0, le=1000)
+    inicio_marco: Curto = ""
+    fim_marco: Curto = ""
 
 
 class OperacaoUpdate(In):
@@ -222,6 +233,17 @@ class OperacaoUpdate(In):
     dados_medidos: list[Annotated[str, Field(max_length=40)]] | None = Field(None, max_length=30)
     campos_extras: list[CampoExtra] | None = Field(None, max_length=30)
     ergonomia: Ergonomia | None = None
+    funcao_requerida: Annotated[str, Field(max_length=120)] | None = None
+    num_pessoas: int | None = Field(None, ge=1, le=50)
+    espaco_origem_id: int | None = None
+    espaco_destino_id: int | None = None
+    distancia_m: float | None = Field(None, ge=0, le=100000)
+    item_peso_kg: float | None = Field(None, ge=0, le=100000)
+    item_comprimento_m: float | None = Field(None, ge=0, le=1000)
+    item_largura_m: float | None = Field(None, ge=0, le=1000)
+    item_altura_m: float | None = Field(None, ge=0, le=1000)
+    inicio_marco: Curto | None = None
+    fim_marco: Curto | None = None
 
 
 class OperacaoOut(Out):
@@ -237,6 +259,17 @@ class OperacaoOut(Out):
     campos_extras: list
     ergonomia: dict
     alerta_ergonomia: bool = False
+    funcao_requerida: str = ""
+    num_pessoas: int = 1
+    espaco_origem_id: int | None = None
+    espaco_destino_id: int | None = None
+    distancia_m: float | None = None
+    item_peso_kg: float | None = None
+    item_comprimento_m: float | None = None
+    item_largura_m: float | None = None
+    item_altura_m: float | None = None
+    inicio_marco: str = ""
+    fim_marco: str = ""
 
 
 class EtapaOut(Out):
@@ -312,6 +345,7 @@ class RecursoIn(In):
     equipes_habilitadas: list[Curto] = Field(default_factory=list, max_length=50)
     local_posto: Curto = ""
     horas_disponiveis_dia: float = Field(8.0, gt=0, le=24)
+    espaco_id: int | None = None
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
 
@@ -325,6 +359,7 @@ class RecursoUpdate(In):
     equipes_habilitadas: list[Curto] | None = Field(None, max_length=50)
     local_posto: Curto | None = None
     horas_disponiveis_dia: float | None = Field(None, gt=0, le=24)
+    espaco_id: int | None = None
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
     ativo: bool | None = None
@@ -341,6 +376,7 @@ class RecursoOut(Out):
     equipes_habilitadas: list
     local_posto: str
     horas_disponiveis_dia: float
+    espaco_id: int | None = None
     ultima_manutencao: date | None
     proxima_manutencao: date | None
     origem: str
@@ -408,6 +444,10 @@ class ProdutoIn(In):
     tipo: Literal["produto", "servico"] = "produto"
     descricao: Texto = ""
     caracteristicas: dict[str, Any] = Field(default_factory=dict)
+    peso_kg: float | None = Field(None, ge=0, le=100000)
+    comprimento_m: float | None = Field(None, ge=0, le=1000)
+    largura_m: float | None = Field(None, ge=0, le=1000)
+    altura_m: float | None = Field(None, ge=0, le=1000)
 
 
 class ProdutoUpdate(In):
@@ -415,6 +455,10 @@ class ProdutoUpdate(In):
     tipo: Literal["produto", "servico"] | None = None
     descricao: Texto | None = None
     caracteristicas: dict[str, Any] | None = None
+    peso_kg: float | None = Field(None, ge=0, le=100000)
+    comprimento_m: float | None = Field(None, ge=0, le=1000)
+    largura_m: float | None = Field(None, ge=0, le=1000)
+    altura_m: float | None = Field(None, ge=0, le=1000)
     ativo: bool | None = None
 
 
@@ -424,7 +468,102 @@ class ProdutoOut(Out):
     tipo: str
     descricao: str
     caracteristicas: dict
+    peso_kg: float | None = None
+    comprimento_m: float | None = None
+    largura_m: float | None = None
+    altura_m: float | None = None
     ativo: bool
+
+
+# ------------------------------------------------------------------ gêmeo digital
+class EspacoIn(In):
+    unidade_id: int
+    nome: Nome
+    tipo: Literal["area", "posto", "estoque", "expedicao"] = "area"
+    comprimento_m: float | None = Field(None, gt=0, le=10000)
+    largura_m: float | None = Field(None, gt=0, le=10000)
+    pe_direito_m: float | None = Field(None, gt=0, le=100)
+    piso: Annotated[str, Field(max_length=80)] = ""
+    temperatura_c: float | None = Field(None, ge=-60, le=80)
+    observacoes: Texto = ""
+
+
+class EspacoUpdate(In):
+    nome: Nome | None = None
+    tipo: Literal["area", "posto", "estoque", "expedicao"] | None = None
+    comprimento_m: float | None = Field(None, gt=0, le=10000)
+    largura_m: float | None = Field(None, gt=0, le=10000)
+    pe_direito_m: float | None = Field(None, gt=0, le=100)
+    piso: Annotated[str, Field(max_length=80)] | None = None
+    temperatura_c: float | None = Field(None, ge=-60, le=80)
+    observacoes: Texto | None = None
+    ativo: bool | None = None
+
+
+class EspacoOut(Out):
+    id: int
+    unidade_id: int
+    nome: str
+    tipo: str
+    comprimento_m: float | None
+    largura_m: float | None
+    pe_direito_m: float | None
+    piso: str
+    temperatura_c: float | None
+    observacoes: str
+    origem: str
+    ativo: bool
+
+
+class DistanciaIn(In):
+    origem_id: int
+    destino_id: int
+    metros: float = Field(ge=0, le=100000)
+
+
+class DistanciaOut(Out):
+    id: int
+    unidade_id: int
+    origem_id: int
+    destino_id: int
+    metros: float
+
+
+class ModeloTempoOut(Out):
+    id: int
+    operacao_id: int
+    versao: int
+    elementos: list
+    fator_ambiente: float
+    premissas: list
+    dados_faltantes: list
+    padrao_apontamento: dict
+    confianca: str
+    justificativa: str
+    origem: str
+    provedor: str
+    status_validacao: str
+    criado_em: datetime
+    validado_em: datetime | None
+    aviso: str = "Estimativa gerada por IA: não é um fato. Compare com medições e valide."
+
+
+class ModeloTempoManualIn(In):
+    elementos: list[dict[str, Any]] = Field(max_length=15)
+    fator_ambiente: float = Field(1.0, ge=0.5, le=3.0)
+    premissas: list[Curto] = Field(default_factory=list, max_length=20)
+    justificativa: Texto = ""
+
+
+class EstimativaOut(BaseModel):
+    fonte: str
+    validada: bool
+    quantidade: float
+    preparacao_min: float | None
+    execucao_min: float | None
+    total_min: float | None
+    elementos: list | None = None
+    avisos: list[str] = []
 
 
 # ------------------------------------------------------------------ ordens
@@ -471,6 +610,8 @@ class OrdemOperacaoOut(Out):
     tempo_exec_est_min: float | None
     fonte_estimativa: str
     amostras: int
+    detalhe_estimativa: list | None = None
+    estimativa_validada: bool = True
     opcional: bool
     status: str
     iniciada_em: datetime | None
@@ -603,9 +744,10 @@ class OcorrenciaOut(Out):
 # ------------------------------------------------------------------ IA
 class AnaliseIn(In):
     tipo: Literal["analise_desvio", "analise_gargalo", "relatorio_gestor",
-                  "indicadores_sugeridos", "processos_semelhantes"]
+                  "indicadores_sugeridos", "processos_semelhantes", "revisao_processo"]
     unidade_id: int
     ordem_id: int | None = None
+    processo_id: int | None = None
     de: date | None = None
     ate: date | None = None
 

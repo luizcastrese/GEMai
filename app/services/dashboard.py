@@ -77,6 +77,7 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
     tend: dict[date, dict] = defaultdict(lambda: {"est": 0.0, "real": 0.0, "paradas_min": 0.0,
                                                   "boa": 0.0, "refugo": 0.0, "ordens": 0})
     est_tot = real_tot = 0.0
+    acur: dict[str, dict] = defaultdict(lambda: {"n": 0, "sinal": 0.0, "abs": 0.0})
     for o in ordens_ativas:
         for m in mets[o.id]:
             e = por_etapa[m["etapa"]]
@@ -94,6 +95,12 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
                 d["execucoes"] += 1
                 est_tot += m["estimado_min"]
                 real_tot += m["realizado_min"]
+                if m["estimado_min"] > 0:
+                    erro = (m["realizado_min"] - m["estimado_min"]) / m["estimado_min"] * 100
+                    a = acur[m["fonte_estimativa"]]
+                    a["n"] += 1
+                    a["sinal"] += erro
+                    a["abs"] += abs(erro)
                 sem = ce.astimezone(tz).date()
                 sem -= timedelta(days=sem.weekday())
                 tend[sem]["est"] += m["estimado_min"]
@@ -211,6 +218,9 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
             "eficiencia_pct": timecalc.arred(timecalc.eficiencia(est_tot, real_tot)),
             "maiores_desvios": comparativo[:10],
         },
+        "acuracia_por_fonte": [
+            {"fonte": f, "operacoes": a["n"], "desvio_medio_pct": timecalc.arred(a["sinal"] / a["n"]),
+             "erro_absoluto_medio_pct": timecalc.arred(a["abs"] / a["n"])} for f, a in sorted(acur.items())],
         "gargalos": gargalos[:10],
         "paradas": {"total_min": timecalc.arred(sum(p["duracao_min"] for p in paradas_l)),
                     "por_causa": paradas_l[:10]},

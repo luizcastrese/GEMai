@@ -15,7 +15,7 @@ from ..deps import Ctx, get_ctx, requer_gestor
 from ..models import Etapa, Operacao, Ordem, Processo, RecomendacaoIA
 from ..ratelimit import limite_ia
 from ..schemas import AnaliseIn, DecisaoIn, RecomendacaoEditIn, RecomendacaoOut
-from ..services import dashboard, estruturacao, ia, metricas
+from ..services import dashboard, estruturacao, ia, metricas, prontidao
 from ..services.ia.esquemas import EstruturaProposta, sanear_estrutura
 
 router = APIRouter(tags=["ia"])
@@ -134,6 +134,14 @@ def analisar(dados: AnaliseIn, ctx: Ctx = Depends(requer_gestor)):
         fatos = dashboard.calcular(ctx.db, ctx.empresa, [uni.id], de, ate)
         titulo = ("Possíveis gargalos" if dados.tipo == "analise_gargalo" else "Relatório do gestor") + \
                  f" – {uni.nome} ({de:%d/%m} a {ate:%d/%m})"
+    elif dados.tipo == "revisao_processo":
+        if not dados.processo_id:
+            raise HTTPException(422, "Informe processo_id.")
+        proc = ctx.obter(Processo, dados.processo_id)
+        if proc.unidade_id != uni.id:
+            raise HTTPException(404, "Registro não encontrado.")
+        fatos = {"processo": proc.nome, "prontidao": prontidao.avaliar(ctx.db, ctx.empresa_id, proc)}
+        alvo_tipo, alvo_id, titulo = "processo", proc.id, f"Revisão de prontidão – {proc.nome} v{proc.versao}"
     elif dados.tipo == "indicadores_sugeridos":
         fatos = {"segmento": ctx.empresa.segmento, "descricao": uni.descricao_operacao,
                  "problemas": uni.principais_problemas, "objetivo": uni.objetivo}

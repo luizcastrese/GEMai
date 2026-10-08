@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from .. import audit
 from ..constants import PARAMETROS_PADRAO
 from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Etapa, Operacao, Parametro, Processo, Recurso
+from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
 from ..services import estimativa, timecalc
@@ -65,6 +65,14 @@ def _recurso_da_unidade(ctx: Ctx, recurso_id: int | None, unidade_id: int) -> No
     r = ctx.db.get(Recurso, recurso_id)
     if not r or r.empresa_id != ctx.empresa_id or r.unidade_id != unidade_id:
         raise HTTPException(422, "Recurso inválido para esta unidade.")
+
+
+def _espacos_da_unidade(ctx: Ctx, campos: dict, unidade_id: int) -> None:
+    for k in ("espaco_origem_id", "espaco_destino_id"):
+        if campos.get(k) is not None:
+            e = ctx.db.get(Espaco, campos[k])
+            if not e or e.empresa_id != ctx.empresa_id or e.unidade_id != unidade_id:
+                raise HTTPException(422, "Espaço inválido para esta unidade.")
 
 
 def _etapa(ctx: Ctx, eid: int) -> tuple[Etapa, Processo]:
@@ -150,9 +158,24 @@ def nova_versao(pid: int, ctx: Ctx = Depends(requer_gestor)):
             nop = Operacao(empresa_id=ctx.empresa_id, etapa_id=ne.id, sequencia=op.sequencia, nome=op.nome,
                            descricao=op.descricao, formula_tipo=op.formula_tipo, unidade_medida=op.unidade_medida,
                            recurso_padrao_id=op.recurso_padrao_id, dados_medidos=list(op.dados_medidos),
-                           campos_extras=list(op.campos_extras), ergonomia=dict(op.ergonomia))
+                           campos_extras=list(op.campos_extras), ergonomia=dict(op.ergonomia),
+                           funcao_requerida=op.funcao_requerida, num_pessoas=op.num_pessoas,
+                           espaco_origem_id=op.espaco_origem_id, espaco_destino_id=op.espaco_destino_id,
+                           distancia_m=op.distancia_m, item_peso_kg=op.item_peso_kg,
+                           item_comprimento_m=op.item_comprimento_m, item_largura_m=op.item_largura_m,
+                           item_altura_m=op.item_altura_m, inicio_marco=op.inicio_marco, fim_marco=op.fim_marco)
             ctx.db.add(nop)
             ctx.db.flush()
+            from ..services.modelo_tempo import modelo_ativo
+            mt = modelo_ativo(ctx.db, ctx.empresa_id, op.id)
+            if mt:
+                ctx.db.add(ModeloTempo(
+                    empresa_id=ctx.empresa_id, unidade_id=novo.unidade_id, operacao_id=nop.id, versao=1,
+                    elementos=list(mt.elementos), fator_ambiente=mt.fator_ambiente, premissas=list(mt.premissas),
+                    dados_faltantes=list(mt.dados_faltantes), padrao_apontamento=dict(mt.padrao_apontamento),
+                    confianca=mt.confianca, justificativa=mt.justificativa, origem=mt.origem, provedor=mt.provedor,
+                    status_validacao=mt.status_validacao, contexto=dict(mt.contexto), criado_por=ctx.usuario.id,
+                    validado_por=mt.validado_por, validado_em=mt.validado_em))
             for pr in estimativa.parametros_vigentes(ctx.db, ctx.empresa_id, "operacao", op.id).values():
                 ctx.db.add(Parametro(
                     empresa_id=ctx.empresa_id, unidade_id=novo.unidade_id, escopo_tipo="operacao",
@@ -265,6 +288,7 @@ def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(requer_gestor
     _rascunho(p)
     campos = _campos_operacao(dados)
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
+    _espacos_da_unidade(ctx, campos, p.unidade_id)
     seq = campos.pop("sequencia", None)
     op = Operacao(empresa_id=ctx.empresa_id, etapa_id=e.id, sequencia=0, **campos)
     ctx.db.add(op)
@@ -282,10 +306,13 @@ def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(reque
     _rascunho(p)
     campos = _campos_operacao(dados)
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
+    _espacos_da_unidade(ctx, campos, p.unidade_id)
     antes = audit.snap(op)
     seq = campos.pop("sequencia", None)
+    anulaveis = ("recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
+                 "item_comprimento_m", "item_largura_m", "item_altura_m")
     for k, v in campos.items():
-        if v is not None or k == "recurso_padrao_id":
+        if v is not None or k in anulaveis:
             setattr(op, k, v)
     if seq is not None:
         _renumerar(list(e.operacoes), mover=op, para=seq)

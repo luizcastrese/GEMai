@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 
 from .. import audit
 from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Apontamento, Material, Pessoa, Produto, Recurso, Usuario
-from ..schemas import (MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
+from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, Produto, Recurso, Usuario
+from ..schemas import (DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
                        ProdutoIn, ProdutoOut, ProdutoUpdate, RecursoIn, RecursoOut, RecursoUpdate)
 from ..services import timecalc
 
@@ -121,8 +121,50 @@ def _validar_pessoa(ctx: Ctx, campos: dict):
             raise HTTPException(422, "Usuário inválido.")
 
 
+def _validar_recurso(ctx: Ctx, campos: dict):
+    eid = campos.get("espaco_id")
+    if eid is not None:
+        e = ctx.db.get(Espaco, eid)
+        if not e or e.empresa_id != ctx.empresa_id:
+            raise HTTPException(422, "Espaço inválido.")
+        if campos.get("unidade_id") is not None and e.unidade_id != campos["unidade_id"]:
+            raise HTTPException(422, "O espaço pertence a outra unidade.")
+
+
 crud("recursos", Recurso, RecursoIn, RecursoUpdate, RecursoOut, "recurso", por_unidade=True,
-     pos_leitura=_medias_recursos)
+     pos_leitura=_medias_recursos, validar=_validar_recurso)
+crud("espacos", Espaco, EspacoIn, EspacoUpdate, EspacoOut, "espaco", por_unidade=True)
 crud("pessoas", Pessoa, PessoaIn, PessoaUpdate, PessoaOut, "pessoa", por_unidade=True, validar=_validar_pessoa)
 crud("materiais", Material, MaterialIn, MaterialUpdate, MaterialOut, "material", por_unidade=False)
 crud("produtos", Produto, ProdutoIn, ProdutoUpdate, ProdutoOut, "produto", por_unidade=False)
+
+
+# ---------------------------------------------------------------- distâncias entre espaços
+@router.get("/distancias", response_model=list[DistanciaOut])
+def listar_distancias(unidade_id: int, ctx: Ctx = Depends(get_ctx)):
+    ctx.exige_unidade(unidade_id)
+    return ctx.db.scalars(ctx.query(Distancia).where(Distancia.unidade_id == unidade_id)).all()
+
+
+@router.put("/distancias", response_model=DistanciaOut)
+def definir_distancia(dados: DistanciaIn, ctx: Ctx = Depends(requer_gestor)):
+    """Cria ou atualiza a distância entre dois espaços da mesma unidade (vale nos dois sentidos)."""
+    if dados.origem_id == dados.destino_id:
+        raise HTTPException(422, "Origem e destino devem ser diferentes.")
+    o, d = ctx.obter(Espaco, dados.origem_id), ctx.obter(Espaco, dados.destino_id)
+    if o.unidade_id != d.unidade_id:
+        raise HTTPException(422, "Os espaços pertencem a unidades diferentes.")
+    a, b = sorted((o.id, d.id))
+    existente = ctx.db.scalar(select(Distancia).where(Distancia.empresa_id == ctx.empresa_id,
+                                                      Distancia.origem_id == a, Distancia.destino_id == b))
+    antes = audit.snap(existente) if existente else None
+    if existente:
+        existente.metros = dados.metros
+        obj = existente
+    else:
+        obj = Distancia(empresa_id=ctx.empresa_id, unidade_id=o.unidade_id, origem_id=a, destino_id=b, metros=dados.metros)
+        ctx.db.add(obj)
+    ctx.db.flush()
+    ctx.auditar("distancia.definir", "distancia", obj.id, antes, audit.snap(obj))
+    ctx.db.commit()
+    return obj

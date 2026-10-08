@@ -12,6 +12,7 @@ import json
 import anthropic
 
 from ...config import get_settings
+from ..modelo_tempo import ModeloTempoIA
 from .esquemas import AnaliseTexto, EstruturaProposta, ListaPerguntas
 
 NOME = "claude"
@@ -72,12 +73,27 @@ def estruturar(ctx: dict) -> EstruturaProposta:
         ctx, EstruturaProposta)
 
 
+def modelar(ctx: dict) -> ModeloTempoIA:
+    return _chamar(
+        "Monte o MODELO DE TEMPO desta operação a partir do contorno físico recebido (equipamento, espaços, distâncias, "
+        "peso e dimensões do item, mão de obra, ergonomia). Decomponha em elementos usando SOMENTE estes métodos: "
+        "'fixo' (a_min, opcionalmente por_unidade); 'linear_driver' (t=(a_min + b_min·driver), driver em peso_kg, area_m2, "
+        "comprimento_m, volume_m3, distancia_m; por_unidade multiplica pela quantidade); 'deslocamento' (usa a distância entre "
+        "os espaços; informe velocidade_m_min, itens_por_viagem e ida_e_volta); 'capacidade_recurso' (usa a capacidade do "
+        "equipamento). Tipos: preparacao, deslocamento, manuseio, processamento, inspecao, espera_fixa, outro. O sistema fará "
+        "a conta. Use apenas valores presentes nos dados; se precisar de um coeficiente de referência (ex.: velocidade de "
+        "caminhada), declare-o em 'premissas'. NÃO crie elemento para algo cujo dado falte: liste em 'dados_faltantes'. "
+        "Defina também os marcos de início e fim do apontamento e a unidade de contagem, para que o tempo medido seja "
+        "comparável ao modelo. Informe a confiança (baixa/media/alta) com honestidade e justifique em português.", ctx, ModeloTempoIA)
+
+
 def analisar(tipo: str, fatos: dict) -> AnaliseTexto:
     instrucoes = {
         "analise_desvio": "Explique os desvios entre planejado e realizado desta ordem usando APENAS os fatos recebidos.",
         "analise_gargalo": "Identifique possíveis gargalos a partir das esperas e ocupações recebidas.",
         "relatorio_gestor": "Escreva um relatório curto, em linguagem simples, para o gestor, a partir dos indicadores.",
         "indicadores_sugeridos": "Sugira indicadores adequados ao perfil desta operação.",
+        "revisao_processo": "Revise o processo e aponte COMO ele deve ser descrito e medido para que os parâmetros de tempo fiquem consistentes (marcos de início/fim, unidade de contagem, dados físicos, mão de obra, equipamento, etapas que poderiam ser paralelas), a partir das pendências recebidas.",
         "processos_semelhantes": "Comente os pares de operações semelhantes recebidos e se vale padronizá-los.",
     }
     return _chamar(instrucoes[tipo] + " Apresente hipóteses como hipóteses e cite a evidência de cada ponto.",

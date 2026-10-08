@@ -58,6 +58,7 @@ def metricas_operacoes(db: Session, ordens: list[Ordem]) -> dict[int, list[dict]
             linhas.append({
                 "ordem_operacao_id": oo.id, "sequencia": oo.sequencia, "etapa": oo.etapa_nome,
                 "operacao": oo.nome, "status": oo.status, "fonte_estimativa": oo.fonte_estimativa,
+                "estimativa_validada": oo.estimativa_validada, "elementos_modelo": oo.detalhe_estimativa,
                 "estimado_min": est, "realizado_min": realizado, **{f"{k}_min": v for k, v in soma.items()},
                 "espera_fila_min": fila, "qtd_boa": boa, "qtd_refugo": refugo,
                 "desvio_min": timecalc.desvio(realizado, est) if aps else None,

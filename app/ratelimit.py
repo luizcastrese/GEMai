@@ -41,4 +41,4 @@ def ip_cliente(request: Request) -> str:
 
 limite_login = RateLimiter(maximo=20, janela_s=60)
 limite_cadastro = RateLimiter(maximo=5, janela_s=3600)
-limite_ia = RateLimiter(maximo=30, janela_s=3600)
+limite_ia = RateLimiter(maximo=120, janela_s=3600)

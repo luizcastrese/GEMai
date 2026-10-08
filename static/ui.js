@@ -89,7 +89,7 @@ const STATUS = {
   validado: ['b-ok', 'Validado'],
 };
 export const statusBadge = (s) => badge((STATUS[s] || ['', s])[1], (STATUS[s] || [''])[0]);
-const FONTE = { historico: ['b-ok', 'Histórico'], parametro: ['b-pri', 'Parâmetro'], sem_base: ['b-warn', 'Sem base'] };
+const FONTE = { historico: ['b-ok', 'Histórico'], parametro: ['b-pri', 'Parâmetro'], modelo_ia: ['b-ia', 'Modelo IA'], sem_base: ['b-warn', 'Sem base'] };
 export const fonteBadge = (f) => badge((FONTE[f] || ['', f])[1], (FONTE[f] || [''])[0]);
 const ORIGEM = { informado: ['', 'Informado'], medido: ['b-ok', 'Medido'], calculado: ['b-pri', 'Calculado'], ia_sugerido: ['b-ia', 'Sugestão IA'] };
 export const origemBadge = (o) => badge((ORIGEM[o] || ['', o])[1], (ORIGEM[o] || [''])[0]);

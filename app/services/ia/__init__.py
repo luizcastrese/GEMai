@@ -9,6 +9,7 @@ import logging
 
 from ...config import get_settings
 from ...models import Empresa
+from ..modelo_tempo import ModeloTempoIA, sanear_modelo
 from . import claude, heuristica
 from .esquemas import (AnaliseTexto, EstruturaProposta, ListaPerguntas, PerguntaIA,
                        sanear_analise, sanear_estrutura, sanear_perguntas)
@@ -50,3 +51,8 @@ def estruturar(empresa: Empresa, ctx: dict) -> tuple[EstruturaProposta, str, str
 def analisar(empresa: Empresa, tipo: str, fatos: dict) -> tuple[AnaliseTexto, str, str]:
     r, prov, aviso = _executar(empresa, "analisar", tipo, fatos)
     return sanear_analise(r), prov, aviso
+
+
+def modelar_tempo(empresa: Empresa, ctx: dict) -> tuple[ModeloTempoIA, str, str]:
+    r, prov, aviso = _executar(empresa, "modelar", ctx)
+    return sanear_modelo(r), prov, aviso
