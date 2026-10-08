@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from .. import audit
 from ..constants import PARAMETROS_PADRAO
 from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, Processo, Recurso
+from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
 from ..services import estimativa, timecalc
@@ -73,6 +73,14 @@ def _espacos_da_unidade(ctx: Ctx, campos: dict, unidade_id: int) -> None:
             e = ctx.db.get(Espaco, campos[k])
             if not e or e.empresa_id != ctx.empresa_id or e.unidade_id != unidade_id:
                 raise HTTPException(422, "Espaço inválido para esta unidade.")
+
+
+def _perfil_da_unidade(ctx: Ctx, campos: dict, unidade_id: int) -> None:
+    pid = campos.get("perfil_id")
+    if pid is not None:
+        pf = ctx.db.get(PerfilMaoDeObra, pid)
+        if not pf or pf.empresa_id != ctx.empresa_id or pf.unidade_id != unidade_id:
+            raise HTTPException(422, "Perfil de mão de obra inválido para esta unidade.")
 
 
 def _etapa(ctx: Ctx, eid: int) -> tuple[Etapa, Processo]:
@@ -163,7 +171,10 @@ def nova_versao(pid: int, ctx: Ctx = Depends(requer_gestor)):
                            espaco_origem_id=op.espaco_origem_id, espaco_destino_id=op.espaco_destino_id,
                            distancia_m=op.distancia_m, item_peso_kg=op.item_peso_kg,
                            item_comprimento_m=op.item_comprimento_m, item_largura_m=op.item_largura_m,
-                           item_altura_m=op.item_altura_m, inicio_marco=op.inicio_marco, fim_marco=op.fim_marco)
+                           item_altura_m=op.item_altura_m, inicio_marco=op.inicio_marco, fim_marco=op.fim_marco,
+                           perfil_id=op.perfil_id, tipo_movimento=op.tipo_movimento, postura_trabalho=op.postura_trabalho,
+                           altura_trabalho_m=op.altura_trabalho_m, gasto_energetico_kcal_min=op.gasto_energetico_kcal_min,
+                           levantamento=dict(op.levantamento) if op.levantamento else None)
             ctx.db.add(nop)
             ctx.db.flush()
             from ..services.modelo_tempo import modelo_ativo
@@ -172,6 +183,7 @@ def nova_versao(pid: int, ctx: Ctx = Depends(requer_gestor)):
                 ctx.db.add(ModeloTempo(
                     empresa_id=ctx.empresa_id, unidade_id=novo.unidade_id, operacao_id=nop.id, versao=1,
                     elementos=list(mt.elementos), fator_ambiente=mt.fator_ambiente, premissas=list(mt.premissas),
+                    ritmo_pct=mt.ritmo_pct, tolerancias=list(mt.tolerancias),
                     dados_faltantes=list(mt.dados_faltantes), padrao_apontamento=dict(mt.padrao_apontamento),
                     confianca=mt.confianca, justificativa=mt.justificativa, origem=mt.origem, provedor=mt.provedor,
                     status_validacao=mt.status_validacao, contexto=dict(mt.contexto), criado_por=ctx.usuario.id,
@@ -277,6 +289,8 @@ def _campos_operacao(dados) -> dict:
     campos = dados.model_dump(exclude_unset=True)
     if "ergonomia" in campos and dados.ergonomia is not None:
         campos["ergonomia"] = dados.ergonomia.model_dump(exclude_none=True)
+    if "levantamento" in campos and dados.levantamento is not None:
+        campos["levantamento"] = dados.levantamento.model_dump(exclude_none=True)
     if "campos_extras" in campos and dados.campos_extras is not None:
         campos["campos_extras"] = [c.model_dump() for c in dados.campos_extras]
     return campos
@@ -289,6 +303,7 @@ def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(requer_gestor
     campos = _campos_operacao(dados)
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
     _espacos_da_unidade(ctx, campos, p.unidade_id)
+    _perfil_da_unidade(ctx, campos, p.unidade_id)
     seq = campos.pop("sequencia", None)
     op = Operacao(empresa_id=ctx.empresa_id, etapa_id=e.id, sequencia=0, **campos)
     ctx.db.add(op)
@@ -307,10 +322,12 @@ def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(reque
     campos = _campos_operacao(dados)
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
     _espacos_da_unidade(ctx, campos, p.unidade_id)
+    _perfil_da_unidade(ctx, campos, p.unidade_id)
     antes = audit.snap(op)
     seq = campos.pop("sequencia", None)
     anulaveis = ("recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
-                 "item_comprimento_m", "item_largura_m", "item_altura_m")
+                 "item_comprimento_m", "item_largura_m", "item_altura_m", "perfil_id", "altura_trabalho_m",
+                 "gasto_energetico_kcal_min", "levantamento")
     for k, v in campos.items():
         if v is not None or k in anulaveis:
             setattr(op, k, v)

@@ -189,6 +189,13 @@ class Operacao(Base):
     # Padrão de apontamento: quando começa/termina, para que o parâmetro seja medido de forma consistente
     inicio_marco: Mapped[str] = mapped_column(String(300), default="")
     fim_marco: Mapped[str] = mapped_column(String(300), default="")
+    # Fatores humanos e de carga (engenharia de métodos / ergonomia)
+    perfil_id: Mapped[int | None] = mapped_column(ForeignKey("perfis_mao_de_obra.id"))
+    tipo_movimento: Mapped[str] = mapped_column(String(40), default="")
+    postura_trabalho: Mapped[str] = mapped_column(String(20), default="")
+    altura_trabalho_m: Mapped[float | None] = mapped_column(Float)
+    gasto_energetico_kcal_min: Mapped[float | None] = mapped_column(Float)
+    levantamento: Mapped[dict | None] = mapped_column(JSON)  # entradas da equação do NIOSH
 
     etapa: Mapped[Etapa] = relationship(back_populates="operacoes")
 
@@ -259,6 +266,31 @@ class Produto(Base):
 
 
 # ---------------------------------------------------------------- gêmeo digital
+class PerfilMaoDeObra(Base):
+    """Perfil de REFERÊNCIA da mão de obra (não é uma pessoa).
+
+    Sexo, estatura e peso corporal servem a limites de carga e conferências ergonômicas — não são
+    multiplicadores de produtividade. O ritmo é calibrado por medição, nunca deduzido do sexo.
+    """
+
+    __tablename__ = "perfis_mao_de_obra"
+    __table_args__ = (UniqueConstraint("unidade_id", "nome"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    sexo: Mapped[str] = mapped_column(String(20), default="nao_informado")  # feminino|masculino|misto|nao_informado
+    estatura_cm: Mapped[float | None] = mapped_column(Float)
+    peso_corporal_kg: Mapped[float | None] = mapped_column(Float)
+    altura_cotovelo_cm: Mapped[float | None] = mapped_column(Float)
+    faixa_etaria: Mapped[str] = mapped_column(String(20), default="adulto")  # adulto | menor_18
+    experiencia: Mapped[str] = mapped_column(String(20), default="intermediario")
+    ritmo_pct: Mapped[float] = mapped_column(Float, default=100.0)  # 100 = ritmo normal (avaliação de ritmo)
+    limite_energetico_kcal_min: Mapped[float | None] = mapped_column(Float)  # limite adotado p/ Murrell (informado)
+    observacoes: Mapped[str] = mapped_column(Text, default="")
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Espaco(Base):
     """Contorno físico: área/posto/estoque onde as atividades acontecem."""
 
@@ -274,6 +306,9 @@ class Espaco(Base):
     pe_direito_m: Mapped[float | None] = mapped_column(Float)
     piso: Mapped[str] = mapped_column(String(80), default="")
     temperatura_c: Mapped[float | None] = mapped_column(Float)
+    umidade_pct: Mapped[float | None] = mapped_column(Float)
+    ruido_db: Mapped[float | None] = mapped_column(Float)
+    iluminancia_lux: Mapped[float | None] = mapped_column(Float)
     observacoes: Mapped[str] = mapped_column(Text, default="")
     origem: Mapped[str] = mapped_column(String(20), default="manual")
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -308,6 +343,8 @@ class ModeloTempo(Base):
     versao: Mapped[int] = mapped_column(Integer, default=1)
     elementos: Mapped[list] = mapped_column(JSON, default=list)
     fator_ambiente: Mapped[float] = mapped_column(Float, default=1.0)
+    ritmo_pct: Mapped[float] = mapped_column(Float, default=100.0)
+    tolerancias: Mapped[list] = mapped_column(JSON, default=list)  # [{categoria, percentual, justificativa, fonte}]
     premissas: Mapped[list] = mapped_column(JSON, default=list)
     dados_faltantes: Mapped[list] = mapped_column(JSON, default=list)
     padrao_apontamento: Mapped[dict] = mapped_column(JSON, default=dict)

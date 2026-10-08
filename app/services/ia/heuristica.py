@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from ..modelo_tempo import REFERENCIAS, ElementoTempo, ModeloTempoIA
+from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
 from .esquemas import (AnaliseTexto, EstruturaProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
@@ -184,12 +184,15 @@ def estruturar(ctx: dict) -> EstruturaProposta:
 
 
 def modelar(ctx: dict) -> ModeloTempoIA:
-    """Modelo de tempo por regras e referências genéricas (confiança baixa). Nunca chuta o que falta:
-    lista o dado do contorno físico necessário para o cálculo ficar consistente."""
+    """Modelo de tempo por regras e referências declaradas (confiança baixa). Nunca chuta o que falta:
+    lista o dado do contorno físico necessário. Sexo/estatura/peso corporal NÃO alteram o tempo; o perfil
+    contribui com o ritmo (calibrado) e com limites de carga/ergonomia calculados pelo sistema."""
     op, rec, item = ctx["operacao"], ctx.get("recurso"), ctx.get("item", {})
     org, dst, dist = ctx.get("espaco_origem"), ctx.get("espaco_destino"), ctx.get("distancia_m")
+    perfil, erg = ctx.get("perfil"), ctx.get("ergonomia_calculada") or {}
     pessoas = max(int(op.get("num_pessoas") or 1), 1)
     peso = item.get("peso_kg")
+    mov = op.get("tipo_movimento") or ""
     els: list[ElementoTempo] = []
     faltam: list[str] = []
     prem: list[str] = []
@@ -199,11 +202,11 @@ def modelar(ctx: dict) -> ModeloTempoIA:
                                  justificativa="Valor de referência genérico; meça o setup real da sua operação."))
         prem.append(f"Preparação de {prep:g} min por ordem é uma referência genérica, não um dado da empresa.")
         if rec.get("capacidade_un_h"):
-            els.append(ElementoTempo(nome=f"Processamento em {rec['nome']}", tipo="processamento",
-                                     metodo="capacidade_recurso", justificativa="Usa a capacidade informada do equipamento."))
+            els.append(ElementoTempo(nome=f"Processamento em {rec['nome']}", tipo="processamento", metodo="capacidade_recurso",
+                                     depende_operador=False, justificativa="Usa a capacidade informada do equipamento (tempo de máquina)."))
         else:
             faltam.append(f"Capacidade (un/h) do equipamento '{rec['nome']}'")
-    if org or dst:
+    if (org or dst) and not (org and dst and org.get('nome') == dst.get('nome') and not dist):
         if dist is not None:
             itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pessoas // peso), 1) if peso else 1
             els.append(ElementoTempo(nome=f"Deslocar de {org['nome'] if org else '?'} até {dst['nome'] if dst else '?'}",
@@ -214,35 +217,56 @@ def modelar(ctx: dict) -> ModeloTempoIA:
                         f"{REFERENCIAS['carga_manual_max_kg']:g} kg por pessoa (referências genéricas).")
         else:
             faltam.append("Distância entre os espaços de origem e destino" if org and dst else "Espaço de origem e de destino da operação")
-    if peso:
+    if mov in MOVIMENTOS_MOST:
+        els.append(ElementoTempo(nome=f"Movimento: {mov.replace('_', ' ')}", tipo="manuseio", metodo="indices_most", por_unidade=True,
+                                 indices_most=MOVIMENTOS_MOST[mov], paralelizavel=pessoas > 1,
+                                 justificativa="Sequência General Move (A B G A B P A) com índices ilustrativos; conferir com o cartão MOST certificado."))
+        prem.append("Tempo de movimento por índices no estilo BasicMOST (1 TMU = 0,036 s); índices ilustrativos para o tipo de movimento informado.")
+    elif peso:
         els.append(ElementoTempo(nome="Manuseio do item", tipo="manuseio", metodo="linear_driver", por_unidade=True,
                                  driver="peso_kg", a_min=REFERENCIAS["manuseio_base_min"], b_min=REFERENCIAS["manuseio_min_por_kg"],
                                  paralelizavel=pessoas > 1,
                                  justificativa="Pegar, posicionar e soltar: tempo-base mais acréscimo proporcional ao peso."))
         prem.append("Manuseio: 0,15 min + 0,012 min/kg por unidade (referência genérica).")
+        if mov:
+            faltam.append(f"Índices de movimento (MOST) para o tipo '{mov}'")
     elif not rec or not rec.get("capacidade_un_h"):
-        faltam.append("Peso e dimensões do item manuseado")
+        faltam.append("Peso e dimensões do item manuseado, ou o tipo de movimento")
     if not els:
         faltam.append("Equipamento/posto ou espaços e item físico da operação")
+
+    # Tolerâncias (tempo padrão = tempo normal × FT). Percentuais da OIT sem distinção por sexo.
+    tol = [{"categoria": "necessidades pessoais", "percentual": REFERENCIAS["tolerancia_pessoal_pct"],
+            "justificativa": "Tolerância constante para necessidades pessoais.", "fonte": "OIT (Estudo do Trabalho)"},
+           {"categoria": "fadiga básica", "percentual": REFERENCIAS["fadiga_basica_pct"],
+            "justificativa": "Tolerância constante de fadiga básica.", "fonte": "OIT (Estudo do Trabalho)"}]
+    if op.get("postura_trabalho") == "em_pe":
+        tol.append({"categoria": "trabalho em pé", "percentual": REFERENCIAS["em_pe_pct"], "justificativa": "Postura em pé.", "fonte": "OIT (Estudo do Trabalho)"})
+    tol += erg.get("tolerancias_sugeridas", [])
+    for a in erg.get("alertas", []):
+        prem.append(f"Alerta ergonômico: {a}")
     amb = [e for e in (org, dst) if e]
-    altos = sum(1 for k in ("repetitividade", "esforco_fisico", "postura", "deslocamento", "tempo_em_pe")
-                if (op.get("ergonomia") or {}).get(k) == "alto")
-    quente = any((e.get("temperatura_c") or 0) > 32 for e in amb)
-    fator = round(1.0 + 0.05 * min(altos, 4) + (0.05 if quente else 0), 3)
-    if fator != 1.0:
-        prem.append(f"Fator de ambiente {fator:g}: +5% por fator ergonômico alto e/ou temperatura acima de 32 °C (referência genérica).")
+    for e in amb:
+        if e.get("temperatura_c") is not None and (e["temperatura_c"] > 30 or e["temperatura_c"] < 12):
+            faltam.append(f"Avaliar tolerância para temperatura ({e['temperatura_c']:g} °C em '{e['nome']}') — NR-15/NHO-06 e conforto térmico")
+    if perfil:
+        prem.append(f"Perfil de mão de obra '{perfil['nome']}': ritmo {perfil['ritmo_pct']:g}%. Sexo, estatura e peso corporal NÃO alteram o tempo; "
+                    "são usados só em limites de carga e conferências ergonômicas. Calibre o ritmo com medições.")
+    else:
+        faltam.append("Perfil de mão de obra (ritmo e limites de carga)")
     if not op.get("funcao_requerida"):
         faltam.append("Função (mão de obra) responsável pela operação")
     if not op.get("inicio_marco") or not op.get("fim_marco"):
         faltam.append("Marcos de início e fim do apontamento (quando começa e quando termina a operação)")
     nome = op["nome"]
     return ModeloTempoIA(
-        elementos=els, fator_ambiente=fator, premissas=prem, dados_faltantes=faltam,
+        elementos=els, fator_ambiente=1.0, ritmo_pct=(perfil or {}).get("ritmo_pct") or 100.0,
+        tolerancias=[ToleranciaTempo(**t) for t in tol], premissas=prem, dados_faltantes=faltam,
         padrao_apontamento_inicio=op.get("inicio_marco") or f"Quando {op.get('funcao_requerida') or 'o operador'} pega o primeiro item de '{nome}'",
         padrao_apontamento_fim=op.get("fim_marco") or f"Quando o último item de '{nome}' é depositado no destino{' (' + dst['nome'] + ')' if dst else ''}",
         unidade_contagem=op.get("unidade_medida") or "un", confianca="baixa",
-        justificativa=("Modelo montado por regras locais a partir do contorno físico cadastrado, com referências genéricas "
-                       "declaradas nas premissas. Substitua por medições reais assim que existirem."))
+        justificativa=("Modelo montado por regras locais a partir do contorno físico cadastrado, com referências declaradas nas premissas. "
+                       "Substitua por medições reais assim que existirem."))
 
 
 def _fmt(v, suf=" min"):

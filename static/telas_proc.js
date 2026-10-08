@@ -103,16 +103,29 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
   const erg = op?.ergonomia || {};
   const espacos = await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
   const optEsp = [['', '—'], ...espacos.map((x) => [x.id, x.nome])];
+  const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+  const lev0 = op?.levantamento || {};
   const f = formulario([
     { k: 'nome', rotulo: 'Nome da operação' }, { k: 'descricao', rotulo: 'Descrição', tipo: 'textarea' },
     { k: 'funcao_requerida', rotulo: 'Mão de obra: função responsável', dica: 'ex.: marceneiro, auxiliar' },
     { k: 'num_pessoas', rotulo: 'Nº de pessoas na operação', tipo: 'number', padrao: 1, min: 1 },
+    { k: 'perfil_id', rotulo: 'Perfil de mão de obra (ritmo e limites de carga)', tipo: 'select', num: true, opcoes: [['', '—'], ...perfis.map((x) => [x.id, x.nome])] },
+    { k: 'tipo_movimento', rotulo: 'Tipo de movimento predominante (define o tempo de movimento por índices)', tipo: 'select', opcoes: [['', '—'], ['alcance_curto', 'Alcance curto (objeto leve ao alcance)'], ['transporte_passos', 'Transporte a poucos passos'], ['levantamento_curvado', 'Curvar e levantar'], ['posicionamento_preciso', 'Posicionamento de precisão'], ['empurrar_puxar', 'Empurrar / puxar'], ['giro_tronco', 'Giro de tronco'], ['repetitivo_fino', 'Repetitivo fino'], ['outro', 'Outro']] },
+    { k: 'postura_trabalho', rotulo: 'Postura de trabalho', tipo: 'select', opcoes: [['', '—'], ['em_pe', 'Em pé'], ['sentado', 'Sentado'], ['alternada', 'Alternada'], ['agachado', 'Agachado'], ['curvado', 'Curvado']] },
+    { k: 'altura_trabalho_m', rotulo: 'Altura da superfície de trabalho (m)', tipo: 'number', nulo: true },
+    { k: 'gasto_energetico_kcal_min', rotulo: 'Gasto energético da atividade (kcal/min) — informado/medido', tipo: 'number', nulo: true },
     { k: 'recurso_padrao_id', rotulo: 'Equipamento / posto padrão', tipo: 'select', num: true, opcoes: [['', '—'], ...recursos.map((r) => [r.id, r.nome])] },
     { k: 'espaco_origem_id', rotulo: 'Espaço de origem (de onde vem o item)', tipo: 'select', num: true, opcoes: optEsp },
     { k: 'espaco_destino_id', rotulo: 'Espaço de destino (para onde vai)', tipo: 'select', num: true, opcoes: optEsp },
     { k: 'distancia_m', rotulo: 'Distância manual (m) — só se diferente da tabela de distâncias', tipo: 'number', nulo: true },
     { k: 'item_peso_kg', rotulo: 'Item típico: peso (kg)', tipo: 'number', nulo: true }, { k: 'item_comprimento_m', rotulo: 'Comprimento (m)', tipo: 'number', nulo: true },
     { k: 'item_largura_m', rotulo: 'Largura (m)', tipo: 'number', nulo: true }, { k: 'item_altura_m', rotulo: 'Altura (m)', tipo: 'number', nulo: true },
+    { k: 'lev_carga_kg', rotulo: 'Levantamento manual (NIOSH) — carga (kg); deixe em branco se não houver', tipo: 'number', nulo: true },
+    { k: 'lev_h_cm', rotulo: 'Distância horizontal da carga ao corpo, H (cm)', tipo: 'number', nulo: true }, { k: 'lev_v_cm', rotulo: 'Altura vertical da pega, V (cm)', tipo: 'number', nulo: true },
+    { k: 'lev_d_cm', rotulo: 'Deslocamento vertical, D (cm)', tipo: 'number', nulo: true }, { k: 'lev_a_graus', rotulo: 'Assimetria, A (graus)', tipo: 'number', nulo: true },
+    { k: 'lev_freq_por_min', rotulo: 'Frequência (levantamentos por minuto)', tipo: 'number', nulo: true },
+    { k: 'lev_duracao', rotulo: 'Duração do trabalho com levantamento', tipo: 'select', opcoes: [['', '—'], ['ate_1h', 'Até 1 h'], ['1_2h', 'Mais de 1 h até 2 h'], ['2_8h', 'Mais de 2 h até 8 h']] },
+    { k: 'lev_pega', rotulo: 'Qualidade da pega', tipo: 'select', opcoes: [['', '—'], ['boa', 'Boa'], ['regular', 'Regular'], ['ruim', 'Ruim']] },
     { k: 'inicio_marco', rotulo: 'Marco de INÍCIO do apontamento', dica: 'ex.: quando o operador pega a primeira chapa' },
     { k: 'fim_marco', rotulo: 'Marco de FIM do apontamento', dica: 'ex.: quando a última peça cortada é depositada na bancada' },
     { k: 'formula_tipo', rotulo: 'Como o tempo manual/parâmetro é calculado', tipo: 'select', opcoes: [['linear', 'Linear: preparação + tempo × quantidade'], ['lote', 'Por lote: preparação + tempo × nº de lotes'], ['fixo', 'Fixo: preparação + tempo único']] },
@@ -122,7 +135,8 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
     { k: 'e_pos', rotulo: 'Postura', tipo: 'select', opcoes: niveis }, { k: 'e_des', rotulo: 'Deslocamento', tipo: 'select', opcoes: niveis },
     { k: 'e_pau', rotulo: 'Pausas', tipo: 'select', opcoes: [['', '—'], ['adequadas', 'Adequadas'], ['insuficientes', 'Insuficientes']] }],
   { ...(op || {}), campos: (op?.campos_extras || []).map((c) => [c.nome, c.tipo, c.unidade, c.obrigatorio ? 'obrigatorio' : ''].join('|')).join('\n'),
-    e_rep: erg.repetitividade, e_esf: erg.esforco_fisico, e_pos: erg.postura, e_des: erg.deslocamento, e_pau: erg.pausas });
+    e_rep: erg.repetitividade, e_esf: erg.esforco_fisico, e_pos: erg.postura, e_des: erg.deslocamento, e_pau: erg.pausas,
+    lev_carga_kg: lev0.carga_kg, lev_h_cm: lev0.h_cm, lev_v_cm: lev0.v_cm, lev_d_cm: lev0.d_cm, lev_a_graus: lev0.a_graus, lev_freq_por_min: lev0.freq_por_min, lev_duracao: lev0.duracao, lev_pega: lev0.pega });
   modal(op ? 'Editar operação' : 'Nova operação', h('div', null, h('p', { class: 'muted small' }, 'Uma operação é a reunião de blocos: mão de obra + atividade + equipamento + espaços + item. Quanto mais completo o contorno físico, mais consistente o tempo planejado.'), f.el),
     { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async () => {
@@ -132,8 +146,10 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
         return { nome, tipo: tipo || 'numero', unidade: unidade || '', obrigatorio: obr === 'obrigatorio' };
       });
       const ergonomia = Object.fromEntries(Object.entries({ repetitividade: v.e_rep, esforco_fisico: v.e_esf, postura: v.e_pos, deslocamento: v.e_des, pausas: v.e_pau }).filter(([, x]) => x));
-      const { campos, e_rep, e_esf, e_pos, e_des, e_pau, ...resto } = v;
-      const corpo = { ...resto, num_pessoas: Math.max(1, Math.round(v.num_pessoas || 1)), unidade_medida: v.unidade_medida || 'un', campos_extras, ergonomia };
+      const levBruto = { carga_kg: v.lev_carga_kg, h_cm: v.lev_h_cm, v_cm: v.lev_v_cm, d_cm: v.lev_d_cm, a_graus: v.lev_a_graus, freq_por_min: v.lev_freq_por_min, duracao: v.lev_duracao, pega: v.lev_pega };
+      const levantamento = Object.values(levBruto).some((x) => x !== null && x !== '') ? Object.fromEntries(Object.entries(levBruto).filter(([, x]) => x !== null && x !== '')) : null;
+      const { campos, e_rep, e_esf, e_pos, e_des, e_pau, lev_carga_kg, lev_h_cm, lev_v_cm, lev_d_cm, lev_a_graus, lev_freq_por_min, lev_duracao, lev_pega, ...resto } = v;
+      const corpo = { ...resto, levantamento, num_pessoas: Math.max(1, Math.round(v.num_pessoas || 1)), unidade_medida: v.unidade_medida || 'un', campos_extras, ergonomia };
       const r = await tentar(() => (op ? patch(`/operacoes/${op.id}`, corpo) : post(`/etapas/${etapa.id}/operacoes`, corpo)), 'Salvo.');
       if (r) { fechar(); aoSalvar(); }
     } }, 'Salvar')] });
@@ -168,9 +184,22 @@ const ENT = {
     { k: 'nome', rotulo: 'Nome (ex.: Estoque de chapas)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['area', 'Área'], ['posto', 'Posto'], ['estoque', 'Estoque'], ['expedicao', 'Expedição']] },
     { k: 'comprimento_m', rotulo: 'Comprimento (m)', tipo: 'number', nulo: true }, { k: 'largura_m', rotulo: 'Largura (m)', tipo: 'number', nulo: true },
     { k: 'pe_direito_m', rotulo: 'Pé-direito (m)', tipo: 'number', nulo: true }, { k: 'piso', rotulo: 'Piso' },
-    { k: 'temperatura_c', rotulo: 'Temperatura média (°C)', tipo: 'number', nulo: true }, { k: 'observacoes', rotulo: 'Observações', tipo: 'textarea' }],
+    { k: 'temperatura_c', rotulo: 'Temperatura média (°C)', tipo: 'number', nulo: true }, { k: 'umidade_pct', rotulo: 'Umidade relativa (%)', tipo: 'number', nulo: true },
+    { k: 'ruido_db', rotulo: 'Ruído (dB(A))', tipo: 'number', nulo: true }, { k: 'iluminancia_lux', rotulo: 'Iluminância (lux)', tipo: 'number', nulo: true }, { k: 'observacoes', rotulo: 'Observações', tipo: 'textarea' }],
     cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Dimensões', f: (r) => (r.comprimento_m && r.largura_m ? `${r.comprimento_m} × ${r.largura_m} m` : '—') },
       { t: 'Temperatura', f: (r) => (r.temperatura_c === null ? '—' : `${r.temperatura_c} °C`) }, { t: 'Origem', f: (r) => (r.origem === 'ia' ? badge('Sugerido pela IA', 'b-ia') : 'Manual') }] },
+  'perfis-mao-de-obra': { rot: 'Perfis de mão de obra', un: true, aviso: 'Perfis de REFERÊNCIA (não são pessoas). Sexo, estatura e peso corporal servem apenas a limites de carga e conferências ergonômicas; NÃO alteram o tempo nem medem produtividade. O ritmo deve ser calibrado por medição. Não use estes dados para decisões de contratação ou alocação de pessoas.',
+    campos: [{ k: 'nome', rotulo: 'Nome do perfil (ex.: Auxiliar de corte)' },
+      { k: 'sexo', rotulo: 'Sexo de referência (para limites de carga)', tipo: 'select', opcoes: [['nao_informado', 'Não informado'], ['feminino', 'Feminino'], ['masculino', 'Masculino'], ['misto', 'Misto']] },
+      { k: 'faixa_etaria', rotulo: 'Faixa etária', tipo: 'select', opcoes: [['adulto', 'Adulto'], ['menor_18', 'Menor de 18 anos']] },
+      { k: 'estatura_cm', rotulo: 'Estatura (cm)', tipo: 'number', nulo: true }, { k: 'peso_corporal_kg', rotulo: 'Peso corporal (kg)', tipo: 'number', nulo: true },
+      { k: 'altura_cotovelo_cm', rotulo: 'Altura do cotovelo (cm) — para comparar com a altura de trabalho', tipo: 'number', nulo: true },
+      { k: 'experiencia', rotulo: 'Experiência', tipo: 'select', opcoes: [['iniciante', 'Iniciante'], ['intermediario', 'Intermediário'], ['experiente', 'Experiente']] },
+      { k: 'ritmo_pct', rotulo: 'Ritmo (100 = normal; calibre por medição)', tipo: 'number', padrao: 100 },
+      { k: 'limite_energetico_kcal_min', rotulo: 'Limite de gasto energético adotado (kcal/min) — para o descanso de Murrell; opcional, as fontes divergem', tipo: 'number', nulo: true },
+      { k: 'observacoes', rotulo: 'Observações', tipo: 'textarea' }],
+    cols: [{ t: 'Perfil', f: (r) => r.nome }, { t: 'Sexo ref.', f: (r) => r.sexo }, { t: 'Estatura', f: (r) => (r.estatura_cm ? `${r.estatura_cm} cm` : '—') },
+      { t: 'Peso corporal', f: (r) => (r.peso_corporal_kg ? `${r.peso_corporal_kg} kg` : '—') }, { t: 'Experiência', f: (r) => r.experiencia }, { t: 'Ritmo', f: (r) => `${r.ritmo_pct}%` }] },
   pessoas: { rot: 'Pessoas', un: true, campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'funcao', rotulo: 'Função' }, { k: 'equipe', rotulo: 'Equipe' }, { k: 'habilitacoes', rotulo: 'Habilitações', tipo: 'lista' }],
     cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Função', f: (r) => r.funcao }, { t: 'Equipe', f: (r) => r.equipe }, { t: 'Habilitações', f: (r) => r.habilitacoes.join(', ') }] },
   materiais: { rot: 'Materiais', campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'tipo', rotulo: 'Tipo' }, { k: 'unidade_medida', rotulo: 'Unidade de medida' }],
@@ -197,7 +226,7 @@ export async function cadastros(el) {
           if (await tentar(() => (item ? patch(`/${aba}/${item.id}`, v) : post(`/${aba}`, v)), 'Salvo.')) { fechar(); desenhar(); }
         } }, 'Salvar')] });
     };
-    montar(area, h('p', null, h('button', { class: 'pri', onclick: () => abrir() }, `+ Novo`)),
+    montar(area, e.aviso ? h('div', { class: 'aviso' }, e.aviso) : null, h('p', null, h('button', { class: 'pri', onclick: () => abrir() }, `+ Novo`)),
       h('div', { class: 'card' }, tabela([...e.cols, { t: 'Situação', f: (r) => (r.ativo ? badge('Ativo', 'b-ok') : badge('Inativo')) },
         { t: '', f: (r) => h('div', { class: 'inline' }, h('button', { class: 'sm', onclick: () => abrir(r) }, 'Editar'),
           h('button', { class: 'sm', onclick: async () => { if (await tentar(() => patch(`/${aba}/${r.id}`, { ativo: !r.ativo }))) desenhar(); } }, r.ativo ? 'Desativar' : 'Reativar')) }], itens)),
@@ -232,7 +261,13 @@ function modeloTempoView(o, p, recarregar) {
   const det = h('details', { class: 'small' }, h('summary', null, 'Modelo de tempo (gêmeo digital)'), corpo);
   let carregado = false;
   const carregar = async () => {
-    const [modelos, sim] = await Promise.all([get(`/operacoes/${o.id}/modelo-tempo`), get(`/operacoes/${o.id}/estimativa?quantidade=${qtdSim.valor}`)]);
+    const [modelos, sim, erg] = await Promise.all([get(`/operacoes/${o.id}/modelo-tempo`), get(`/operacoes/${o.id}/estimativa?quantidade=${qtdSim.valor}`), get(`/operacoes/${o.id}/ergonomia`)]);
+    const n = erg.niosh;
+    const ergBox = h('div', null, h('strong', null, 'Ergonomia e carga (triagem)'),
+      n.completo ? h('div', null, `NIOSH: limite recomendado ${fmtNum(n.rwl_kg, 2)} kg · índice de levantamento ${n.li_infinito ? '∞' : fmtNum(n.li, 2)} — ${n.leitura}.`)
+        : h('div', { class: 'muted' }, n.faltantes?.length && n.faltantes.length < 8 && (o.levantamento) ? `Levantamento incompleto: ${n.faltantes.join('; ')}.` : 'Sem levantamento manual informado.'),
+      erg.alertas.length ? h('ul', null, erg.alertas.map((a) => h('li', null, a))) : null,
+      h('div', { class: 'muted small' }, 'Triagem; não substitui a análise ergonômica do trabalho (NR-17) por profissional competente.'));
     const m = modelos.find((x) => x.status_validacao !== 'rejeitado');
     montar(corpo,
       h('div', { class: 'inline' },
@@ -241,6 +276,7 @@ function modeloTempoView(o, p, recarregar) {
       h('div', { class: 'card' }, h('strong', null, 'Tempo planejado: '), fonteBadge(sim.fonte), sim.fonte === 'modelo_ia' && !sim.validada ? [' ', badge('Não validado', 'b-warn')] : null,
         ' ', sim.total_min === null ? 'sem estimativa' : `${fmtMin(sim.total_min)} (preparação ${fmtMin(sim.preparacao_min)} + execução ${fmtMin(sim.execucao_min)})`,
         sim.avisos.length ? h('ul', { class: 'muted' }, sim.avisos.map((a) => h('li', null, a))) : null),
+      h('div', { class: 'card' }, ergBox),
       m ? h('div', null,
         h('div', { class: 'inline' }, badge(m.origem === 'ia' ? `IA · ${m.provedor}` : 'Manual', m.origem === 'ia' ? 'b-ia' : ''), statusBadge(m.status_validacao),
           badge(`Confiança ${m.confianca}`, m.confianca === 'baixa' ? 'b-warn' : 'b-ok'), badge(`v${m.versao}`), m.fator_ambiente !== 1 ? badge(`Fator de ambiente ${m.fator_ambiente}`) : null),
@@ -248,6 +284,8 @@ function modeloTempoView(o, p, recarregar) {
         tabela([{ t: 'Elemento', f: (e) => e.nome }, { t: 'Tipo', f: (e) => e.tipo }, { t: 'Método', f: (e) => e.metodo },
           { t: 'Minutos (simulação)', f: (e) => { const x = (sim.elementos || []).find((y) => y.nome === e.nome); return x ? (x.minutos === null ? h('span', { class: 'muted' }, 'falta dado') : fmtNum(x.minutos, 2)) : '—'; } },
           { t: 'Justificativa', f: (e) => e.justificativa }], m.elementos, 'Modelo sem elementos.'),
+        m.tolerancias?.length ? h('div', null, h('strong', null, `Tolerâncias (tempo padrão = tempo normal × FT; ritmo ${m.ritmo_pct}%)`),
+          tabela([{ t: 'Categoria', f: (x) => x.categoria }, { t: '%', f: (x) => fmtNum(x.percentual, 2) }, { t: 'Fonte', f: (x) => x.fonte }, { t: 'Justificativa', f: (x) => x.justificativa }], m.tolerancias)) : null,
         m.premissas.length ? h('div', null, h('strong', null, 'Premissas'), h('ul', null, m.premissas.map((x) => h('li', null, x)))) : null,
         m.dados_faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Dados que faltam para um tempo consistente'), h('ul', null, m.dados_faltantes.map((x) => h('li', null, x)))) : null,
         m.padrao_apontamento?.inicio ? h('div', { class: 'muted' }, `Padrão de apontamento sugerido — início: ${m.padrao_apontamento.inicio} · fim: ${m.padrao_apontamento.fim} · contagem: ${m.padrao_apontamento.unidade_contagem}`) : null,

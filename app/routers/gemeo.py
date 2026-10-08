@@ -7,10 +7,10 @@ from sqlalchemy import func, select
 
 from .. import audit
 from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Espaco, ModeloTempo, Processo, Produto, Recurso
+from ..models import Espaco, ModeloTempo, PerfilMaoDeObra, Processo, Produto, Recurso
 from ..ratelimit import limite_ia
 from ..schemas import DecisaoIn, EstimativaOut, ModeloTempoManualIn, ModeloTempoOut
-from ..services import estimativa, ia, modelo_tempo, prontidao
+from ..services import ergonomia, estimativa, ia, modelo_tempo, prontidao
 from ..services.dashboard import alerta_ergonomia
 from ..services.modelo_tempo import ModeloTempoIA, sanear_modelo
 from .processos import _operacao
@@ -23,19 +23,30 @@ def _esp(db, id_):
     if not e:
         return None
     return {"nome": e.nome, "tipo": e.tipo, "comprimento_m": e.comprimento_m, "largura_m": e.largura_m,
-            "pe_direito_m": e.pe_direito_m, "piso": e.piso, "temperatura_c": e.temperatura_c}
+            "pe_direito_m": e.pe_direito_m, "piso": e.piso, "temperatura_c": e.temperatura_c,
+            "umidade_pct": e.umidade_pct, "ruido_db": e.ruido_db, "iluminancia_lux": e.iluminancia_lux}
 
 
 def contexto_ia(ctx: Ctx, op, etapa, proc) -> dict:
     """Retrato do contorno físico enviado à IA (sem dados pessoais)."""
     rec = ctx.db.get(Recurso, op.recurso_padrao_id) if op.recurso_padrao_id else None
     c = modelo_tempo.montar_contexto(ctx.db, ctx.empresa_id, op, 1.0, None, rec)
+    perfil = ctx.db.get(PerfilMaoDeObra, op.perfil_id) if op.perfil_id else None
+    espacos = [ctx.db.get(Espaco, i) for i in (op.espaco_origem_id, op.espaco_destino_id) if i]
+    erg = ergonomia.avaliar_operacao(op, perfil, espacos, c.peso_kg)
     return {
         "segmento": ctx.empresa.segmento, "processo": proc.nome, "etapa": etapa.nome,
         "operacao": {"nome": op.nome, "descricao": op.descricao, "unidade_medida": op.unidade_medida,
                      "funcao_requerida": op.funcao_requerida, "num_pessoas": op.num_pessoas,
                      "inicio_marco": op.inicio_marco, "fim_marco": op.fim_marco, "ergonomia": op.ergonomia,
-                     "dados_medidos": op.dados_medidos},
+                     "dados_medidos": op.dados_medidos, "tipo_movimento": op.tipo_movimento,
+                     "postura_trabalho": op.postura_trabalho, "altura_trabalho_m": op.altura_trabalho_m,
+                     "gasto_energetico_kcal_min": op.gasto_energetico_kcal_min},
+        # Perfil de REFERÊNCIA (não é uma pessoa). Sexo/estatura/peso corporal servem só a limites de carga.
+        "perfil": ({"nome": perfil.nome, "sexo": perfil.sexo, "estatura_cm": perfil.estatura_cm,
+                    "peso_corporal_kg": perfil.peso_corporal_kg, "faixa_etaria": perfil.faixa_etaria,
+                    "experiencia": perfil.experiencia, "ritmo_pct": perfil.ritmo_pct} if perfil else None),
+        "ergonomia_calculada": erg,
         "recurso": ({"nome": rec.nome, "tipo": rec.tipo, "capacidade": rec.capacidade,
                      "capacidade_unidade": rec.capacidade_unidade, "capacidade_un_h": c.capacidade_un_h} if rec else None),
         "espaco_origem": _esp(ctx.db, op.espaco_origem_id), "espaco_destino": _esp(ctx.db, op.espaco_destino_id),
@@ -51,6 +62,7 @@ def _gravar(ctx: Ctx, op, proc, m: ModeloTempoIA, *, origem: str, status: str, p
     mt = ModeloTempo(
         empresa_id=ctx.empresa_id, unidade_id=proc.unidade_id, operacao_id=op.id, versao=versao,
         elementos=[e.model_dump() for e in m.elementos], fator_ambiente=m.fator_ambiente, premissas=m.premissas,
+        ritmo_pct=m.ritmo_pct, tolerancias=[t.model_dump() for t in m.tolerancias],
         dados_faltantes=m.dados_faltantes, confianca=m.confianca, origem=origem, provedor=provedor,
         status_validacao=status, contexto=contexto or {}, criado_por=ctx.usuario.id,
         justificativa=(m.justificativa + (" " + justificativa_extra if justificativa_extra else "")).strip(),
@@ -100,7 +112,8 @@ def modelo_manual(oid: int, dados: ModeloTempoManualIn, ctx: Ctx = Depends(reque
     op, _, proc = _operacao(ctx, oid)
     try:
         m = sanear_modelo(ModeloTempoIA.model_validate({
-            "elementos": dados.elementos, "fator_ambiente": dados.fator_ambiente, "premissas": dados.premissas,
+            "elementos": dados.elementos, "fator_ambiente": dados.fator_ambiente, "ritmo_pct": dados.ritmo_pct,
+            "tolerancias": dados.tolerancias, "premissas": dados.premissas,
             "justificativa": dados.justificativa, "confianca": "alta"}))
     except ValidationError as e:
         raise HTTPException(422, f"Elemento inválido: {e.errors()[0]['loc']} {e.errors()[0]['msg']}")
@@ -166,3 +179,12 @@ def simular(oid: int, quantidade: float = Query(1, gt=0, le=1e9), produto_id: in
 @router.get("/processos/{pid}/prontidao")
 def prontidao_processo(pid: int, ctx: Ctx = Depends(get_ctx)):
     return prontidao.avaliar(ctx.db, ctx.empresa_id, ctx.obter(Processo, pid))
+
+
+@router.get("/operacoes/{oid}/ergonomia")
+def ergonomia_operacao(oid: int, ctx: Ctx = Depends(get_ctx)):
+    """Triagem ergonômica (NIOSH, limites legais de carga, Murrell, ruído). Não substitui a AET (NR-17)."""
+    op, _, _ = _operacao(ctx, oid)
+    perfil = ctx.db.get(PerfilMaoDeObra, op.perfil_id) if op.perfil_id else None
+    espacos = [ctx.db.get(Espaco, i) for i in (op.espaco_origem_id, op.espaco_destino_id) if i]
+    return ergonomia.avaliar_operacao(op, perfil, espacos, op.item_peso_kg)

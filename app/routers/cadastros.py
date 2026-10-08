@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 
 from .. import audit
 from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, Produto, Recurso, Usuario
-from ..schemas import (DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
+from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, PerfilMaoDeObra, Produto, Recurso, Usuario
+from ..schemas import (DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, PerfilIn, PerfilOut, PerfilUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
                        ProdutoIn, ProdutoOut, ProdutoUpdate, RecursoIn, RecursoOut, RecursoUpdate)
 from ..services import timecalc
 
@@ -134,6 +134,7 @@ def _validar_recurso(ctx: Ctx, campos: dict):
 crud("recursos", Recurso, RecursoIn, RecursoUpdate, RecursoOut, "recurso", por_unidade=True,
      pos_leitura=_medias_recursos, validar=_validar_recurso)
 crud("espacos", Espaco, EspacoIn, EspacoUpdate, EspacoOut, "espaco", por_unidade=True)
+crud("perfis-mao-de-obra", PerfilMaoDeObra, PerfilIn, PerfilUpdate, PerfilOut, "perfil_mao_de_obra", por_unidade=True)
 crud("pessoas", Pessoa, PessoaIn, PessoaUpdate, PessoaOut, "pessoa", por_unidade=True, validar=_validar_pessoa)
 crud("materiais", Material, MaterialIn, MaterialUpdate, MaterialOut, "material", por_unidade=False)
 crud("produtos", Produto, ProdutoIn, ProdutoUpdate, ProdutoOut, "produto", por_unidade=False)

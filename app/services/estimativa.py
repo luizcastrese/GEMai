@@ -110,7 +110,7 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
     m = modelo_tempo.modelo_ativo(db, empresa_id, operacao.id)
     if m and (m.status_validacao == "validado" or s.usar_modelo_ia_nao_validado):
         ctx = modelo_tempo.montar_contexto(db, empresa_id, operacao, quantidade, produto, recurso)
-        r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, ctx)
+        r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, ctx, m.tolerancias, m.ritmo_pct)
         if r.completo:
             if m.status_validacao != "validado":
                 aviso.append("Tempo estimado pela IA e ainda não validado por um gestor.")

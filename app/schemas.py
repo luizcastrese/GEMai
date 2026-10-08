@@ -164,6 +164,22 @@ class Ergonomia(In):
     condicoes_posto: Annotated[str, Field(max_length=500)] | None = None
 
 
+class Levantamento(In):
+    """Entradas da equação revisada do NIOSH (unidades métricas)."""
+    carga_kg: float | None = Field(None, ge=0, le=1000)
+    h_cm: float | None = Field(None, ge=0, le=300)
+    v_cm: float | None = Field(None, ge=0, le=300)
+    d_cm: float | None = Field(None, ge=0, le=300)
+    a_graus: float | None = Field(None, ge=0, le=180)
+    freq_por_min: float | None = Field(None, ge=0, le=60)
+    duracao: Literal["ate_1h", "1_2h", "2_8h"] | None = None
+    pega: Literal["boa", "regular", "ruim"] | None = None
+
+
+TipoMov = Literal["", "alcance_curto", "transporte_passos", "levantamento_curvado", "posicionamento_preciso",
+                  "empurrar_puxar", "giro_tronco", "repetitivo_fino", "outro"]
+Postura = Literal["", "em_pe", "sentado", "alternada", "agachado", "curvado"]
+
 class ProcessoIn(In):
     unidade_id: int
     nome: Nome
@@ -221,6 +237,12 @@ class OperacaoIn(In):
     item_altura_m: float | None = Field(None, ge=0, le=1000)
     inicio_marco: Curto = ""
     fim_marco: Curto = ""
+    perfil_id: int | None = None
+    tipo_movimento: TipoMov = ""
+    postura_trabalho: Postura = ""
+    altura_trabalho_m: float | None = Field(None, ge=0, le=3)
+    gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
+    levantamento: Levantamento | None = None
 
 
 class OperacaoUpdate(In):
@@ -244,6 +266,12 @@ class OperacaoUpdate(In):
     item_altura_m: float | None = Field(None, ge=0, le=1000)
     inicio_marco: Curto | None = None
     fim_marco: Curto | None = None
+    perfil_id: int | None = None
+    tipo_movimento: TipoMov | None = None
+    postura_trabalho: Postura | None = None
+    altura_trabalho_m: float | None = Field(None, ge=0, le=3)
+    gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
+    levantamento: Levantamento | None = None
 
 
 class OperacaoOut(Out):
@@ -270,6 +298,12 @@ class OperacaoOut(Out):
     item_altura_m: float | None = None
     inicio_marco: str = ""
     fim_marco: str = ""
+    perfil_id: int | None = None
+    tipo_movimento: str = ""
+    postura_trabalho: str = ""
+    altura_trabalho_m: float | None = None
+    gasto_energetico_kcal_min: float | None = None
+    levantamento: dict | None = None
 
 
 class EtapaOut(Out):
@@ -485,6 +519,9 @@ class EspacoIn(In):
     pe_direito_m: float | None = Field(None, gt=0, le=100)
     piso: Annotated[str, Field(max_length=80)] = ""
     temperatura_c: float | None = Field(None, ge=-60, le=80)
+    umidade_pct: float | None = Field(None, ge=0, le=100)
+    ruido_db: float | None = Field(None, ge=0, le=200)
+    iluminancia_lux: float | None = Field(None, ge=0, le=200000)
     observacoes: Texto = ""
 
 
@@ -496,6 +533,9 @@ class EspacoUpdate(In):
     pe_direito_m: float | None = Field(None, gt=0, le=100)
     piso: Annotated[str, Field(max_length=80)] | None = None
     temperatura_c: float | None = Field(None, ge=-60, le=80)
+    umidade_pct: float | None = Field(None, ge=0, le=100)
+    ruido_db: float | None = Field(None, ge=0, le=200)
+    iluminancia_lux: float | None = Field(None, ge=0, le=200000)
     observacoes: Texto | None = None
     ativo: bool | None = None
 
@@ -510,8 +550,55 @@ class EspacoOut(Out):
     pe_direito_m: float | None
     piso: str
     temperatura_c: float | None
+    umidade_pct: float | None = None
+    ruido_db: float | None = None
+    iluminancia_lux: float | None = None
     observacoes: str
     origem: str
+    ativo: bool
+
+
+class PerfilIn(In):
+    unidade_id: int
+    nome: Nome
+    sexo: Literal["feminino", "masculino", "misto", "nao_informado"] = "nao_informado"
+    estatura_cm: float | None = Field(None, ge=50, le=250)
+    peso_corporal_kg: float | None = Field(None, ge=10, le=400)
+    altura_cotovelo_cm: float | None = Field(None, ge=30, le=200)
+    faixa_etaria: Literal["adulto", "menor_18"] = "adulto"
+    experiencia: Literal["iniciante", "intermediario", "experiente"] = "intermediario"
+    ritmo_pct: float = Field(100.0, ge=50, le=150)
+    limite_energetico_kcal_min: float | None = Field(None, gt=1.5, le=30)
+    observacoes: Texto = ""
+
+
+class PerfilUpdate(In):
+    nome: Nome | None = None
+    sexo: Literal["feminino", "masculino", "misto", "nao_informado"] | None = None
+    estatura_cm: float | None = Field(None, ge=50, le=250)
+    peso_corporal_kg: float | None = Field(None, ge=10, le=400)
+    altura_cotovelo_cm: float | None = Field(None, ge=30, le=200)
+    faixa_etaria: Literal["adulto", "menor_18"] | None = None
+    experiencia: Literal["iniciante", "intermediario", "experiente"] | None = None
+    ritmo_pct: float | None = Field(None, ge=50, le=150)
+    limite_energetico_kcal_min: float | None = Field(None, gt=1.5, le=30)
+    observacoes: Texto | None = None
+    ativo: bool | None = None
+
+
+class PerfilOut(Out):
+    id: int
+    unidade_id: int
+    nome: str
+    sexo: str
+    estatura_cm: float | None
+    peso_corporal_kg: float | None
+    altura_cotovelo_cm: float | None
+    faixa_etaria: str
+    experiencia: str
+    ritmo_pct: float
+    limite_energetico_kcal_min: float | None
+    observacoes: str
     ativo: bool
 
 
@@ -535,6 +622,8 @@ class ModeloTempoOut(Out):
     versao: int
     elementos: list
     fator_ambiente: float
+    ritmo_pct: float = 100.0
+    tolerancias: list = []
     premissas: list
     dados_faltantes: list
     padrao_apontamento: dict
@@ -551,6 +640,8 @@ class ModeloTempoOut(Out):
 class ModeloTempoManualIn(In):
     elementos: list[dict[str, Any]] = Field(max_length=15)
     fator_ambiente: float = Field(1.0, ge=0.5, le=3.0)
+    ritmo_pct: float = Field(100.0, ge=50, le=150)
+    tolerancias: list[dict[str, Any]] = Field(default_factory=list, max_length=15)
     premissas: list[Curto] = Field(default_factory=list, max_length=20)
     justificativa: Texto = ""
 

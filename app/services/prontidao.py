@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from ..models import Espaco, Processo, Recurso
-from . import estimativa, modelo_tempo
+from ..models import Espaco, PerfilMaoDeObra, Processo, Recurso
+from . import ergonomia, estimativa, modelo_tempo
 from .dashboard import alerta_ergonomia
 
 
@@ -39,12 +39,24 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
                 add("info", "Item típico sem peso informado (necessário para manuseio e deslocamento).")
             if alerta_ergonomia(op.ergonomia):
                 add("aviso", "Fatores ergonômicos elevados: considere avaliação formal e reflita no tempo.")
+            perfil = db.get(PerfilMaoDeObra, op.perfil_id) if op.perfil_id else None
+            if perfil is None:
+                add("aviso", "Sem perfil de mão de obra: o ritmo e os limites de carga não podem ser considerados.")
+            if not op.postura_trabalho:
+                add("info", "Postura de trabalho não informada (afeta a tolerância por fadiga).")
+            if op.levantamento and not ergonomia.niosh(op.levantamento, op.item_peso_kg).get("completo"):
+                add("atencao", "Dados de levantamento (NIOSH) incompletos: " + "; ".join(ergonomia.niosh(op.levantamento, op.item_peso_kg)["faltantes"]))
+            esps = [db.get(Espaco, i) for i in (op.espaco_origem_id, op.espaco_destino_id) if i]
+            erg = ergonomia.avaliar_operacao(op, perfil, esps, op.item_peso_kg)
+            for a in erg["alertas"]:
+                add("atencao" if "Índice de levantamento" in a or "CLT" in a or "NR-15" in a else "aviso", a)
             params = estimativa.parametros_vigentes(db, empresa_id, "operacao", op.id)
             m = modelo_tempo.modelo_ativo(db, empresa_id, op.id)
             if "tempo_unitario_min" not in params and m is None:
                 add("atencao", "Sem base de tempo: gere o modelo de tempo (IA) ou informe um parâmetro validado.")
             if m is not None:
-                r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, modelo_tempo.montar_contexto(db, empresa_id, op, 1.0, None, rec))
+                r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, modelo_tempo.montar_contexto(db, empresa_id, op, 1.0, None, rec),
+                                          m.tolerancias, m.ritmo_pct)
                 if not r.completo:
                     for f in (r.faltantes or ["modelo sem elementos"]):
                         add("atencao", f"Modelo de tempo incompleto — {f}")

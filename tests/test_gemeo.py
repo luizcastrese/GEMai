@@ -55,6 +55,9 @@ def _cenario(gestor, unidade_id, *, peso_op=10.0, pessoas=2):
     return p["id"], op["id"], est, cor, rec
 
 
+FT = 1 / (1 - 0.09)  # tolerâncias padrão do provedor local: 5% pessoais + 4% fadiga básica (OIT)
+
+
 def test_gerar_validar_simular_e_ordem(gestor, operador, unidade_id):
     pid, op, *_ = _cenario(gestor, unidade_id)
     assert operador.post(f"/operacoes/{op}/modelo-tempo/gerar").status_code == 403
@@ -64,15 +67,19 @@ def test_gerar_validar_simular_e_ordem(gestor, operador, unidade_id):
     assert any("referência" in x.lower() or "genéric" in x.lower() for x in m["premissas"])
     assert m["padrao_apontamento"]["inicio"] and "Marcos" in " ".join(m["dados_faltantes"])
 
-    # simulação: prep 5 + máquina 10 + deslocamento (3 viagens·30/75·2 = 2,4) + manuseio (0,27·10/2 = 1,35)
+    assert {t["categoria"] for t in m["tolerancias"]} == {"necessidades pessoais", "fadiga básica"}
+    # simulação: tempo normal = prep 5 + (máquina 10 + deslocamento 3·30/75·2 = 2,4 + manuseio 0,27·10/2 = 1,35),
+    # e o tempo padrão aplica as tolerâncias: × 1/(1 − 0,09)
     s = gestor.get(f"/operacoes/{op}/estimativa?quantidade=10").json()
     assert s["fonte"] == "modelo_ia" and s["validada"] is False
-    assert (s["preparacao_min"], s["execucao_min"], s["total_min"]) == (5.0, 13.75, 18.75)
+    assert s["preparacao_min"] == pytest.approx(5 * FT, abs=0.01) and s["execucao_min"] == pytest.approx(13.75 * FT, abs=0.01)
+    assert s["total_min"] == pytest.approx(18.75 * FT, abs=0.02)
+    assert any(e["tipo"] == "tolerancia" for e in s["elementos"])
     assert any("não validado" in a for a in s["avisos"])
     # o contorno físico do PRODUTO sobrepõe o item típico (peso 20 kg → manuseio 0,39·10/2)
     prod = gestor.post("/produtos", {"nome": "Chapa pesada", "peso_kg": 20}).json()
     s2 = gestor.get(f"/operacoes/{op}/estimativa?quantidade=10&produto_id={prod['id']}").json()
-    assert s2["execucao_min"] == 14.35
+    assert s2["execucao_min"] == pytest.approx(14.35 * FT, abs=0.01)
 
     assert gestor.post(f"/modelos-tempo/{m['id']}/validar", {"observacao": "ok"}).json()["status_validacao"] == "validado"
     assert gestor.get(f"/operacoes/{op}/estimativa?quantidade=10").json()["validada"] is True
@@ -81,7 +88,7 @@ def test_gerar_validar_simular_e_ordem(gestor, operador, unidade_id):
     gestor.post(f"/processos/{pid}/publicar")
     o = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10, "produto_id": prod["id"]}).json()
     oo = o["operacoes"][0]
-    assert o["tempo_estimado_min"] == 19.35 and oo["fonte_estimativa"] == "modelo_ia" and oo["estimativa_validada"]
+    assert o["tempo_estimado_min"] == pytest.approx(19.35 * FT, abs=0.02) and oo["fonte_estimativa"] == "modelo_ia" and oo["estimativa_validada"]
     assert [e["nome"] for e in oo["detalhe_estimativa"]][0].startswith("Preparação")
 
 
@@ -165,7 +172,8 @@ def test_contraste_com_o_real_e_acuracia(gestor, unidade_id):
     o = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
     gestor.post(f"/ordens/{o['id']}/liberar")
     oo = o["operacoes"][0]
-    assert oo["fonte_estimativa"] == "modelo_ia" and oo["tempo_exec_est_min"] == 13.75 and oo["tempo_prep_est_min"] == 5.0
+    assert oo["fonte_estimativa"] == "modelo_ia" and oo["tempo_exec_est_min"] == pytest.approx(13.75 * FT, abs=0.01)
+    assert oo["tempo_prep_est_min"] == pytest.approx(5 * FT, abs=0.01)
     ini = datetime.now(timezone.utc) - timedelta(hours=2)
     gestor.post("/apontamentos", {"ordem_operacao_id": oo["id"], "tipo": "preparacao", "inicio": ini.isoformat(),
                                   "fim": (ini + timedelta(minutes=6)).isoformat()})
@@ -173,10 +181,11 @@ def test_contraste_com_o_real_e_acuracia(gestor, unidade_id):
                                   "fim": (ini + timedelta(minutes=25)).isoformat(), "quantidade_boa": 10})
     gestor.post(f"/ordens/{o['id']}/operacoes/{oo['id']}/concluir")
     a = gestor.get(f"/ordens/{o['id']}/analise").json()["operacoes"][0]
-    assert a["estimado_min"] == 18.8 and a["realizado_min"] == 25 and a["fonte_estimativa"] == "modelo_ia"
+    assert a["estimado_min"] == pytest.approx(18.75 * FT, abs=0.06) and a["realizado_min"] == 25 and a["fonte_estimativa"] == "modelo_ia"
     assert a["elementos_modelo"] and a["estimativa_validada"] is False
     d = gestor.get("/dashboard").json()["acuracia_por_fonte"]
-    assert d == [{"fonte": "modelo_ia", "operacoes": 1, "desvio_medio_pct": 33.3, "erro_absoluto_medio_pct": 33.3}]
+    erro = (25 - 18.75 * FT) / (18.75 * FT) * 100
+    assert d[0]["fonte"] == "modelo_ia" and d[0]["operacoes"] == 1 and d[0]["desvio_medio_pct"] == pytest.approx(erro, abs=0.1)
 
 
 def test_isolamento_do_gemeo_digital(client, gestor, unidade_id):
