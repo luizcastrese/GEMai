@@ -1,0 +1,31 @@
+# Exemplo de produção: PostgreSQL + aplicação. Coloque um proxy reverso com HTTPS na frente.
+# Antes de subir:  cp .env.example .env  e preencha os segredos.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: erp
+      POSTGRES_USER: erp
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes: [dados:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp -d erp"]
+      interval: 10s
+      retries: 5
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      ERP_AMBIENTE: producao
+      ERP_SECRET_KEY: ${ERP_SECRET_KEY:?defina ERP_SECRET_KEY no .env (32+ caracteres)}
+      ERP_DATABASE_URL: postgresql+psycopg://erp:${POSTGRES_PASSWORD}@db:5432/erp
+      ERP_PERMITIR_CADASTRO_PUBLICO: ${ERP_PERMITIR_CADASTRO_PUBLICO:-false}
+      ERP_ANTHROPIC_API_KEY: ${ERP_ANTHROPIC_API_KEY:-}
+      ERP_IA_PROVEDOR: ${ERP_IA_PROVEDOR:-auto}
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+    ports: ["127.0.0.1:8000:8000"]
+volumes:
+  dados:
