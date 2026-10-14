@@ -20,7 +20,7 @@ def _cenario(gestor, uid):
 def test_inicio_vazio_orienta_a_configurar(gestor, operador):
     acoes = [a["codigo"] for a in gestor.get("/inicio").json()["acoes"]]
     assert acoes == ["configurar"]
-    assert operador.get("/inicio").json()["acoes"] == []  # operador não recebe pendências de gestão
+    assert [a["codigo"] for a in operador.get("/inicio").json()["acoes"]] == ["configurar"]  # mesma tela para todos
 
 
 def test_inicio_lista_pendencias_em_linguagem_comum(gestor, unidade_id):
@@ -41,7 +41,6 @@ def test_inicio_lista_pendencias_em_linguagem_comum(gestor, unidade_id):
 def test_confirmar_previsoes_em_um_clique(admin, gestor, operador, unidade_id):
     pid, ops = _cenario(gestor, unidade_id)
     gestor.post(f"/processos/{pid}/modelar-tempos")
-    assert operador.post(f"/processos/{pid}/confirmar-previsoes").status_code == 403
     assert gestor.post(f"/processos/{pid}/confirmar-previsoes").json() == {"confirmadas": 2}
     assert gestor.post(f"/processos/{pid}/confirmar-previsoes").json() == {"confirmadas": 0}  # idempotente
     for op in ops:

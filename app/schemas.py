@@ -45,9 +45,8 @@ class UsuarioOut(Out):
     empresa_id: int
     nome: str
     email: str
-    perfil: str
     ativo: bool
-    unidade_ids: list[int] = []
+    unidade_ids: list[int] = []  # vazio = todas as unidades
 
 
 class TokenOut(BaseModel):
@@ -61,13 +60,11 @@ class UsuarioIn(In):
     nome: Nome
     email: EmailStr
     senha: Annotated[str, Field(max_length=128)]
-    perfil: Literal["admin", "gestor", "operador"]
-    unidade_ids: list[int] = []
+    unidade_ids: list[int] = []  # vazio = todas as unidades
 
 
 class UsuarioUpdate(In):
     nome: Nome | None = None
-    perfil: Literal["admin", "gestor", "operador"] | None = None
     ativo: bool | None = None
     unidade_ids: list[int] | None = None
 

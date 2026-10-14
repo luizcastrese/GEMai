@@ -1,5 +1,5 @@
 import { api, get, patch, post, qs } from './api.js';
-import { estado, ehGestor } from './estado.js';
+import { estado } from './estado.js';
 import { avisoIA, confirmar, detalhes, fmtMin, fonteBadge, formulario, h, modal, montar, origemBadge, statusBadge, tabela, tentar, toast, badge, fmtNum, fmtData } from './ui.js';
 import { gerarAnalise } from './ia_view.js';
 
@@ -48,10 +48,10 @@ export async function detalhe(el, id) {
   };
   const cab = h('div', { class: 'card' }, h('div', { class: 'top' },
     h('div', null, h('h1', null, p.nome), h('div', { class: 'inline' }, statusBadge(p.status), `versão ${p.versao}`, p.origem === 'ia' ? badge('Montado com a IA', 'b-ia') : null)),
-    ehGestor() ? h('div', { class: 'inline' },
+    h('div', { class: 'inline' },
       edit ? h('button', { class: 'pri big', onclick: publicar }, 'Publicar') : null,
       !edit && p.status !== 'arquivado' ? h('button', { onclick: async () => { const r = await tentar(() => post(`/processos/${id}/nova-versao`), 'Nova versão criada para edição.'); if (r) location.hash = `#/processos/${r.id}`; } }, 'Editar (nova versão)') : null,
-      p.status !== 'arquivado' ? h('button', { class: 'dng', onclick: () => confirmar('Arquivar este processo? Ele deixa de aceitar novas ordens.', cmd(() => post(`/processos/${id}/arquivar`), 'Arquivado.')) }, 'Arquivar') : null) : null),
+      p.status !== 'arquivado' ? h('button', { class: 'dng', onclick: () => confirmar('Arquivar este processo? Ele deixa de aceitar novas ordens.', cmd(() => post(`/processos/${id}/arquivar`), 'Arquivado.')) }, 'Arquivar') : null)),
     edit ? h('div', { class: 'aviso' }, 'Em preparação: ajuste as tarefas à vontade. Ao publicar, a IA prevê o tempo de cada tarefa e o processo passa a aceitar ordens.') : null);
 
   const pront = h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Verificando…'));
@@ -67,10 +67,10 @@ export async function detalhe(el, id) {
         h('button', { class: 'sm dng', onclick: () => confirmar(`Remover a etapa "${e.nome}"?`, cmd(() => api('DELETE', `/etapas/${e.id}`), 'Etapa removida.')) }, '✕')) : null),
     e.operacoes.map((o) => h('div', { class: 'op' },
       h('div', { class: 'top' }, h('div', null, h('strong', null, o.nome), ' ', o.alerta_ergonomia ? badge('Atenção: esforço físico', 'b-warn') : null, h('div', null, textoPrevisao(previsoes.get(o.id)))),
-        ehGestor() ? h('div', { class: 'inline' },
+        h('div', { class: 'inline' },
           h('button', { class: 'sm', onclick: () => formTempoSimples(o, recarregar) }, 'Já sei o tempo'),
           edit ? [h('button', { class: 'sm', onclick: () => formOperacao(e, o, recursos, recarregar) }, 'Editar'),
-            h('button', { class: 'sm dng', onclick: () => confirmar(`Remover "${o.nome}"?`, cmd(() => api('DELETE', `/operacoes/${o.id}`), 'Tarefa removida.')) }, '✕')] : null) : null),
+            h('button', { class: 'sm dng', onclick: () => confirmar(`Remover "${o.nome}"?`, cmd(() => api('DELETE', `/operacoes/${o.id}`), 'Tarefa removida.')) }, '✕')] : null)),
       estado.avancado ? detalhes('Detalhes técnicos', operacaoView(o, p, edit, recursos, recarregar)) : null))));
 
   montar(el, cab, pront, h('h2', null, 'Etapas e tarefas'), blocos.length ? blocos : h('p', { class: 'muted' }, 'Sem etapas.'),
@@ -306,7 +306,8 @@ async function prontidaoPainel(alvo, p, recarregar, todasOps) {
   const etapaDe = (opId) => p.etapas.find((e) => e.operacoes.some((x) => x.id === opId));
   const opDe = (opId) => p.etapas.flatMap((e) => e.operacoes).find((x) => x.id === opId);
   montar(alvo, h('div', { class: 'top' }, h('h2', null, 'Está tudo pronto?'),
-    ehGestor() ? h('div', { class: 'inline' },
+    h('div', { class: 'inline' },
+      h('a', { class: 'btn', href: '#/contorno' }, 'Contorno físico'),
       h('button', { class: semPrevisao ? 'ia' : '', onclick: async () => {
         const c = await tentar(() => post(`/processos/${p.id}/modelar-tempos`));
         if (c) { toast(c.length ? 'A IA preparou as previsões de tempo. Confira e confirme.' : 'Todas as tarefas já têm previsão.'); recarregar(); }
@@ -315,10 +316,10 @@ async function prontidaoPainel(alvo, p, recarregar, todasOps) {
         const c = await tentar(() => post(`/processos/${p.id}/confirmar-previsoes`));
         if (c) { toast(`${c.confirmadas} previsão(ões) confirmada(s).`); recarregar(); }
       } }, `Confirmar ${aConfirmar} previsão(ões)`) : null,
-      estado.avancado ? h('button', { class: 'ia', onclick: () => gerarAnalise('revisao_processo', { unidade_id: p.unidade_id, processo_id: p.id }) }, 'Como deixar o processo consistente? (IA)') : null) : null),
+      estado.avancado ? h('button', { class: 'ia', onclick: () => gerarAnalise('revisao_processo', { unidade_id: p.unidade_id, processo_id: p.id }) }, 'Como deixar o processo consistente? (IA)') : null)),
     linhas.length ? h('div', { class: 'pronto' }, linhas.map(({ o, itens }) => h('div', null, h('strong', null, o.nome),
       h('ul', null, itens.map((i) => h('li', { class: i.categoria === 'seguranca' ? 'seg' : '' }, i.categoria === 'seguranca' ? '⚠ ' : '', i.msg, estado.avancado && i.detalhe ? h('div', { class: 'muted small' }, i.detalhe) : null))),
-      edit && ehGestor() && etapaDe(o.operacao_id) ? h('button', { class: 'sm', onclick: () => formOperacaoPorId(etapaDe(o.operacao_id), opDe(o.operacao_id), recarregar) }, 'Editar tarefa') : null)))
+      edit && etapaDe(o.operacao_id) ? h('button', { class: 'sm', onclick: () => formOperacaoPorId(etapaDe(o.operacao_id), opDe(o.operacao_id), recarregar) }, 'Editar tarefa') : null)))
       : h('div', { class: 'ok-box card' }, h('strong', null, '✓ Tudo certo.'), ' Nenhuma pendência nas tarefas deste processo.'));
 }
 

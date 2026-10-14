@@ -60,7 +60,6 @@ FT = 1 / (1 - 0.09)  # tolerâncias padrão do provedor local: 5% pessoais + 4% 
 
 def test_gerar_validar_simular_e_ordem(gestor, operador, unidade_id):
     pid, op, *_ = _cenario(gestor, unidade_id)
-    assert operador.post(f"/operacoes/{op}/modelo-tempo/gerar").status_code == 403
     m = gestor.post(f"/operacoes/{op}/modelo-tempo/gerar").json()
     assert m["status_validacao"] == "pendente" and m["origem"] == "ia" and m["confianca"] == "baixa"
     assert {e["metodo"] for e in m["elementos"]} == {"fixo", "capacidade_recurso", "deslocamento", "linear_driver"}
@@ -192,13 +191,13 @@ def test_isolamento_do_gemeo_digital(client, gestor, unidade_id):
     pid, op, est, cor, rec = _cenario(gestor, unidade_id)
     m = gestor.post(f"/operacoes/{op}/modelo-tempo/gerar").json()
     b = registrar(client, "Empresa B")
-    gb = criar_usuario(b, "gestor", "g@b.com", b.usuario["unidade_ids"])
+    gb = criar_usuario(b, "g@b.com", [b.unidade_id])
     for r in (gb.get(f"/espacos/{est['id']}"), gb.get(f"/operacoes/{op}/estimativa"), gb.get(f"/operacoes/{op}/modelo-tempo"),
               gb.post(f"/operacoes/{op}/modelo-tempo/gerar"), gb.post(f"/modelos-tempo/{m['id']}/validar"),
               gb.get(f"/processos/{pid}/prontidao"), gb.post(f"/processos/{pid}/modelar-tempos"),
               gb.get(f"/distancias?unidade_id={unidade_id}")):
         assert r.status_code == 404
-    ub = b.usuario["unidade_ids"][0]
+    ub = b.unidade_id
     e_b = gb.post("/espacos", {"unidade_id": ub, "nome": "X"}).json()
     # distância entre espaço de outra empresa é rejeitada
     assert gb.c.put("/api/v1/distancias", headers=gb.h, json={"origem_id": e_b["id"], "destino_id": est["id"], "metros": 1}).status_code == 404

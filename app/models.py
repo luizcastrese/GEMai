@@ -82,7 +82,6 @@ class Usuario(Base):
     nome: Mapped[str] = mapped_column(String(200))
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     senha_hash: Mapped[str] = mapped_column(String(255))
-    perfil: Mapped[str] = mapped_column(String(20))  # admin | gestor | operador
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
     falhas_login: Mapped[int] = mapped_column(Integer, default=0)
     bloqueado_ate: Mapped[datetime | None] = mapped_column(UTCDateTime)

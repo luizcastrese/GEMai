@@ -125,11 +125,11 @@ def test_ciclo_de_producao_e_analise(admin, gestor, operador, unidade_id):
     assert gestor.post(f"/operacoes/{ops[1]}/parametros/atualizar-historico").status_code == 409
     for x in gestor.get(f"/apontamentos?ordem_id={oid}").json():
         if x["fim"]:
-            assert gestor.post(f"/apontamentos/{x['id']}/aprovar").status_code == 200
-    assert gestor.post(f"/apontamentos/{a['id']}/aprovar").status_code == 409  # já decidido
+            assert admin.post(f"/apontamentos/{x['id']}/aprovar").status_code == 200  # outra pessoa da equipe
+    assert admin.post(f"/apontamentos/{a['id']}/aprovar").status_code == 409  # já decidido
 
 
-def test_historico_aprovado_melhora_estimativa(gestor, unidade_id):
+def test_historico_aprovado_melhora_estimativa(admin, gestor, unidade_id):
     pid, ops = montar_processo(gestor, unidade_id, tempo_unit=2.0, tempo_prep=0.0)
     agora = datetime.now(timezone.utc)
     # 3 ordens concluídas em que a operação 1 levou 3 min/un (e não os 2 informados)
@@ -142,12 +142,12 @@ def test_historico_aprovado_melhora_estimativa(gestor, unidade_id):
                                           "fim": (ini + timedelta(minutes=30)).isoformat(), "quantidade_boa": 10}).json()
         gestor.post(f"/ordens/{o['id']}/operacoes/{oo}/concluir")
         if i < 2:
-            gestor.post(f"/apontamentos/{a['id']}/aprovar")
+            admin.post(f"/apontamentos/{a['id']}/aprovar")
     nova = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
     assert nova["operacoes"][0]["fonte_estimativa"] == "parametro"  # só 2 aprovadas (<3)
     # terceira aprovação libera o histórico
     ap = [x for x in gestor.get("/apontamentos?status=registrado").json()]
-    gestor.post(f"/apontamentos/{ap[0]['id']}/aprovar")
+    admin.post(f"/apontamentos/{ap[0]['id']}/aprovar")
     nova = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
     assert nova["operacoes"][0]["fonte_estimativa"] == "historico"
     assert nova["operacoes"][0]["tempo_exec_est_min"] == 30  # 3 min/un × 10

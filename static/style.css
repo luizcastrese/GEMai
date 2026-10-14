@@ -61,3 +61,4 @@ svg.chart text{font-size:10px;fill:#637083}
 .pronto li{margin:.2rem 0}.pronto .seg{color:var(--err);font-weight:600}
 .modo{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--mut)}.modo input{width:auto}
 .prev{font-size:.9rem;color:var(--mut)}
+.card>.bar{margin-top:.7rem}

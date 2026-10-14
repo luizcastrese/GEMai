@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 
-from ..deps import Ctx, requer_admin, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Apontamento, AuditLog, Ordem, OrdemOperacao, Pessoa, Recurso
 from ..schemas import AuditoriaOut
 from ..services import dashboard, timecalc
@@ -13,7 +13,7 @@ router = APIRouter(tags=["gestao"])
 
 
 @router.get("/dashboard")
-def painel(ctx: Ctx = Depends(requer_gestor), unidade_id: int | None = None,
+def painel(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None,
            de: date | None = None, ate: date | None = None):
     hoje = datetime.now(timezone.utc).astimezone(dashboard.tz_empresa(ctx.empresa)).date()
     ate = ate or hoje
@@ -31,7 +31,7 @@ def painel(ctx: Ctx = Depends(requer_gestor), unidade_id: int | None = None,
 
 
 @router.get("/analise/comparacao")
-def comparar_condicoes(operacao_id: int, ctx: Ctx = Depends(requer_gestor)):
+def comparar_condicoes(operacao_id: int, ctx: Ctx = Depends(get_ctx)):
     """Compara o tempo por unidade da mesma operação entre recursos e entre pessoas
     (apenas apontamentos aprovados). Mostra diferenças; não afirma causas."""
     rows = ctx.db.execute(
@@ -64,7 +64,7 @@ def comparar_condicoes(operacao_id: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.get("/auditoria", response_model=list[AuditoriaOut])
-def auditoria(ctx: Ctx = Depends(requer_admin), entidade: str | None = None, entidade_id: int | None = None,
+def auditoria(ctx: Ctx = Depends(get_ctx), entidade: str | None = None, entidade_id: int | None = None,
               acao: str | None = Query(None, max_length=60), usuario_id: int | None = None,
               limite: int = Query(100, ge=1, le=500), deslocamento: int = Query(0, ge=0)):
     q = select(AuditLog).where(AuditLog.empresa_id == ctx.empresa_id)

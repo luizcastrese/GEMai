@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .. import audit
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, PerfilMaoDeObra, Produto, Recurso, Usuario
 from ..schemas import (DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, PerfilIn, PerfilOut, PerfilUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
                        ProdutoIn, ProdutoOut, ProdutoUpdate, RecursoIn, RecursoOut, RecursoUpdate)
@@ -35,7 +35,7 @@ def crud(caminho: str, Model: Type, In, Upd, Out, entidade: str, *, por_unidade:
         out = [Out.model_validate(i) for i in itens]
         return pos_leitura(ctx, itens, out) if pos_leitura else out
 
-    def criar(dados: In, ctx: Ctx = Depends(requer_gestor)):
+    def criar(dados: In, ctx: Ctx = Depends(get_ctx)):
         campos = dados.model_dump()
         if por_unidade:
             ctx.exige_unidade(campos["unidade_id"])
@@ -57,7 +57,7 @@ def crud(caminho: str, Model: Type, In, Upd, Out, entidade: str, *, por_unidade:
         o = Out.model_validate(obj)
         return pos_leitura(ctx, [obj], [o])[0] if pos_leitura else o
 
-    def atualizar(id_: int, dados: Upd, ctx: Ctx = Depends(requer_gestor)):
+    def atualizar(id_: int, dados: Upd, ctx: Ctx = Depends(get_ctx)):
         obj = ctx.obter(Model, id_)
         campos = dados.model_dump(exclude_unset=True)
         if validar:
@@ -148,7 +148,7 @@ def listar_distancias(unidade_id: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.put("/distancias", response_model=DistanciaOut)
-def definir_distancia(dados: DistanciaIn, ctx: Ctx = Depends(requer_gestor)):
+def definir_distancia(dados: DistanciaIn, ctx: Ctx = Depends(get_ctx)):
     """Cria ou atualiza a distância entre dois espaços da mesma unidade (vale nos dois sentidos)."""
     if dados.origem_id == dados.destino_id:
         raise HTTPException(422, "Origem e destino devem ser diferentes.")

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..config import get_settings
 from ..database import get_db
-from ..deps import Ctx, agora, get_ctx, requer_admin
+from ..deps import Ctx, agora, get_ctx
 from ..models import Empresa, Unidade, Usuario, UsuarioUnidade
 from ..ratelimit import ip_cliente, limite_cadastro, limite_login
 from ..schemas import (AlterarSenhaIn, LoginIn, RedefinirSenhaIn, RegistrarEmpresaIn, TokenOut,
@@ -20,10 +20,7 @@ router = APIRouter(tags=["auth"])
 
 def usuario_out(db: Session, u: Usuario) -> UsuarioOut:
     ids = [i for (i,) in db.execute(select(UsuarioUnidade.unidade_id).where(UsuarioUnidade.usuario_id == u.id))]
-    if u.perfil == "admin":
-        ids = [i for (i,) in db.execute(select(Unidade.id).where(Unidade.empresa_id == u.empresa_id))]
-    return UsuarioOut(id=u.id, empresa_id=u.empresa_id, nome=u.nome, email=u.email, perfil=u.perfil,
-                      ativo=u.ativo, unidade_ids=sorted(ids))
+    return UsuarioOut(id=u.id, empresa_id=u.empresa_id, nome=u.nome, email=u.email, ativo=u.ativo, unidade_ids=sorted(ids))
 
 
 def _token(db: Session, u: Usuario) -> TokenOut:
@@ -52,11 +49,9 @@ def registrar(dados: RegistrarEmpresaIn, request: Request, db: Session = Depends
     db.add(emp)
     db.flush()
     uni = Unidade(empresa_id=emp.id, nome=dados.unidade_nome)
-    usr = Usuario(empresa_id=emp.id, nome=dados.nome, email=email, senha_hash=hash_senha(dados.senha),
-                  perfil="admin")
+    usr = Usuario(empresa_id=emp.id, nome=dados.nome, email=email, senha_hash=hash_senha(dados.senha))
     db.add_all([uni, usr])
     db.flush()
-    db.add(UsuarioUnidade(usuario_id=usr.id, unidade_id=uni.id))
     audit.registrar(db, emp.id, usr.id, "empresa.criar", "empresa", emp.id, None, audit.snap(emp), ip_cliente(request))
     db.commit()
     return _token(db, usr)
@@ -116,7 +111,7 @@ def alterar_senha(dados: AlterarSenhaIn, ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
 
 
-# ------------------------------------------------------------------ usuários (admin)
+# ------------------------------------------------------------------ equipe (todos os usuários têm o mesmo acesso)
 def _validar_unidades(ctx: Ctx, ids: list[int]) -> list[int]:
     ids = sorted(set(ids))
     if ids:
@@ -127,27 +122,25 @@ def _validar_unidades(ctx: Ctx, ids: list[int]) -> list[int]:
     return ids
 
 
-def _outro_admin_ativo(ctx: Ctx, excluir_id: int) -> bool:
+def _outro_ativo(ctx: Ctx, excluir_id: int) -> bool:
     return bool(ctx.db.scalar(select(func.count(Usuario.id)).where(
-        Usuario.empresa_id == ctx.empresa_id, Usuario.perfil == "admin", Usuario.ativo.is_(True),
-        Usuario.id != excluir_id)))
+        Usuario.empresa_id == ctx.empresa_id, Usuario.ativo.is_(True), Usuario.id != excluir_id)))
 
 
 @router.get("/usuarios", response_model=list[UsuarioOut])
-def listar_usuarios(ctx: Ctx = Depends(requer_admin)):
+def listar_usuarios(ctx: Ctx = Depends(get_ctx)):
     us = ctx.db.scalars(select(Usuario).where(Usuario.empresa_id == ctx.empresa_id).order_by(Usuario.nome))
     return [usuario_out(ctx.db, u) for u in us]
 
 
 @router.post("/usuarios", response_model=UsuarioOut, status_code=201)
-def criar_usuario(dados: UsuarioIn, ctx: Ctx = Depends(requer_admin)):
+def criar_usuario(dados: UsuarioIn, ctx: Ctx = Depends(get_ctx)):
     _checar_senha(dados.senha)
     email = dados.email.lower()
     if ctx.db.scalar(select(Usuario.id).where(Usuario.email == email)):
         raise HTTPException(409, "Este e-mail já está cadastrado.")
     ids = _validar_unidades(ctx, dados.unidade_ids)
-    u = Usuario(empresa_id=ctx.empresa_id, nome=dados.nome, email=email, senha_hash=hash_senha(dados.senha),
-                perfil=dados.perfil)
+    u = Usuario(empresa_id=ctx.empresa_id, nome=dados.nome, email=email, senha_hash=hash_senha(dados.senha))
     ctx.db.add(u)
     ctx.db.flush()
     ctx.db.add_all(UsuarioUnidade(usuario_id=u.id, unidade_id=i) for i in ids)
@@ -164,20 +157,20 @@ def _usuario(ctx: Ctx, uid: int) -> Usuario:
 
 
 @router.patch("/usuarios/{uid}", response_model=UsuarioOut)
-def atualizar_usuario(uid: int, dados: UsuarioUpdate, ctx: Ctx = Depends(requer_admin)):
+def atualizar_usuario(uid: int, dados: UsuarioUpdate, ctx: Ctx = Depends(get_ctx)):
     u = _usuario(ctx, uid)
     antes = {**audit.snap(u), "unidade_ids": usuario_out(ctx.db, u).unidade_ids}
     campos = dados.model_dump(exclude_unset=True)
-    perde_admin = u.perfil == "admin" and (campos.get("perfil", "admin") != "admin" or campos.get("ativo") is False)
-    if perde_admin and not _outro_admin_ativo(ctx, u.id):
-        raise HTTPException(409, "É preciso manter ao menos um administrador ativo.")
-    if u.id == ctx.usuario.id and campos.get("ativo") is False:
-        raise HTTPException(409, "Você não pode desativar o próprio usuário.")
+    if campos.get("ativo") is False:
+        if u.id == ctx.usuario.id:
+            raise HTTPException(409, "Você não pode desativar o próprio usuário.")
+        if not _outro_ativo(ctx, u.id):
+            raise HTTPException(409, "É preciso manter ao menos um usuário ativo.")
     if "unidade_ids" in campos:
         ids = _validar_unidades(ctx, campos.pop("unidade_ids") or [])
         ctx.db.query(UsuarioUnidade).filter(UsuarioUnidade.usuario_id == u.id).delete()
         ctx.db.add_all(UsuarioUnidade(usuario_id=u.id, unidade_id=i) for i in ids)
-    sensivel = ("perfil" in campos and campos["perfil"] != u.perfil) or campos.get("ativo") is False
+    sensivel = campos.get("ativo") is False
     for k, v in campos.items():
         setattr(u, k, v)
     if sensivel:
@@ -190,7 +183,7 @@ def atualizar_usuario(uid: int, dados: UsuarioUpdate, ctx: Ctx = Depends(requer_
 
 
 @router.post("/usuarios/{uid}/redefinir-senha", status_code=204)
-def redefinir_senha(uid: int, dados: RedefinirSenhaIn, ctx: Ctx = Depends(requer_admin)):
+def redefinir_senha(uid: int, dados: RedefinirSenhaIn, ctx: Ctx = Depends(get_ctx)):
     u = _usuario(ctx, uid)
     _checar_senha(dados.nova_senha)
     u.senha_hash = hash_senha(dados.nova_senha)

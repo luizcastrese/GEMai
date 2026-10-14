@@ -1,5 +1,5 @@
 import { get, patch, post, qs } from './api.js';
-import { estado, ehGestor } from './estado.js';
+import { estado } from './estado.js';
 import { badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, fonteBadge, formulario, frasePrevistoReal, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
 import { gerarAnalise } from './ia_view.js';
 
@@ -45,7 +45,6 @@ async function novaOrdem(el) {
 
 // ---------------------------------------------------------------- detalhe
 export async function ordemDetalhe(el, id) {
-  const gestor = ehGestor();
   const [o, apts, ocs, recursos] = await Promise.all([get(`/ordens/${id}`), get(`/apontamentos${qs({ ordem_id: id })}`),
     get(`/ocorrencias${qs({ ordem_id: id })}`), get(`/recursos${qs({ unidade_id: estado.unidadeId })}`)]);
   const recarregar = () => ordemDetalhe(el, id);
@@ -60,10 +59,10 @@ export async function ordemDetalhe(el, id) {
   const cab = h('div', { class: 'card' }, h('div', { class: 'top' },
     h('div', null, h('h1', null, o.numero), h('div', { class: 'inline' }, statusBadge(o.status), o.atrasada ? badge('Atrasada', 'b-err') : null,
       `${o.cliente || o.descricao || ''}`, `· ${fmtNum(o.quantidade, 2)} un`, o.prazo ? `· prazo ${fmtDia(o.prazo)}` : '')),
-    gestor ? h('div', { class: 'inline' },
+    h('div', { class: 'inline' },
       o.status === 'planejada' ? h('button', { class: 'pri big', onclick: cmd(() => post(`/ordens/${id}/liberar`), 'Ordem liberada para produção.') }, 'Liberar para produção') : null,
       ['liberada', 'em_producao'].includes(o.status) ? h('button', { class: 'pri', onclick: cmd(() => post(`/ordens/${id}/concluir`), 'Ordem concluída.') }, 'Concluir ordem') : null,
-      !['concluida', 'cancelada'].includes(o.status) ? h('button', { class: 'dng', onclick: () => motivo('Cancelar ordem', 'Por que está cancelando?', (m) => cmd(() => post(`/ordens/${id}/cancelar`, { motivo: m }), 'Ordem cancelada.')()) }, 'Cancelar') : null) : null),
+      !['concluida', 'cancelada'].includes(o.status) ? h('button', { class: 'dng', onclick: () => motivo('Cancelar ordem', 'Por que está cancelando?', (m) => cmd(() => post(`/ordens/${id}/cancelar`, { motivo: m }), 'Ordem cancelada.')()) }, 'Cancelar') : null)),
     h('div', { class: 'grid g4' },
       kpi('Tempo previsto', o.tempo_estimado_min === null ? 'Sem previsão' : fmtMin(o.tempo_estimado_min)),
       kpi('Tarefas concluídas', `${feitas} de ${ativas.length}`), kpi('Início', fmtData(o.iniciada_em)), kpi('Fim', fmtData(o.concluida_em))),
@@ -87,8 +86,8 @@ export async function ordemDetalhe(el, id) {
       ['pendente', 'em_andamento'].includes(x.status) ? [
         o.status !== 'parada' ? h('button', { class: 'sm', onclick: () => iniciar(x) }, '▶ Iniciar') : null,
         h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/concluir`), 'Tarefa concluída.') }, '✓ Concluir'),
-        gestor && x.opcional && x.status === 'pendente' ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/pular`)) }, 'Pular') : null] : null,
-      gestor && ['concluida', 'pulada'].includes(x.status) ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/reabrir`)) }, 'Reabrir') : null) : '' }], o.operacoes));
+        x.opcional && x.status === 'pendente' ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/pular`)) }, 'Pular') : null] : null,
+      ['concluida', 'pulada'].includes(x.status) ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/reabrir`)) }, 'Reabrir') : null) : '' }], o.operacoes));
 
   const secOc = h('div', { class: 'card' }, h('div', { class: 'top' }, h('h2', null, 'Problemas e paradas'),
     o.status !== 'cancelada' && o.status !== 'concluida' ? h('button', { onclick: () => novaOcorrencia(o, recursos, recarregar) }, 'Algo deu errado? Registrar') : null),
@@ -101,16 +100,16 @@ export async function ordemDetalhe(el, id) {
     { t: 'Tarefa', f: (a) => a.operacao_nome }, { t: 'Tipo', f: (a) => TIPO_APT[a.tipo] }, { t: 'Início', f: (a) => fmtData(a.inicio) },
     { t: 'Duração', f: (a) => (a.fim ? fmtMin(a.duracao_min) : badge('Em andamento', 'b-pri')) }, { t: 'Boas / defeito', f: (a) => `${fmtNum(a.quantidade_boa, 2)} / ${fmtNum(a.quantidade_refugo, 2)}` },
     { t: 'Situação', f: (a) => statusBadge(a.status) },
-    { t: '', f: (a) => gestor ? h('div', { class: 'inline' },
+    { t: '', f: (a) => h('div', { class: 'inline' },
       a.fim && a.status === 'registrado' ? h('button', { class: 'sm', onclick: cmd(() => post(`/apontamentos/${a.id}/aprovar`), 'Aprovado.') }, 'Aprovar') : null,
-      h('button', { class: 'sm dng', onclick: () => motivo('Anular registro', 'Por que anular? (mín. 5 caracteres)', (m) => cmd(() => post(`/apontamentos/${a.id}/anular`, { motivo: m }), 'Anulado.')()) }, 'Anular')) : '' }], apts, 'Nenhum registro ainda.');
+      h('button', { class: 'sm dng', onclick: () => motivo('Anular registro', 'Por que anular? (mín. 5 caracteres)', (m) => cmd(() => post(`/apontamentos/${a.id}/anular`, { motivo: m }), 'Anulado.')()) }, 'Anular'))}], apts, 'Nenhum registro ainda.');
   const secApt = detalhes(`Registros de produção (${apts.length})`, h('div', { class: 'card' }, tabApt,
-    gestor && aberta && estado.avancado ? h('p', null, h('button', { class: 'sm', onclick: () => apontamentoManual(o, recursos, recarregar) }, '+ Lançamento manual (retroativo)')) : null));
-  secApt.open = apts.some((a) => a.status === 'registrado' && a.fim) && gestor;
+    aberta && estado.avancado ? h('p', null, h('button', { class: 'sm', onclick: () => apontamentoManual(o, recursos, recarregar) }, '+ Lançamento manual (retroativo)')) : null));
+  secApt.open = apts.some((a) => a.status === 'registrado' && a.fim);
 
   const analise = h('div', { class: 'card' }, h('h2', null, 'Previsto × real'), h('p', { class: 'muted' }, 'Carregando…'));
-  montar(el, cab, roteiro, secOc, secApt, gestor ? analise : null);
-  if (gestor) analisar(analise, o);
+  montar(el, cab, roteiro, secOc, secApt, analise);
+  analisar(analise, o);
 }
 
 async function analisar(alvo, o) {

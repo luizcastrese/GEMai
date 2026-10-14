@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from ..constants import ORDEM_ABERTA
 from ..deps import Ctx, get_ctx
 from ..models import Apontamento, ModeloTempo, Ocorrencia, Operacao, Ordem, Processo, Etapa
+from ..services import contorno
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["inicio"])
@@ -34,8 +35,6 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
         Ocorrencia.fim.is_(None), Ocorrencia.anulada.is_(False))) or 0
     numeros = {"ordens_abertas": len(abertas), "atrasadas": len(atrasadas), "paradas_abertas": paradas}
     acoes: list[dict] = []
-    if not ctx.eh_gestor:
-        return {"acoes": acoes, "numeros": numeros}
 
     if atrasadas:
         acoes.append({"codigo": "atrasadas", "nivel": "alerta", "link": "#/ordens",
@@ -49,6 +48,11 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     if a_aprovar:
         acoes.append({"codigo": "aprovar", "nivel": "acao", "link": "#/aprovacoes",
                       "titulo": _plural(a_aprovar, "registro de produção para aprovar", "registros de produção para aprovar")})
+    cont = contorno.resumo(ctx.db, ctx.empresa_id, unidades)
+    if cont["tarefas"] and cont["pendentes"]:
+        acoes.append({"codigo": "contorno", "nivel": "acao", "link": "#/contorno",
+                      "titulo": _plural(cont["pendentes"], "informação do contorno físico falta", "informações do contorno físico faltam")
+                                + " para a IA prever os tempos"})
     # previsões da IA aguardando confirmação (versão ativa de cada operação)
     pend = ctx.db.scalars(select(ModeloTempo).where(
         ModeloTempo.empresa_id == ctx.empresa_id, ModeloTempo.unidade_id.in_(unidades),

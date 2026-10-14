@@ -52,7 +52,7 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
                 add("aviso", "Informe de onde a peça sai e para onde vai (ou deixe os dois em branco).")
             if op.espaco_origem_id and op.espaco_destino_id and op.distancia_m is None and modelo_tempo.distancia_entre(
                     db, empresa_id, op.espaco_origem_id, op.espaco_destino_id) is None:
-                add("atencao", "Informe a distância entre os dois locais (em Equipamentos e locais › Locais).")
+                add("atencao", "Informe a distância entre os dois locais (tela Contorno físico).")
             if op.item_peso_kg is None:
                 add("info", "Informe o peso da peça para a previsão considerar o manuseio e o transporte.")
             if alerta_ergonomia(op.ergonomia):

@@ -26,17 +26,12 @@ class Ctx:
     def __init__(self, db: Session, usuario: Usuario, empresa: Empresa, ip: str):
         self.db, self.usuario, self.empresa, self.ip = db, usuario, empresa, ip
         self.empresa_id = usuario.empresa_id
-        self.perfil = usuario.perfil
-        self.eh_admin = usuario.perfil == "admin"
-        self.eh_gestor = usuario.perfil in ("admin", "gestor")
-        if self.eh_admin:
-            self.unidades: set[int] | None = None  # todas da empresa
-        else:
-            self.unidades = {
-                u for (u,) in db.execute(
-                    select(UsuarioUnidade.unidade_id).where(UsuarioUnidade.usuario_id == usuario.id)
-                )
-            }
+        # Um único tipo de usuário. Por padrão acessa todas as unidades da empresa; se o usuário tiver
+        # unidades atribuídas, fica restrito a elas (útil para redes com várias unidades).
+        atribuidas = {
+            u for (u,) in db.execute(select(UsuarioUnidade.unidade_id).where(UsuarioUnidade.usuario_id == usuario.id))
+        }
+        self.unidades: set[int] | None = atribuidas or None
 
     # ------------------------------------------------------------- escopo
     def pode_unidade(self, unidade_id: int | None) -> bool:
@@ -105,16 +100,6 @@ def get_ctx(request: Request, cred: HTTPAuthorizationCredentials | None = Depend
     return Ctx(db, usuario, empresa, ip_cliente(request))
 
 
-def requer(*perfis: str):
-    def dep(ctx: Ctx = Depends(get_ctx)) -> Ctx:
-        if ctx.perfil not in perfis:
-            raise HTTPException(403, "Seu perfil não permite esta ação.")
-        return ctx
-    return dep
-
-
-requer_admin = requer("admin")
-requer_gestor = requer("admin", "gestor")
 qualquer = get_ctx
 
 

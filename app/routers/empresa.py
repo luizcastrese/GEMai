@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from .. import audit
-from ..deps import Ctx, get_ctx, requer_admin, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Unidade
 from ..schemas import EmpresaOut, EmpresaUpdate, UnidadeIn, UnidadeOut, UnidadeUpdate
 from ..services import ia
@@ -24,7 +24,7 @@ def obter_empresa(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.patch("/empresa", response_model=EmpresaOut)
-def atualizar_empresa(dados: EmpresaUpdate, ctx: Ctx = Depends(requer_admin)):
+def atualizar_empresa(dados: EmpresaUpdate, ctx: Ctx = Depends(get_ctx)):
     if dados.fuso:
         from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         try:
@@ -49,7 +49,7 @@ def listar_unidades(ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/unidades", response_model=UnidadeOut, status_code=201)
-def criar_unidade(dados: UnidadeIn, ctx: Ctx = Depends(requer_admin)):
+def criar_unidade(dados: UnidadeIn, ctx: Ctx = Depends(get_ctx)):
     if ctx.db.scalar(select(Unidade.id).where(Unidade.empresa_id == ctx.empresa_id, Unidade.nome == dados.nome)):
         raise HTTPException(409, "Já existe uma unidade com este nome.")
     u = Unidade(empresa_id=ctx.empresa_id, **dados.model_dump())
@@ -66,11 +66,9 @@ def obter_unidade(uid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.patch("/unidades/{uid}", response_model=UnidadeOut)
-def atualizar_unidade(uid: int, dados: UnidadeUpdate, ctx: Ctx = Depends(requer_gestor)):
+def atualizar_unidade(uid: int, dados: UnidadeUpdate, ctx: Ctx = Depends(get_ctx)):
     u = ctx.exige_unidade(uid)
     campos = dados.model_dump(exclude_unset=True)
-    if ("nome" in campos or "ativa" in campos) and not ctx.eh_admin:
-        raise HTTPException(403, "Somente administradores alteram nome ou situação da unidade.")
     if campos.get("nome") and campos["nome"] != u.nome and ctx.db.scalar(
             select(Unidade.id).where(Unidade.empresa_id == ctx.empresa_id, Unidade.nome == campos["nome"])):
         raise HTTPException(409, "Já existe uma unidade com este nome.")

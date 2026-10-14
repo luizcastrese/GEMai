@@ -9,17 +9,24 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 - Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
 - **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
 
-## Experiência do usuário: simples por padrão, técnica sob demanda
+## Experiência do usuário: um só tipo de usuário, simples por padrão
 
-O usuário comum **não precisa saber o que há por trás**. A interface fala a língua da operação e esconde a engenharia:
+Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-| Quem | O que vê |
-|---|---|
-| **Gestor** | **Início** com "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar), atalhos e 4 números. Um assistente para **configurar com a IA**. Em cada processo, um checklist "**Está tudo pronto?**" em português comum e **um único botão Publicar** (a IA prevê o tempo das tarefas na publicação). Quem já sabe o tempo usa **"Já sei o tempo"** e ele passa a valer no lugar da IA |
-| **Operador** | **Minha fila**: ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar". Nada de tipos, fórmulas ou parâmetros |
-| **Especialista** (opção "Modo especialista" no topo) | Tolerâncias, composição do tempo por elemento, NIOSH/MOST, perfis de mão de obra, parâmetros versionados, sugestões da IA, análises completas e auditoria |
+- **Início:** "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, contorno físico incompleto), atalhos e poucos números.
+- **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
+- **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
+  1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **peças por hora** de cada equipamento; 4. por tarefa: equipamento, de onde sai, para onde vai e **peso da peça**.
+  A IA já pergunta isso no diagnóstico e cria os locais citados. Dados opcionais (dimensões, ruído, temperatura…) ficam fora do mínimo. O contorno pode ser corrigido a qualquer momento, inclusive em processo publicado.
+- **Processo:** checklist "Está tudo pronto?" em português comum e um **único Publicar** (a IA prevê o tempo das tarefas na publicação). **A confirmação das previsões é manual**: botão "Confirmar previsões". "Já sei o tempo" substitui a estimativa da IA por um tempo informado.
+- **Minha fila:** ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar".
+- **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
 
-Regras dessa camada: o **alerta de segurança** (carga acima do limite, ruído, esforço) aparece para todos, **em linguagem simples**; o resto do técnico fica só no modo especialista. Os textos das pendências vêm do backend já separados por categoria (`simples`, `seguranca`, `tecnico`).
+Regras que substituem os papéis:
+- **Dois olhos nos registros de produção:** quem registrou um apontamento não o aprova sozinho, a menos que a equipe tenha uma só pessoa. Só histórico conferido por outra pessoa melhora as estimativas.
+- **A equipe precisa de ao menos uma pessoa ativa;** ninguém desativa a si mesmo.
+- **Unidades:** por padrão todos acessam todas as unidades; opcionalmente uma pessoa pode ser restrita a algumas (redes com várias unidades).
+- Alertas de segurança (carga, ruído, esforço) aparecem para todos, em linguagem simples; a referência normativa fica nos detalhes técnicos.
 
 ## Gêmeo digital: como o tempo planejado nasce
 
@@ -113,20 +120,21 @@ e ponha um proxy reverso com HTTPS na frente.
 ## Segurança (uso por terceiros)
 
 - **Isolamento multiempresa:** toda tabela de negócio tem `empresa_id`; todo acesso passa por `Ctx` (`app/deps.py`) que filtra por empresa e, para gestor/operador, pelas **unidades atribuídas**. Recurso de outro tenant responde 404. Há testes dedicados (`tests/test_tenancy.py`).
-- Perfis: **admin** (tudo da empresa), **gestor** (edita/aprova nas suas unidades), **operador** (fila e apontamentos próprios).
+- **Um único tipo de usuário** por empresa (sem papéis). O isolamento entre empresas continua rígido; veja a regra dos "dois olhos" e a restrição opcional por unidade acima. Qualquer pessoa da equipe gerencia usuários e vê o histórico — trate o acesso como de confiança dentro da empresa.
 - Senhas com Argon2id; política mínima; bloqueio temporário após falhas; mensagens/tempos iguais para usuário inexistente; JWT curto com `token_versao` (trocar senha, desativar ou mudar perfil derruba sessões).
 - Entradas validadas (`extra="forbid"` impede injetar `empresa_id`), limite de corpo de 1 MB, CSP estrita, `X-Frame-Options`, HSTS em produção, `/docs` desligado em produção, e a UI nunca usa `innerHTML`.
 - Em produção a aplicação **não inicia** sem `ERP_SECRET_KEY` forte.
-- **IA externa só com consentimento:** o admin precisa habilitar "IA externa" na empresa **e** o servidor precisa ter `ERP_ANTHROPIC_API_KEY`. Textos da empresa vão ao modelo como *dados* (não instruções), a saída é validada por schema e saneada, e falha do provedor cai para o provedor local.
-- Auditoria append-only (`/auditoria`, admin) com antes/depois, usuário e IP.
+- **IA externa só com consentimento:** a empresa precisa habilitar "IA externa" na empresa **e** o servidor precisa ter `ERP_ANTHROPIC_API_KEY`. Textos da empresa vão ao modelo como *dados* (não instruções), a saída é validada por schema e saneada, e falha do provedor cai para o provedor local.
+- Auditoria append-only (`/auditoria`, visível a toda a equipe) com antes/depois, usuário e IP.
 
 ### Limitações conhecidas / antes de abrir a terceiros em produção
 
 - O limitador de tentativas é **em memória** (por processo). Com várias instâncias, use também o limitador do proxy/WAF ou troque por Redis.
-- Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: o admin define/redefine senhas. Se for relevante, são os próximos passos naturais.
+- Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: qualquer pessoa da equipe define/redefine senhas. Se for relevante, são os próximos passos naturais.
+- Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 79 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 86 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

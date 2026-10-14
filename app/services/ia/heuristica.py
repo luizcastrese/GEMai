@@ -10,7 +10,7 @@ import re
 import unicodedata
 
 from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, EstruturaProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from .esquemas import (AnaliseTexto, EspacoIA, EstruturaProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -18,15 +18,18 @@ NOME = "heuristica"
 BASE = {
     "Processos": ["Quais são as etapas do processo, na ordem em que acontecem?",
                   "Existem caminhos alternativos ou etapas que só ocorrem em alguns casos?"],
-    "Recursos": ["Quais máquinas, ferramentas, equipamentos e instalações são utilizados?"],
+    "Recursos": ["Quais máquinas, ferramentas, equipamentos e instalações são utilizados?",
+                 "Para cada máquina, quantas peças ou unidades ela faz por hora, mais ou menos?"],
     "Pessoas": ["Quem executa cada etapa e quantas pessoas participam? Há diferença entre operadores?"],
-    "Materiais": ["O que entra em cada etapa e em que quantidade? Existem perdas ou refugos?"],
+    "Materiais": ["O que entra em cada etapa e em que quantidade? Existem perdas ou refugos?",
+                  "Quanto pesa, em média, cada peça ou material que as pessoas carregam?"],
     "Tempo": ["Quanto tempo leva cada etapa, em média? Há esperas? O que faz o tempo variar?"],
     "Quantidade": ["Quantas unidades, lotes ou peças são processadas por ordem ou por dia?"],
     "Qualidade": ["Quais erros, retrabalhos ou rejeições podem ocorrer e em que etapa?"],
     "Manutenção": ["Existem paradas de máquinas? Como a manutenção é registrada hoje?"],
     "Ergonomia": ["Há esforço físico, repetitividade, postura ou deslocamentos relevantes em alguma etapa?"],
-    "Ambiente": ["Existe posto específico, espera, espaço limitado ou condição que influencia a operação?"],
+    "Ambiente": ["Existe posto específico, espera, espaço limitado ou condição que influencia a operação?",
+                 "Quais são os lugares por onde o material passa (ex.: estoque, bancada de corte, montagem, expedição)?"],
     "Informação": ["Onde o andamento é registrado hoje: sistema, planilha, papel ou comunicação verbal?"],
 }
 
@@ -150,8 +153,13 @@ def estruturar(ctx: dict) -> EstruturaProposta:
     resp = lambda g: " \n".join((q.get("resposta") or "") for q in qa if q["grupo"] == g).strip()  # noqa: E731
     fonte_etapas = resp("Processos") or ctx.get("descricao", "")
     nomes = etapas_do_texto(fonte_etapas)
-    recursos_txt = _itens(resp("Recursos"))
-    materiais_txt = _itens(resp("Materiais"))
+    # locais: só da pergunta específica; descarta itens com números (ex.: "estoque a 20 m")
+    locais_txt = [x for q in qa if q["texto"].startswith("Quais são os lugares") for x in _itens(q.get("resposta") or "")
+                  if not re.search(r"\d", x)]
+    recursos_txt = [x for q in qa if q["grupo"] == "Recursos" and q["texto"].startswith("Quais máquinas")
+                    for x in _itens(q.get("resposta") or "")] or _itens(resp("Recursos"))
+    materiais_txt = [x for q in qa if q["grupo"] == "Materiais" and q["texto"].startswith("O que entra")
+                     for x in _itens(q.get("resposta") or "")]
 
     recursos = [RecursoIA(nome=r, tipo=_tipo_recurso(r)) for r in recursos_txt]
     etapas = []
@@ -176,7 +184,7 @@ def estruturar(ctx: dict) -> EstruturaProposta:
     proc = ProcessoIA(nome=f"Processo principal – {ctx.get('unidade', 'operação')}", macroprocesso=macro,
                       descricao=(ctx.get("descricao", "") or "")[:2000], etapas=etapas)
     return EstruturaProposta(
-        processos=[proc] if etapas else [], recursos=recursos,
+        processos=[proc] if etapas else [], recursos=recursos, espacos=[EspacoIA(nome=n) for n in locais_txt[:20]],
         materiais=[MaterialIA(nome=m) for m in materiais_txt], indicadores_sugeridos=INDICADORES,
         etapas_possivelmente_omitidas=omitidas, perguntas_pendentes=pend,
         observacoes=("Rascunho gerado por regras locais (sem IA externa) a partir do texto informado. "

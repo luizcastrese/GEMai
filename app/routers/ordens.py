@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..constants import ORDEM_ABERTA, ORDEM_FINAL
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Empresa, Ocorrencia, Operacao, Ordem, OrdemOperacao, Processo, Produto, Recurso
 from ..schemas import CancelarIn, OrdemIn, OrdemOperacaoOut, OrdemOut, OrdemUpdate
 from ..services import estimativa, metricas
@@ -94,7 +94,7 @@ def listar(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None, status: s
 
 
 @router.post("/ordens", response_model=OrdemOut, status_code=201)
-def criar(dados: OrdemIn, ctx: Ctx = Depends(requer_gestor)):
+def criar(dados: OrdemIn, ctx: Ctx = Depends(get_ctx)):
     uni = ctx.exige_unidade(dados.unidade_id)
     proc = ctx.obter(Processo, dados.processo_id)
     if proc.unidade_id != uni.id:
@@ -160,7 +160,7 @@ def obter(oid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.patch("/ordens/{oid}", response_model=OrdemOut)
-def atualizar(oid: int, dados: OrdemUpdate, ctx: Ctx = Depends(requer_gestor)):
+def atualizar(oid: int, dados: OrdemUpdate, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     if o.status in ORDEM_FINAL:
         raise HTTPException(409, "Ordem encerrada não pode ser alterada.")
@@ -175,7 +175,7 @@ def atualizar(oid: int, dados: OrdemUpdate, ctx: Ctx = Depends(requer_gestor)):
 
 # ------------------------------------------------------------------ status
 @router.post("/ordens/{oid}/liberar", response_model=OrdemOut)
-def liberar(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def liberar(oid: int, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     if o.status != "planejada":
         raise HTTPException(409, "Somente ordens planejadas podem ser liberadas.")
@@ -186,7 +186,7 @@ def liberar(oid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/ordens/{oid}/cancelar", response_model=OrdemOut)
-def cancelar(oid: int, dados: CancelarIn, ctx: Ctx = Depends(requer_gestor)):
+def cancelar(oid: int, dados: CancelarIn, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     if o.status in ORDEM_FINAL:
         raise HTTPException(409, "A ordem já está encerrada.")
@@ -205,7 +205,7 @@ def cancelar(oid: int, dados: CancelarIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/ordens/{oid}/concluir", response_model=OrdemOut)
-def concluir(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def concluir(oid: int, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     if o.status not in ("liberada", "em_producao"):
         raise HTTPException(409, "Somente ordens liberadas ou em produção podem ser concluídas "
@@ -223,7 +223,7 @@ def concluir(oid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.get("/ordens/{oid}/analise")
-def analise(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def analise(oid: int, ctx: Ctx = Depends(get_ctx)):
     """Planejado x realizado da ordem (cálculo determinístico, sem IA)."""
     return metricas.analisar_ordem(ctx.db, ctx.obter(Ordem, oid))
 
@@ -249,7 +249,7 @@ def concluir_operacao(oid: int, ooid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/ordens/{oid}/operacoes/{ooid}/reabrir", response_model=OrdemOut)
-def reabrir_operacao(oid: int, ooid: int, ctx: Ctx = Depends(requer_gestor)):
+def reabrir_operacao(oid: int, ooid: int, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     oo = _oo(ctx, o, ooid)
     if o.status not in ("liberada", "em_producao"):
@@ -264,7 +264,7 @@ def reabrir_operacao(oid: int, ooid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/ordens/{oid}/operacoes/{ooid}/pular", response_model=OrdemOut)
-def pular_operacao(oid: int, ooid: int, ctx: Ctx = Depends(requer_gestor)):
+def pular_operacao(oid: int, ooid: int, ctx: Ctx = Depends(get_ctx)):
     o = ctx.obter(Ordem, oid)
     oo = _oo(ctx, o, ooid)
     if not oo.opcional or oo.status != "pendente" or o.status in ORDEM_FINAL:

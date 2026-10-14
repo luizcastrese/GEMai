@@ -23,5 +23,3 @@ export function escolherUnidade(id) {
   try { sessionStorage.setItem(KU, String(id)); } catch { /* ignore */ }
 }
 export const unidadeAtual = () => estado.unidades.find((u) => u.id === estado.unidadeId);
-export const ehGestor = () => ['admin', 'gestor'].includes(estado.usuario?.perfil);
-export const ehAdmin = () => estado.usuario?.perfil === 'admin';

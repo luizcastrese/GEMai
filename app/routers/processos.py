@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 
 from .. import audit
 from ..constants import PARAMETROS_PADRAO
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
@@ -44,6 +44,12 @@ def processo_out(p: Processo, detalhado: bool = True, avisos: list[str] | None =
 
 
 # ------------------------------------------------------------------ helpers
+# Dados do contorno físico podem ser corrigidos a qualquer momento (não mudam a estrutura do processo);
+# ordens já criadas guardam a estimativa feita na época.
+CAMPOS_CONTORNO = {"recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
+                   "item_comprimento_m", "item_largura_m", "item_altura_m", "num_pessoas", "funcao_requerida"}
+
+
 def _rascunho(p: Processo) -> None:
     if p.status != "rascunho":
         raise HTTPException(409, "A estrutura só pode ser editada em rascunho. "
@@ -111,7 +117,7 @@ def listar_processos(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None,
 
 
 @router.post("/processos", response_model=ProcessoOut, status_code=201)
-def criar_processo(dados: ProcessoIn, ctx: Ctx = Depends(requer_gestor)):
+def criar_processo(dados: ProcessoIn, ctx: Ctx = Depends(get_ctx)):
     ctx.exige_unidade(dados.unidade_id)
     p = Processo(empresa_id=ctx.empresa_id, codigo=str(uuid.uuid4()), versao=1, status="rascunho",
                  criado_por=ctx.usuario.id, **dados.model_dump())
@@ -128,7 +134,7 @@ def obter_processo(pid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.patch("/processos/{pid}", response_model=ProcessoOut)
-def atualizar_processo(pid: int, dados: ProcessoUpdate, ctx: Ctx = Depends(requer_gestor)):
+def atualizar_processo(pid: int, dados: ProcessoUpdate, ctx: Ctx = Depends(get_ctx)):
     p = ctx.obter(Processo, pid)
     _rascunho(p)
     antes = audit.snap(p)
@@ -141,7 +147,7 @@ def atualizar_processo(pid: int, dados: ProcessoUpdate, ctx: Ctx = Depends(reque
 
 
 @router.post("/processos/{pid}/nova-versao", response_model=ProcessoOut, status_code=201)
-def nova_versao(pid: int, ctx: Ctx = Depends(requer_gestor)):
+def nova_versao(pid: int, ctx: Ctx = Depends(get_ctx)):
     origem = ctx.obter(Processo, pid)
     if origem.status == "rascunho":
         raise HTTPException(409, "Este processo já é um rascunho.")
@@ -202,7 +208,7 @@ def nova_versao(pid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/processos/{pid}/publicar", response_model=ProcessoOut)
-def publicar(pid: int, ctx: Ctx = Depends(requer_gestor)):
+def publicar(pid: int, ctx: Ctx = Depends(get_ctx)):
     p = ctx.obter(Processo, pid)
     _rascunho(p)
     if not p.etapas:
@@ -226,7 +232,7 @@ def publicar(pid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/processos/{pid}/arquivar", response_model=ProcessoOut)
-def arquivar(pid: int, ctx: Ctx = Depends(requer_gestor)):
+def arquivar(pid: int, ctx: Ctx = Depends(get_ctx)):
     p = ctx.obter(Processo, pid)
     antes = p.status
     p.status = "arquivado"
@@ -237,7 +243,7 @@ def arquivar(pid: int, ctx: Ctx = Depends(requer_gestor)):
 
 # ------------------------------------------------------------------ etapas
 @router.post("/processos/{pid}/etapas", response_model=EtapaOut, status_code=201)
-def criar_etapa(pid: int, dados: EtapaIn, ctx: Ctx = Depends(requer_gestor)):
+def criar_etapa(pid: int, dados: EtapaIn, ctx: Ctx = Depends(get_ctx)):
     p = ctx.obter(Processo, pid)
     _rascunho(p)
     campos = dados.model_dump()
@@ -253,7 +259,7 @@ def criar_etapa(pid: int, dados: EtapaIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.patch("/etapas/{eid}", response_model=EtapaOut)
-def atualizar_etapa(eid: int, dados: EtapaUpdate, ctx: Ctx = Depends(requer_gestor)):
+def atualizar_etapa(eid: int, dados: EtapaUpdate, ctx: Ctx = Depends(get_ctx)):
     e, p = _etapa(ctx, eid)
     _rascunho(p)
     antes = audit.snap(e)
@@ -270,7 +276,7 @@ def atualizar_etapa(eid: int, dados: EtapaUpdate, ctx: Ctx = Depends(requer_gest
 
 
 @router.delete("/etapas/{eid}", status_code=204)
-def remover_etapa(eid: int, ctx: Ctx = Depends(requer_gestor)):
+def remover_etapa(eid: int, ctx: Ctx = Depends(get_ctx)):
     e, p = _etapa(ctx, eid)
     _rascunho(p)
     antes = audit.snap(e)
@@ -297,7 +303,7 @@ def _campos_operacao(dados) -> dict:
 
 
 @router.post("/etapas/{eid}/operacoes", response_model=OperacaoOut, status_code=201)
-def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(requer_gestor)):
+def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(get_ctx)):
     e, p = _etapa(ctx, eid)
     _rascunho(p)
     campos = _campos_operacao(dados)
@@ -316,10 +322,13 @@ def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(requer_gestor
 
 
 @router.patch("/operacoes/{oid}", response_model=OperacaoOut)
-def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(requer_gestor)):
+def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(get_ctx)):
     op, e, p = _operacao(ctx, oid)
-    _rascunho(p)
     campos = _campos_operacao(dados)
+    if p.status == "rascunho":
+        pass
+    elif not set(campos) <= CAMPOS_CONTORNO:
+        _rascunho(p)  # estrutura de processo publicado é fixa
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
     _espacos_da_unidade(ctx, campos, p.unidade_id)
     _perfil_da_unidade(ctx, campos, p.unidade_id)
@@ -345,7 +354,7 @@ def _apagar_parametros_op(ctx: Ctx, oid: int) -> None:
 
 
 @router.delete("/operacoes/{oid}", status_code=204)
-def remover_operacao(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def remover_operacao(oid: int, ctx: Ctx = Depends(get_ctx)):
     op, e, p = _operacao(ctx, oid)
     _rascunho(p)
     antes = audit.snap(op)
@@ -399,7 +408,7 @@ def _nova_versao_parametro(ctx: Ctx, uni: int, dados: dict, *, origem: str, stat
 
 
 @router.post("/parametros", response_model=ParametroOut, status_code=201)
-def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(requer_gestor)):
+def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(get_ctx)):
     """Cria nova versão do parâmetro. Valor informado/medido por um gestor já nasce validado."""
     uni = _unidade_do_escopo(ctx, dados.escopo_tipo, dados.escopo_id)
     if dados.valor_num is None and dados.valor_texto is None:
@@ -419,7 +428,7 @@ def _param(ctx: Ctx, pid: int) -> Parametro:
 
 
 @router.post("/parametros/{pid}/validar", response_model=ParametroOut)
-def validar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def validar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     p = _param(ctx, pid)
     if p.status_validacao != "pendente":
         raise HTTPException(409, "Parâmetro já decidido.")
@@ -440,7 +449,7 @@ def validar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gest
 
 
 @router.post("/parametros/{pid}/rejeitar", response_model=ParametroOut)
-def rejeitar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def rejeitar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     p = _param(ctx, pid)
     if p.status_validacao != "pendente":
         raise HTTPException(409, "Parâmetro já decidido.")
@@ -453,7 +462,7 @@ def rejeitar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_ges
 
 
 @router.post("/operacoes/{oid}/parametros/atualizar-historico", response_model=list[ParametroOut])
-def atualizar_parametros_do_historico(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def atualizar_parametros_do_historico(oid: int, ctx: Ctx = Depends(get_ctx)):
     """Recalcula tempos da operação a partir do histórico APROVADO e grava como nova versão
     (origem 'calculado'), validada pelo gestor que executou a ação."""
     op, _, p = _operacao(ctx, oid)

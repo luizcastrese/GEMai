@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from .. import audit
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Espaco, ModeloTempo, PerfilMaoDeObra, Processo, Produto, Recurso
 from ..ratelimit import limite_ia
 from ..schemas import DecisaoIn, EstimativaOut, ModeloTempoManualIn, ModeloTempoOut
@@ -86,7 +86,7 @@ def _gerar(ctx: Ctx, op, etapa, proc) -> ModeloTempo:
 
 
 @router.post("/operacoes/{oid}/modelo-tempo/gerar", response_model=ModeloTempoOut, status_code=201)
-def gerar_modelo(oid: int, ctx: Ctx = Depends(requer_gestor)):
+def gerar_modelo(oid: int, ctx: Ctx = Depends(get_ctx)):
     op, etapa, proc = _operacao(ctx, oid)
     mt = _gerar(ctx, op, etapa, proc)
     ctx.db.commit()
@@ -94,7 +94,7 @@ def gerar_modelo(oid: int, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/processos/{pid}/modelar-tempos", response_model=list[ModeloTempoOut], status_code=201)
-def modelar_processo(pid: int, refazer: bool = False, ctx: Ctx = Depends(requer_gestor)):
+def modelar_processo(pid: int, refazer: bool = False, ctx: Ctx = Depends(get_ctx)):
     """Gera modelos de tempo (IA) para as operações do processo que ainda não têm um."""
     proc = ctx.obter(Processo, pid)
     criados = []
@@ -107,7 +107,7 @@ def modelar_processo(pid: int, refazer: bool = False, ctx: Ctx = Depends(requer_
 
 
 @router.post("/operacoes/{oid}/modelo-tempo", response_model=ModeloTempoOut, status_code=201)
-def modelo_manual(oid: int, dados: ModeloTempoManualIn, ctx: Ctx = Depends(requer_gestor)):
+def modelo_manual(oid: int, dados: ModeloTempoManualIn, ctx: Ctx = Depends(get_ctx)):
     """Modelo definido por uma pessoa (nasce validado). Mesmo vocabulário fechado de métodos."""
     op, _, proc = _operacao(ctx, oid)
     try:
@@ -145,14 +145,14 @@ def _decidir(ctx: Ctx, mid: int, status: str, obs: str) -> ModeloTempo:
 
 
 @router.post("/modelos-tempo/{mid}/validar", response_model=ModeloTempoOut)
-def validar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def validar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     mt = _decidir(ctx, mid, "validado", dados.observacao)
     ctx.db.commit()
     return mt
 
 
 @router.post("/modelos-tempo/{mid}/rejeitar", response_model=ModeloTempoOut)
-def rejeitar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def rejeitar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     mt = _decidir(ctx, mid, "rejeitado", dados.observacao)
     ctx.db.commit()
     return mt
@@ -191,7 +191,7 @@ def ergonomia_operacao(oid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/processos/{pid}/confirmar-previsoes")
-def confirmar_previsoes(pid: int, ctx: Ctx = Depends(requer_gestor)):
+def confirmar_previsoes(pid: int, ctx: Ctx = Depends(get_ctx)):
     """Confirma, de uma vez, as previsões de tempo da IA ainda pendentes das operações deste processo."""
     proc = ctx.obter(Processo, pid)
     n = 0
