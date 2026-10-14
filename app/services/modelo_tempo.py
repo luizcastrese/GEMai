@@ -50,6 +50,19 @@ REFERENCIAS = {
     "em_pe_pct": 2.0,  # OIT: trabalho em pé
 }
 
+# Tempos de referência GENÉRICOS de montagem (minutos por fixador/ação). São ponto de partida declarado como tal:
+# a empresa os substitui pelos tempos da sua oficina (tabela `referencias_tempo`).
+REFERENCIAS_MONTAGEM = {
+    "fixador:parafuso": 0.30, "fixador:cavilha": 0.20, "fixador:minifix": 0.45, "fixador:dobradica": 1.50,
+    "fixador:corredica": 2.00, "fixador:cola": 0.50, "fixador:prego": 0.10, "fixador:encaixe": 0.15,
+    "fixador:puxador": 0.80, "fixador:outro": 0.50, "conferencia_final": 5.0,
+}
+METODOS_LIGACAO = ("parafuso", "cavilha", "minifix", "dobradica", "corredica", "cola", "prego", "encaixe", "puxador", "outro")
+
+# Densidades de REFERÊNCIA (kg/m³) só para estimar peso quando o usuário não informa; sempre rotuladas "estimado".
+DENSIDADES_REFERENCIA = {"mdf": 700.0, "mdp": 650.0, "compensado": 600.0, "pinus": 500.0, "madeira": 600.0,
+                         "aco": 7850.0, "aço": 7850.0, "aluminio": 2700.0, "alumínio": 2700.0, "vidro": 2500.0}
+
 # Índices MOST ILUSTRATIVOS por tipo de movimento (General Move A B G A B P A) — conferir com o cartão certificado.
 MOVIMENTOS_MOST = {
     "alcance_curto": [1, 0, 1, 1, 0, 1, 0],          # objeto leve ao alcance
@@ -120,7 +133,7 @@ def sanear_modelo(m: ModeloTempoIA) -> ModeloTempoIA:
             a_min=_num(e.a_min, 0, 100_000, 0.0), b_min=_num(e.b_min, 0, 100_000, 0.0),
             velocidade_m_min=_num(e.velocidade_m_min, 1, 500, None), itens_por_viagem=_num(e.itens_por_viagem, 0.01, 100_000, None),
             ida_e_volta=e.ida_e_volta, paralelizavel=e.paralelizavel, justificativa=_t(e.justificativa, 500),
-            indices_most=[min(INDICES_MOST, key=lambda x: abs(x - int(i))) for i in e.indices_most[:12]],
+            indices_most=[min(INDICES_MOST, key=lambda x: abs(x - int(i))) for i in e.indices_most[:30]],
             depende_operador=False if e.metodo == "capacidade_recurso" else e.depende_operador))
     return ModeloTempoIA(
         elementos=els, fator_ambiente=_num(m.fator_ambiente, 0.5, 3.0, 1.0), ritmo_pct=_num(m.ritmo_pct, 50, 150, 100.0),

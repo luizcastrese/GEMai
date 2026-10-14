@@ -377,6 +377,7 @@ class RecursoIn(In):
     local_posto: Curto = ""
     horas_disponiveis_dia: float = Field(8.0, gt=0, le=24)
     espaco_id: int | None = None
+    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] = ""
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
 
@@ -391,6 +392,7 @@ class RecursoUpdate(In):
     local_posto: Curto | None = None
     horas_disponiveis_dia: float | None = Field(None, gt=0, le=24)
     espaco_id: int | None = None
+    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] | None = None
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
     ativo: bool | None = None
@@ -408,6 +410,7 @@ class RecursoOut(Out):
     local_posto: str
     horas_disponiveis_dia: float
     espaco_id: int | None = None
+    funcao: str = ""
     ultima_manutencao: date | None
     proxima_manutencao: date | None
     origem: str
@@ -510,7 +513,7 @@ class ProdutoOut(Out):
 class EspacoIn(In):
     unidade_id: int
     nome: Nome
-    tipo: Literal["area", "posto", "estoque", "expedicao"] = "area"
+    tipo: Literal["area", "posto", "estoque", "expedicao", "montagem"] = "area"
     comprimento_m: float | None = Field(None, gt=0, le=10000)
     largura_m: float | None = Field(None, gt=0, le=10000)
     pe_direito_m: float | None = Field(None, gt=0, le=100)
@@ -519,12 +522,13 @@ class EspacoIn(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
     observacoes: Texto = ""
 
 
 class EspacoUpdate(In):
     nome: Nome | None = None
-    tipo: Literal["area", "posto", "estoque", "expedicao"] | None = None
+    tipo: Literal["area", "posto", "estoque", "expedicao", "montagem"] | None = None
     comprimento_m: float | None = Field(None, gt=0, le=10000)
     largura_m: float | None = Field(None, gt=0, le=10000)
     pe_direito_m: float | None = Field(None, gt=0, le=100)
@@ -533,6 +537,7 @@ class EspacoUpdate(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
     observacoes: Texto | None = None
     ativo: bool | None = None
 
@@ -550,6 +555,7 @@ class EspacoOut(Out):
     umidade_pct: float | None = None
     ruido_db: float | None = None
     iluminancia_lux: float | None = None
+    tolerancia_ambiente_pct: float | None = None
     observacoes: str
     origem: str
     ativo: bool
@@ -721,7 +727,8 @@ class OrdemOut(Out):
     descricao: str
     quantidade: float
     prazo: date | None
-    processo_id: int
+    processo_id: int | None = None
+    plano_id: int | None = None
     status: str
     tempo_estimado_min: float | None
     observacoes: str
@@ -872,3 +879,172 @@ class AuditoriaOut(Out):
     depois: dict | None
     ip: str
     em: datetime
+
+
+# ------------------------------------------------------------------ produto → plano de trabalho
+METODOS = Literal["parafuso", "cavilha", "minifix", "dobradica", "corredica", "cola", "prego", "encaixe", "puxador", "outro"]
+
+
+class ComponenteIn(In):
+    nome: Nome
+    quantidade: float = Field(1.0, gt=0, le=100000)
+    material: Annotated[str, Field(max_length=80)] = ""
+    grupo: Annotated[str, Field(max_length=80)] = "Corpo"
+    comprimento_m: float | None = Field(None, gt=0, le=100)
+    largura_m: float | None = Field(None, gt=0, le=100)
+    espessura_m: float | None = Field(None, gt=0, le=10)
+    peso_kg: float | None = Field(None, ge=0, le=100000)
+    furos: int = Field(0, ge=0, le=10000)
+    bordas_m: float | None = Field(None, ge=0, le=1000)
+
+
+class ComponenteUpdate(In):
+    nome: Nome | None = None
+    quantidade: float | None = Field(None, gt=0, le=100000)
+    material: Annotated[str, Field(max_length=80)] | None = None
+    grupo: Annotated[str, Field(max_length=80)] | None = None
+    comprimento_m: float | None = Field(None, gt=0, le=100)
+    largura_m: float | None = Field(None, gt=0, le=100)
+    espessura_m: float | None = Field(None, gt=0, le=10)
+    peso_kg: float | None = Field(None, ge=0, le=100000)
+    furos: int | None = Field(None, ge=0, le=10000)
+    bordas_m: float | None = Field(None, ge=0, le=1000)
+
+
+class ComponenteOut(Out):
+    id: int
+    produto_id: int
+    nome: str
+    quantidade: float
+    material: str
+    grupo: str
+    comprimento_m: float | None
+    largura_m: float | None
+    espessura_m: float | None
+    peso_kg: float | None
+    peso_estimado_kg: float | None = None  # calculado por material e medidas; só exibição
+    furos: int
+    bordas_m: float | None
+
+
+class LigacaoIn(In):
+    componente_id: int
+    ligado_a_id: int | None = None
+    metodo: METODOS = "parafuso"
+    fixadores: int = Field(0, ge=0, le=10000)
+
+
+class LigacaoOut(Out):
+    id: int
+    produto_id: int
+    componente_id: int
+    ligado_a_id: int | None
+    metodo: str
+    fixadores: int
+
+
+class EstruturaOut(Out):
+    produto_id: int
+    componentes: list[ComponenteOut]
+    ligacoes: list[LigacaoOut]
+
+
+class InterpretarProdutoIn(In):
+    descricao: Annotated[str, Field(min_length=3, max_length=4000)]
+    substituir: bool = False
+
+
+class InterpretarProdutoOut(Out):
+    componentes: list[ComponenteIn]
+    ligacoes: list[dict]
+    dados_faltantes: list[str]
+    observacoes: str
+    provedor: str
+    aviso: str = ""
+
+
+class AplicarEstruturaIn(In):
+    componentes: list[ComponenteIn] = Field(max_length=300)
+    ligacoes: list[dict] = Field(default_factory=list, max_length=600)
+    substituir: bool = False
+
+
+class ReferenciaIn(In):
+    chave: Annotated[str, Field(min_length=1, max_length=60, pattern=r"^[a-z_]+(:[a-z_]+)?$")]
+    minutos: float = Field(gt=0, le=600)
+
+
+class ReferenciaOut(Out):
+    chave: str
+    minutos: float
+    padrao_minutos: float | None = None
+    informada: bool = False
+
+
+class PlanoGerarIn(In):
+    produto_id: int
+    unidade_id: int
+    quantidade: float = Field(1.0, gt=0, le=100000)
+    nome: Annotated[str, Field(max_length=300)] | None = None
+    inicio: UTC | None = None
+    blocos: list[Annotated[list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]], Field(min_length=2, max_length=2)]] | None = Field(None, max_length=6)
+    so_dias_uteis: bool = True
+    pessoas: int = Field(1, ge=1, le=50)
+    perfil_id: int | None = None
+    fadiga_pct_hora: float = Field(0.0, ge=0, le=10)
+
+
+class PlanoPassoOut(Out):
+    id: int
+    sequencia: int
+    nome: str
+    tipo: str
+    grupo: str
+    componentes: list
+    qtd_pecas: float
+    recurso_id: int | None
+    espaco_origem_id: int | None
+    espaco_destino_id: int | None
+    pessoas: int
+    elementos: list
+    tolerancias: list
+    ritmo_pct: float
+    composicao: list
+    tempo_prep_min: float | None
+    tempo_exec_min: float | None
+    tempo_padrao_min: float | None
+    tempo_agendado_min: float | None
+    faltantes: list
+    alertas: list
+    observacao: str
+    inicio_prev: datetime | None
+    fim_prev: datetime | None
+    recurso_nome: str | None = None
+    origem_nome: str | None = None
+    destino_nome: str | None = None
+
+
+class PlanoOut(Out):
+    id: int
+    unidade_id: int
+    produto_id: int
+    produto_nome: str | None = None
+    nome: str
+    quantidade: float
+    status: str
+    config: dict
+    provedor: str
+    confianca: str
+    premissas: list
+    faltantes: list
+    alertas: list
+    totais: dict
+    ordem_id: int | None
+    criado_em: datetime
+    confirmado_em: datetime | None
+    passos: list[PlanoPassoOut] | None = None
+
+
+class PlanoOrdemIn(In):
+    cliente: Nome | None = None
+    prazo: date | None = None

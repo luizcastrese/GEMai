@@ -214,6 +214,7 @@ class Recurso(Base):
     equipes_habilitadas: Mapped[list] = mapped_column(JSON, default=list)
     local_posto: Mapped[str] = mapped_column(String(200), default="")
     horas_disponiveis_dia: Mapped[float] = mapped_column(Float, default=8.0)
+    funcao: Mapped[str] = mapped_column(String(20), default="")  # corte|furacao|bordo|acabamento|montagem|outro
     espaco_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
     ultima_manutencao: Mapped[date | None] = mapped_column(Date)
     proxima_manutencao: Mapped[date | None] = mapped_column(Date)
@@ -308,6 +309,8 @@ class Espaco(Base):
     umidade_pct: Mapped[float | None] = mapped_column(Float)
     ruido_db: Mapped[float | None] = mapped_column(Float)
     iluminancia_lux: Mapped[float | None] = mapped_column(Float)
+    # Tolerância adicional (%) por condição do ambiente, INFORMADA pelo usuário (ex.: a partir de avaliação de calor).
+    tolerancia_ambiente_pct: Mapped[float | None] = mapped_column(Float)
     observacoes: Mapped[str] = mapped_column(Text, default="")
     origem: Mapped[str] = mapped_column(String(20), default="manual")
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -359,6 +362,112 @@ class ModeloTempo(Base):
     validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
+# ---------------------------------------------------------------- produto → plano de trabalho
+class Componente(Base):
+    """Item da estrutura (lista de materiais) de um produto."""
+
+    __tablename__ = "componentes"
+    __table_args__ = (UniqueConstraint("produto_id", "nome"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    produto_id: Mapped[int] = mapped_column(ForeignKey("produtos.id"), index=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    quantidade: Mapped[float] = mapped_column(Float, default=1.0)  # por unidade do produto
+    material: Mapped[str] = mapped_column(String(80), default="")
+    grupo: Mapped[str] = mapped_column(String(80), default="Corpo")  # subconjunto (ex.: Corpo, Porta, Gaveta)
+    comprimento_m: Mapped[float | None] = mapped_column(Float)
+    largura_m: Mapped[float | None] = mapped_column(Float)
+    espessura_m: Mapped[float | None] = mapped_column(Float)
+    peso_kg: Mapped[float | None] = mapped_column(Float)  # se vazio, o plano estima por material e medidas (rotulado)
+    furos: Mapped[int] = mapped_column(Integer, default=0)
+    bordas_m: Mapped[float | None] = mapped_column(Float)  # metros de borda a colar, por peça
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Ligacao(Base):
+    """Como um componente se liga a outro (ou ao conjunto)."""
+
+    __tablename__ = "ligacoes"
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    produto_id: Mapped[int] = mapped_column(ForeignKey("produtos.id"), index=True)
+    componente_id: Mapped[int] = mapped_column(ForeignKey("componentes.id"))
+    ligado_a_id: Mapped[int | None] = mapped_column(ForeignKey("componentes.id"))
+    metodo: Mapped[str] = mapped_column(String(30), default="parafuso")
+    fixadores: Mapped[int] = mapped_column(Integer, default=0)  # por ligação, por unidade do produto
+    ordem: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ReferenciaTempo(Base):
+    """Tempos de referência da empresa (ex.: minutos por parafuso). Informados por ela; substituem os genéricos."""
+
+    __tablename__ = "referencias_tempo"
+    __table_args__ = (UniqueConstraint("empresa_id", "chave"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    chave: Mapped[str] = mapped_column(String(60))  # ex.: "fixador:parafuso", "conferencia_final"
+    minutos: Mapped[float] = mapped_column(Float)
+    atualizado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+
+
+class PlanoTrabalho(Base):
+    __tablename__ = "planos_trabalho"
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
+    produto_id: Mapped[int] = mapped_column(ForeignKey("produtos.id"))
+    nome: Mapped[str] = mapped_column(String(300))
+    quantidade: Mapped[float] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(20), default="rascunho")  # rascunho | confirmado | cancelado
+    config: Mapped[dict] = mapped_column(JSON, default=dict)  # início, jornada, perfil, pessoas, fadiga/h
+    provedor: Mapped[str] = mapped_column(String(80), default="")
+    confianca: Mapped[str] = mapped_column(String(10), default="baixa")
+    premissas: Mapped[list] = mapped_column(JSON, default=list)
+    faltantes: Mapped[list] = mapped_column(JSON, default=list)
+    alertas: Mapped[list] = mapped_column(JSON, default=list)
+    totais: Mapped[dict] = mapped_column(JSON, default=dict)
+    ordem_id: Mapped[int | None] = mapped_column(Integer)
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+    confirmado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    confirmado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    passos: Mapped[list["PlanoPasso"]] = relationship(
+        back_populates="plano", order_by="PlanoPasso.sequencia", cascade="all, delete-orphan")
+
+
+class PlanoPasso(Base):
+    __tablename__ = "plano_passos"
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    plano_id: Mapped[int] = mapped_column(ForeignKey("planos_trabalho.id"), index=True)
+    sequencia: Mapped[int] = mapped_column(Integer)
+    nome: Mapped[str] = mapped_column(String(300))
+    tipo: Mapped[str] = mapped_column(String(30), default="outro")  # movimentacao|corte|furacao|bordo|montagem|inspecao|outro
+    grupo: Mapped[str] = mapped_column(String(80), default="")
+    componentes: Mapped[list] = mapped_column(JSON, default=list)
+    qtd_pecas: Mapped[float] = mapped_column(Float, default=1.0)
+    recurso_id: Mapped[int | None] = mapped_column(ForeignKey("recursos.id"))
+    espaco_origem_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
+    espaco_destino_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
+    pessoas: Mapped[int] = mapped_column(Integer, default=1)
+    elementos: Mapped[list] = mapped_column(JSON, default=list)
+    tolerancias: Mapped[list] = mapped_column(JSON, default=list)
+    ritmo_pct: Mapped[float] = mapped_column(Float, default=100.0)
+    composicao: Mapped[list] = mapped_column(JSON, default=list)  # minutos por elemento
+    tempo_prep_min: Mapped[float | None] = mapped_column(Float)
+    tempo_exec_min: Mapped[float | None] = mapped_column(Float)
+    tempo_padrao_min: Mapped[float | None] = mapped_column(Float)  # None = faltam dados
+    tempo_agendado_min: Mapped[float | None] = mapped_column(Float)  # padrão + fadiga acumulada (se informada)
+    faltantes: Mapped[list] = mapped_column(JSON, default=list)
+    alertas: Mapped[list] = mapped_column(JSON, default=list)
+    observacao: Mapped[str] = mapped_column(Text, default="")
+    inicio_prev: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    fim_prev: Mapped[datetime | None] = mapped_column(UTCDateTime)
+
+    plano: Mapped[PlanoTrabalho] = relationship(back_populates="passos")
+
+
 # ---------------------------------------------------------------- parâmetros
 class Parametro(Base):
     """Variável com origem e versão. Só `vigente` + validado entra nos cálculos."""
@@ -402,7 +511,8 @@ class Ordem(Base):
     descricao: Mapped[str] = mapped_column(String(300), default="")
     quantidade: Mapped[float] = mapped_column(Float)
     prazo: Mapped[date | None] = mapped_column(Date)
-    processo_id: Mapped[int] = mapped_column(ForeignKey("processos.id"))
+    processo_id: Mapped[int | None] = mapped_column(ForeignKey("processos.id"))  # None quando nasce de um plano
+    plano_id: Mapped[int | None] = mapped_column(ForeignKey("planos_trabalho.id"))
     status: Mapped[str] = mapped_column(String(20), default="planejada")
     tempo_estimado_min: Mapped[float | None] = mapped_column(Float)  # None = sem base
     observacoes: Mapped[str] = mapped_column(Text, default="")
