@@ -13,7 +13,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Componente, Espaco, Ligacao, Ordem, PlanoTrabalho, Produto, Recurso, Unidade
+from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoTrabalho, Produto, Recurso, Unidade
 from . import contorno, plano as svc_plano
 
 SECOES = [
@@ -77,10 +77,12 @@ def _pend_pecas(db: Session, produto: Produto, atividades: list[dict]) -> list[s
 _SEM_PECAS = "Informe as peças primeiro: elas definem as atividades, as máquinas e os locais necessários."
 
 
-def _pend_agentes(atividades: list[dict], recursos: list[Recurso]) -> list[str]:
+def _pend_agentes(atividades: list[dict], recursos: list[Recurso], perfil: PerfilMaoDeObra | None) -> list[str]:
     if not atividades:
         return [_SEM_PECAS]
     out: list[str] = []
+    if perfil is None or perfil.sexo == "nao_informado" or not perfil.estatura_cm:
+        out.append("Informe o sexo e a altura da equipe: a ergonomia (altura da bancada, limite de carga) entra no tempo.")
     for a in atividades:
         if not a["funcao"]:
             continue
@@ -92,7 +94,7 @@ def _pend_agentes(atividades: list[dict], recursos: list[Recurso]) -> list[str]:
     return out
 
 
-def _pend_ambiente(db: Session, u: Unidade, atividades: list[dict], recursos: list[Recurso]) -> list[str]:
+def _pend_ambiente(db: Session, u: Unidade, atividades: list[dict], recursos: list[Recurso], perfil: PerfilMaoDeObra | None) -> list[str]:
     if not atividades:
         return [_SEM_PECAS]
     espacos = list(db.scalars(select(Espaco).where(Espaco.unidade_id == u.id, Espaco.ativo.is_(True))))
@@ -110,6 +112,9 @@ def _pend_ambiente(db: Session, u: Unidade, atividades: list[dict], recursos: li
         eq = _equipamento(recursos, a["funcao"]) if a["funcao"] else None
         if eq is not None and eq.espaco_id is None:
             out.append(f"Diga em que local fica '{eq.nome}'.")
+    montagem = local("montagem", "montag")
+    if cods & {"montagem", "inspecao"} and montagem is not None and not montagem.altura_trabalho_m and perfil is not None and perfil.estatura_cm:
+        out.append(f"Informe a altura da bancada de '{montagem.nome}' (em cm): ela é comparada com a altura do cotovelo da equipe.")
     if "movimentacao" in cods:
         for d in contorno.resumo(db, u.empresa_id, [u.id])["distancias"]:
             if d["metros"] is None:
@@ -120,12 +125,13 @@ def _pend_ambiente(db: Session, u: Unidade, atividades: list[dict], recursos: li
 def calcular(db: Session, u: Unidade, produto: Produto) -> dict:
     atividades = atividades_do_item(db, produto)
     recursos = list(db.scalars(select(Recurso).where(Recurso.empresa_id == u.empresa_id, Recurso.unidade_id == u.id, Recurso.ativo.is_(True))))
-    pend = {"pecas": _pend_pecas(db, produto, atividades), "agentes": _pend_agentes(atividades, recursos),
-            "ambiente": _pend_ambiente(db, u, atividades, recursos)}
+    perfil = db.get(PerfilMaoDeObra, u.perfil_equipe_id) if u.perfil_equipe_id else None
+    pend = {"pecas": _pend_pecas(db, produto, atividades), "agentes": _pend_agentes(atividades, recursos, perfil),
+            "ambiente": _pend_ambiente(db, u, atividades, recursos, perfil)}
     secoes = [{**s, "pendencias": pend[s["codigo"]], "completo": not pend[s["codigo"]]} for s in SECOES]
     return {"produto_id": produto.id, "unidade_id": u.id, "atividades": atividades, "secoes": secoes,
             "pendencias_total": sum(len(v) for v in pend.values()), "pode_gerar": bool(_comps(db, produto)),
-            "equipe_pessoas": u.equipe_pessoas, "jornada": u.jornada}
+            "equipe_pessoas": u.equipe_pessoas, "jornada": u.jornada, "perfil_equipe_id": u.perfil_equipe_id}
 
 
 def proximo(db: Session, u: Unidade) -> dict | None:

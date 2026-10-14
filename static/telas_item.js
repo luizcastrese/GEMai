@@ -77,10 +77,12 @@ export async function item(el, id) {
 
   const recarregar = async () => {
     const y = window.scrollY;
-    const [est, un, recursos, c, refs] = await Promise.all([get(`/produtos/${id}/estrutura`), get(`/unidades/${estado.unidadeId}`),
-      get(`/recursos${qs({ unidade_id: estado.unidadeId })}`), get(`/contorno${qs({ unidade_id: estado.unidadeId })}`), get('/referencias-tempo')]);
+    const [est, un, recursos, c, refs, perfis] = await Promise.all([get(`/produtos/${id}/estrutura`), get(`/unidades/${estado.unidadeId}`),
+      get(`/recursos${qs({ unidade_id: estado.unidadeId })}`), get(`/contorno${qs({ unidade_id: estado.unidadeId })}`), get('/referencias-tempo'),
+      get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId })}`)]);
     await atualizar();
-    montar(corpo, secPecas(id, p, est, recarregar), secAgentes(prep, un, recursos.filter((r) => r.ativo), refs, { recarregar, atualizar }), secAmbiente(prep, c, { recarregar, atualizar }));
+    const perfil = perfis.find((x) => x.id === un.perfil_equipe_id) ?? null;
+    montar(corpo, secPecas(id, p, est, recarregar), secAgentes(prep, un, perfil, recursos.filter((r) => r.ativo), refs, { recarregar, atualizar }), secAmbiente(prep, c, perfil, { recarregar, atualizar }));
     window.scrollTo(0, y);
   };
 
@@ -158,7 +160,7 @@ function conferirProposta(p, r, depois) {
 }
 
 // ---------------------------------------------------------------- 2. agentes
-function secAgentes(prep, un, ativos, refs, { recarregar, atualizar }) {
+function secAgentes(prep, un, perfil, ativos, refs, { recarregar, atualizar }) {
   const bl = un.jornada?.blocos ?? [['08:00', '12:00'], ['13:00', '17:00']];
   const f = {
     pessoas: h('input', { type: 'number', min: '1', max: '50', step: '1', value: un.equipe_pessoas ?? 1 }),
@@ -178,6 +180,29 @@ function secAgentes(prep, un, ativos, refs, { recarregar, atualizar }) {
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', { class: 'inline' }, f.uteis, ' Trabalhar só de segunda a sexta'),
     h('p', null, h('button', { class: un.equipe_pessoas ? '' : 'pri', onclick: salvarEquipe }, un.equipe_pessoas ? 'Salvar pessoas e horário' : 'Confirmar pessoas e horário')));
+
+  // Perfil de referência da equipe: alimenta a ergonomia (bancada × cotovelo, limite de carga, gasto de energia), nunca a produtividade.
+  const e = {
+    sexo: h('select', { 'aria-label': 'Sexo' }, [['nao_informado', 'Escolha…'], ['feminino', 'Feminino'], ['masculino', 'Masculino'], ['misto', 'Equipe mista']].map(([v, r]) => h('option', { value: v }, r))),
+    estatura: h('input', { type: 'number', min: '50', max: '250', step: 'any', value: perfil?.estatura_cm ?? '', placeholder: 'ex.: 168' }),
+    peso: h('input', { type: 'number', min: '10', max: '400', step: 'any', value: perfil?.peso_corporal_kg ?? '', placeholder: 'ex.: 70' }),
+    faixa: h('select', { 'aria-label': 'Faixa etária' }, [['adulto', 'Adulto'], ['menor_18', 'Menor de 18 anos']].map(([v, r]) => h('option', { value: v }, r))),
+    limite: h('input', { type: 'number', min: '1.6', max: '30', step: 'any', value: perfil?.limite_energetico_kcal_min ?? '', placeholder: 'kcal/min (opcional)' }),
+  };
+  e.sexo.value = perfil?.sexo ?? 'nao_informado'; e.faixa.value = perfil?.faixa_etaria ?? 'adulto';
+  const salvarPerfil = async () => {
+    if (e.sexo.value === 'nao_informado') return toast('Escolha o sexo da equipe.', true);
+    if (!e.estatura.value) return toast('Informe a altura (estatura) da equipe.', true);
+    const corpo = { sexo: e.sexo.value, estatura_cm: Number(e.estatura.value), peso_corporal_kg: num(e.peso.value), faixa_etaria: e.faixa.value, limite_energetico_kcal_min: num(e.limite.value) };
+    const r = await tentar(() => (perfil ? patch(`/perfis-mao-de-obra/${perfil.id}`, corpo) : post('/perfis-mao-de-obra', { unidade_id: estado.unidadeId, nome: 'Equipe', ...corpo })), 'Perfil da equipe salvo.');
+    if (r && !perfil && !(await tentar(() => patch(`/unidades/${estado.unidadeId}`, { perfil_equipe_id: r.id })))) return;
+    if (r) recarregar();
+  };
+  const ergonomia = h('div', null, h('h3', null, 'Ergonomia da equipe'),
+    h('p', { class: 'muted small' }, 'Altura, sexo e peso mudam o tempo pela ergonomia, não pela produtividade: a altura é comparada com a bancada (postura e fadiga); o sexo e a idade definem o limite de carga (quantas pessoas e viagens); o peso estima o gasto de energia. O ritmo continua sendo medido, nunca deduzido. Equipe com pessoas diferentes: informe a mais restritiva (ex.: a de menor estatura) ou “Equipe mista”.'),
+    h('div', { class: 'row' }, h('div', null, h('label', null, 'Sexo'), e.sexo), h('div', null, h('label', null, 'Altura (cm)'), e.estatura), h('div', null, h('label', null, 'Peso corporal (kg)'), e.peso), h('div', null, h('label', null, 'Faixa etária'), e.faixa)),
+    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Limite de gasto energético adotado (kcal/min) — para o descanso de Murrell; as fontes divergem, por isso não há valor embutido'), e.limite) : null,
+    h('p', null, h('button', { class: perfil ? '' : 'pri', onclick: salvarPerfil }, perfil ? 'Salvar perfil da equipe' : 'Confirmar perfil da equipe')));
 
   const blocoMaquina = (a) => {
     const lista = ativos.filter((r) => r.funcao === a.funcao);
@@ -203,11 +228,11 @@ function secAgentes(prep, un, ativos, refs, { recarregar, atualizar }) {
       refs.map((r) => h('div', { class: 'row ref' }, h('div', { class: 'l' }, REF_ROTULOS[r.chave] || r.chave, h('span', { class: 'muted small' }, r.informada ? ` (seu valor; padrão ${fmtNum(r.padrao_minutos, 2)} min)` : ' (valor genérico)')),
         campoNum(r.minutos, async (v) => { if (v !== null && await tentar(() => api('PUT', '/referencias-tempo', { chave: r.chave, minutos: v }), 'Salvo.')) recarregar(); }),
         r.informada ? h('button', { class: 'sm', onclick: async () => { if (await tentar(() => del(`/referencias-tempo/${encodeURIComponent(r.chave)}`))) recarregar(); } }, 'Voltar ao padrão') : h('span')))));
-  return secao('agentes', '2. Agentes: pessoas e máquinas', 'Quem e o que transforma as peças em item pronto.', maoDeObra, maquinas, tempos);
+  return secao('agentes', '2. Agentes: pessoas e máquinas', 'Quem e o que transforma as peças em item pronto.', maoDeObra, ergonomia, maquinas, tempos);
 }
 
 // ---------------------------------------------------------------- 3. ambiente
-function secAmbiente(prep, c, { recarregar, atualizar }) {
+function secAmbiente(prep, c, perfil, { recarregar, atualizar }) {
   const [locais, equip] = [c.locais, c.equipamentos];
   const cods = new Set(prep.atividades.map((a) => a.codigo));
   const funcoes = new Set(prep.atividades.filter((a) => a.funcao).map((a) => a.funcao));
@@ -220,10 +245,11 @@ function secAmbiente(prep, c, { recarregar, atualizar }) {
 
   const novo = h('input', { placeholder: 'ex.: Bancada de corte' });
   const tipoNovo = h('select', { 'aria-label': 'Tipo do local' }, TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r)));
-  const locaisBox = h('div', null, h('h3', null, 'Locais'), h('p', { class: 'muted small' }, 'Os lugares por onde a peça passa. Estoque e montagem são necessários; o resto depende das máquinas.'),
+  const locaisBox = h('div', null, h('h3', null, 'Locais'), h('p', { class: 'muted small' }, `Os lugares por onde a peça passa. Estoque e montagem são necessários; o resto depende das máquinas. A altura da bancada${perfil?.estatura_cm ? ' (cm)' : ''} é comparada com o cotovelo da equipe para a ergonomia.`),
     falta.length ? h('div', { class: 'inline' }, falta.map(([n, t]) => h('button', { class: 'pri', onclick: () => criarLocal(n, t) }, `+ Criar “${n}”`))) : null,
     locais.map((l) => h('div', { class: 'row' }, h('input', { value: l.nome, 'aria-label': 'Nome do local', onchange: async (e) => { if (e.target.value.trim() && await tentar(() => patch(`/espacos/${l.id}`, { nome: e.target.value.trim() }), 'Salvo.')) atualizar(); } }),
       (() => { const t = h('select', { 'aria-label': 'Tipo do local', onchange: async (e) => { if (await tentar(() => patch(`/espacos/${l.id}`, { tipo: e.target.value }))) recarregar(); } }, TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r))); t.value = l.tipo; return t; })(),
+      campoNum(l.altura_trabalho_m ? Math.round(l.altura_trabalho_m * 1000) / 10 : null, async (v) => { if (await tentar(() => patch(`/espacos/${l.id}`, { altura_trabalho_m: v === null ? null : v / 100 }), 'Salvo.') !== undefined) atualizar(); }, { placeholder: 'bancada (cm)', 'aria-label': `Altura da bancada de ${l.nome}`, title: 'Altura da bancada ou posto de trabalho, em cm' }),
       h('button', { class: 'sm dng', title: 'Remover', onclick: async () => { if (await tentar(() => patch(`/espacos/${l.id}`, { ativo: false }))) recarregar(); } }, '✕'))),
     h('div', { class: 'row' }, novo, tipoNovo, h('button', { onclick: () => { if (!novo.value.trim()) return toast('Digite o nome do local.', true); criarLocal(novo.value.trim(), tipoNovo.value); } }, '+ Adicionar local')));
 

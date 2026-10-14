@@ -129,6 +129,28 @@ def alertas_jornada(blocos) -> list[dict]:
     return out
 
 
+def _premissas_ergonomia(perfil, espacos) -> list[str]:
+    """Diz, no próprio plano, o que da ergonomia da equipe foi (ou não) considerado no tempo."""
+    if perfil is None or (perfil.sexo == "nao_informado" and not perfil.estatura_cm):
+        return ["Ergonomia da equipe NÃO considerada: informe o sexo e a estatura da equipe (seção Agentes do item) para a plataforma "
+                "comparar a altura da bancada com o cotovelo e dimensionar a carga por pessoa."]
+    out = [f"Ergonomia da equipe (perfil '{perfil.nome}'): limite de carga de {ergonomia.carga_referencia_kg(perfil):g} kg por pessoa "
+           f"({'adulto masculino: NIOSH LC' if ergonomia.carga_referencia_kg(perfil) > 20 else 'limite mais restritivo, CLT arts. 390/405'}). "
+           "Sexo, estatura e peso corporal não alteram a produtividade (o ritmo é calibrado por medição): agem só pela ergonomia."]
+    cot = ergonomia.altura_cotovelo_cm(perfil)
+    if cot is None:
+        out.append("Altura do cotovelo desconhecida: informe a estatura para comparar com a altura da bancada.")
+    else:
+        out.append(f"Altura do cotovelo {'informada' if perfil.altura_cotovelo_cm else 'estimada (63 % da estatura)'}: {cot:g} cm. "
+                   "Bancada fora da faixa recomendada (montagem: de 15 cm abaixo a 0; conferência: de 5 cm abaixo a 10 cm acima) soma 0,4 % de fadiga por cm, até 8 % (premissa).")
+        sem = [e.nome for e in espacos if e.tipo in ("montagem",) and not e.altura_trabalho_m]
+        if sem:
+            out.append(f"Altura da bancada não informada em: {', '.join(sem)}. Sem ela, a altura não entra no tempo.")
+    if perfil.limite_energetico_kcal_min and perfil.peso_corporal_kg:
+        out.append(f"Gasto de energia estimado por MET × peso corporal e comparado ao limite informado de {perfil.limite_energetico_kcal_min:g} kcal/min (Murrell).")
+    return out
+
+
 # ------------------------------------------------------------------ geração
 def _carregar(ctx: Ctx, produto: Produto, unidade_id: int):
     comps = list(ctx.db.scalars(select(Componente).where(Componente.produto_id == produto.id).order_by(Componente.ordem, Componente.id)))
@@ -171,6 +193,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
         "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db,
                      "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct} for e in espacos],
         "distancias": distancias, "referencias": refs, "referencias_informadas": informadas, "pessoas": pessoas_cfg,
+        "carga_ref_kg": ergonomia.carga_referencia_kg(perfil),
     }
     proposta, provedor, aviso = ia.planejar(ctx.empresa, contexto)
 
@@ -194,6 +217,11 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
         if local is not None and (local.tolerancia_ambiente_pct or 0) > 0:
             tol.append({"categoria": f"ambiente ({local.nome})", "percentual": local.tolerancia_ambiente_pct,
                         "fonte": "informada pelo usuário para este local"})
+        # Ergonomia da equipe: bancada × cotovelo e gasto de energia (sexo/estatura/peso corporal só entram por aqui)
+        for t in (ergonomia.tolerancia_altura(p.tipo, (local.altura_trabalho_m or 0) * 100 if local else None, perfil),
+                  ergonomia.tolerancia_energia(p.tipo, perfil)):
+            if t:
+                tol.append(t)
         elementos = [e.model_dump() for e in p.elementos]
         r = modelo_tempo.calcular(elementos, 1.0, c, tol, ritmo)
         falt = [f.replace("falta a distância entre os espaços de origem e destino", f"falta a distância entre {o.nome} e {d.nome}")
@@ -258,7 +286,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
-    plano.premissas = proposta.premissas + ([aviso] if aviso else [])
+    plano.premissas = proposta.premissas + _premissas_ergonomia(perfil, espacos) + ([aviso] if aviso else [])
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),

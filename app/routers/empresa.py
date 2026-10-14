@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from .. import audit
 from ..deps import Ctx, get_ctx
-from ..models import Unidade
+from ..models import PerfilMaoDeObra, Unidade
 from ..schemas import EmpresaOut, EmpresaUpdate, UnidadeIn, UnidadeOut, UnidadeUpdate
 from ..services import ia
 
@@ -72,6 +72,10 @@ def atualizar_unidade(uid: int, dados: UnidadeUpdate, ctx: Ctx = Depends(get_ctx
     if campos.get("nome") and campos["nome"] != u.nome and ctx.db.scalar(
             select(Unidade.id).where(Unidade.empresa_id == ctx.empresa_id, Unidade.nome == campos["nome"])):
         raise HTTPException(409, "Já existe uma unidade com este nome.")
+    if campos.get("perfil_equipe_id") is not None:
+        perfil = ctx.db.get(PerfilMaoDeObra, campos["perfil_equipe_id"])
+        if not perfil or perfil.empresa_id != ctx.empresa_id or perfil.unidade_id != u.id:
+            raise HTTPException(422, "Perfil de equipe inválido para esta unidade.")
     antes = audit.snap(u)
     for k, v in campos.items():
         if v is not None:

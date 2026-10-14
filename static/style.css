@@ -93,3 +93,4 @@ a.btn{display:inline-block;text-decoration:none}a.btn.pri{background:var(--pri);
 .linha-prod{display:flex;justify-content:space-between;gap:1rem;align-items:center;border:1px solid var(--bd);border-radius:var(--rad);padding:.7rem .9rem;margin-bottom:.6rem}
 .maquina{border-top:1px solid var(--bd);padding-top:.4rem;margin-top:.6rem}.maquina:first-of-type{border-top:0}
 .row .l{display:flex;align-items:center;min-height:2rem}
+.erg-l{color:#0b5e8a}

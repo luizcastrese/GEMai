@@ -73,6 +73,7 @@ class Unidade(Base):
     informacoes_disponiveis: Mapped[str] = mapped_column(Text, default="")
     # Agentes: equipe e horário de trabalho (padrões do plano). `None` = não informado → 1 pessoa, 08–12 e 13–17.
     equipe_pessoas: Mapped[int | None] = mapped_column(Integer)
+    perfil_equipe_id: Mapped[int | None] = mapped_column(Integer)  # perfil de referência da equipe (sexo, estatura…) → ergonomia do plano
     jornada: Mapped[dict | None] = mapped_column(JSON)  # {"blocos": [["08:00","12:00"],…], "so_dias_uteis": bool}
     ativa: Mapped[bool] = mapped_column(Boolean, default=True)
     criada_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
@@ -307,6 +308,7 @@ class Espaco(Base):
     comprimento_m: Mapped[float | None] = mapped_column(Float)
     largura_m: Mapped[float | None] = mapped_column(Float)
     pe_direito_m: Mapped[float | None] = mapped_column(Float)
+    altura_trabalho_m: Mapped[float | None] = mapped_column(Float)  # altura da bancada/posto (comparada ao cotovelo da equipe)
     piso: Mapped[str] = mapped_column(String(80), default="")
     temperatura_c: Mapped[float | None] = mapped_column(Float)
     umidade_pct: Mapped[float | None] = mapped_column(Float)

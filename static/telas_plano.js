@@ -89,6 +89,7 @@ export async function planoDetalhe(el, id) {
       h('td', null, h('strong', null, s.nome), h('div', { class: 'muted small' }, `${TIPO_PASSO[s.tipo] || s.tipo} · ${quem}`),
         s.faltantes.length ? h('div', { class: 'warn-l small' }, `Falta: ${s.faltantes.join('; ')}`) : null,
         s.alertas.map((a) => h('div', { class: `small ${a.categoria === 'seguranca' ? 'seg-l' : 'warn-l'}` }, a.msg)),
+        s.tolerancias.filter((t) => t.categoria.startsWith('ergonomia')).map((t) => h('div', { class: 'small erg-l' }, `Ergonomia: +${fmtNum(t.percentual, 1)}% de fadiga. ${t.justificativa}`)),
         estado.avancado ? detalhes('Como o tempo foi calculado', s.composicao.map((c) => h('div', { class: 'small' }, `${c.nome}: ${c.minutos === null ? c.motivo : `${fmtNum(c.minutos, 2)} min`}`)),
           s.elementos.map((e) => (e.justificativa ? h('div', { class: 'muted small' }, `• ${e.nome}: ${e.justificativa}`) : null))) : null),
       h('td', null, s.inicio_prev ? hora(s.inicio_prev) : '—'), h('td', null, s.fim_prev ? hora(s.fim_prev) : '—'),

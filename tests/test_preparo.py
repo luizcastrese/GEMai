@@ -39,18 +39,26 @@ def test_cada_atividade_cobra_o_seu_agente_e_o_seu_ambiente(admin, unidade_id):
     admin.patch(f"/produtos/{pid}/componentes/{tampo['id']}", {"furos": 4})
     p = _prep(admin, pid, unidade_id)
     assert _pend(p, "pecas") == []
-    assert _pend(p, "agentes") == ["Cadastre a máquina que faz corte.", "Cadastre a máquina que faz furação."]
+    assert _pend(p, "agentes") == ["Informe o sexo e a altura da equipe: a ergonomia (altura da bancada, limite de carga) entra no tempo.",
+                                   "Cadastre a máquina que faz corte.", "Cadastre a máquina que faz furação."]
     assert any("estoque" in t for t in _pend(p, "ambiente")) and any("montagem" in t for t in _pend(p, "ambiente"))
-    assert p["pendencias_total"] == 4
+    assert p["pendencias_total"] == 5
     # completa os agentes e o ambiente exatamente como a tela pede
     _cadastrar_contorno(admin, unidade_id)                                          # estoque, corte, montagem, seccionadora (30 un/h) e distâncias
     admin.post("/recursos", {"unidade_id": unidade_id, "nome": "Furadeira", "funcao": "furacao"})
     p = _prep(admin, pid, unidade_id)
-    assert _pend(p, "agentes") == ["Informe quantas peças por hora faz 'Furadeira'."]
+    assert _pend(p, "agentes")[1:] == ["Informe quantas peças por hora faz 'Furadeira'."]     # [0] é o perfil da equipe, ainda não informado
     assert _pend(p, "ambiente") == ["Diga em que local fica 'Furadeira'."]
     furadeira = next(r for r in admin.get("/recursos").json() if r["nome"] == "Furadeira")
     cor = next(e for e in admin.get("/espacos").json() if e["nome"] == "Corte")
     admin.patch(f"/recursos/{furadeira['id']}", {"capacidade": 40, "espaco_id": cor["id"]})
+    perfil = admin.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": "Equipe", "sexo": "feminino", "estatura_cm": 162}).json()["id"]
+    admin.patch(f"/unidades/{unidade_id}", {"perfil_equipe_id": perfil})
+    p = _prep(admin, pid, unidade_id)
+    assert _pend(p, "agentes") == []
+    assert _pend(p, "ambiente") == ["Informe a altura da bancada de 'Montagem' (em cm): ela é comparada com a altura do cotovelo da equipe."]
+    mon = next(e for e in admin.get("/espacos").json() if e["nome"] == "Montagem")
+    admin.patch(f"/espacos/{mon['id']}", {"altura_trabalho_m": 0.9})
     p = _prep(admin, pid, unidade_id)
     assert p["pendencias_total"] == 0 and all(s["completo"] for s in p["secoes"]) and p["pode_gerar"] is True
 

@@ -238,7 +238,8 @@ def _cfg(dados: PlanoGerarIn, unidade: Unidade) -> dict:
             "blocos": dados.blocos if "blocos" in informado else jt.get("blocos"),
             "so_dias_uteis": dados.so_dias_uteis if "so_dias_uteis" in informado else jt.get("so_dias_uteis", True),
             "pessoas": dados.pessoas if "pessoas" in informado else (unidade.equipe_pessoas or 1),
-            "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
+            "perfil_id": dados.perfil_id if "perfil_id" in informado and dados.perfil_id else unidade.perfil_equipe_id,
+            "fadiga_pct_hora": dados.fadiga_pct_hora}
 
 
 @router.post("/planos", response_model=PlanoOut, status_code=201)

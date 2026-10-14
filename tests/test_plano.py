@@ -128,16 +128,78 @@ def test_tolerancia_do_ambiente_e_alertas_do_local(admin, unidade_id):
     assert "ruído" in msgs and "temperatura" in msgs and all(a["categoria"] == "seguranca" for a in corte["alertas"])
 
 
-def test_sexo_estatura_e_peso_corporal_nao_mudam_o_tempo(admin, unidade_id):
+def _perfil(a, u, nome, **kw):
+    r = a.post("/perfis-mao-de-obra", {"unidade_id": u, "nome": nome, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _tempo(p, tipo):
+    return next(s for s in p["passos"] if s["tipo"] == tipo)["tempo_padrao_min"]
+
+
+def test_estatura_age_pela_altura_da_bancada(admin, unidade_id):
+    """Mesma bancada (95 cm): quem tem o cotovelo longe dela gasta mais fadiga; o efeito é só postural, e é declarado."""
+    _, _, mon = _cadastrar_contorno(admin, unidade_id)
+    admin.patch(f"/espacos/{mon['id']}", {"altura_trabalho_m": 0.95})
+    pid, _, _ = _mesa(admin)
+    baixa = _perfil(admin, unidade_id, "Baixa", sexo="feminino", estatura_cm=155)    # cotovelo ≈ 97,7 cm: bancada 2,7 cm abaixo, dentro da faixa
+    alta = _perfil(admin, unidade_id, "Alta", sexo="feminino", estatura_cm=190)      # cotovelo ≈ 119,7 cm: bancada 24,7 cm abaixo, 9,7 cm fora
+    pb, pa = _gerar(admin, pid, unidade_id, perfil_id=baixa), _gerar(admin, pid, unidade_id, perfil_id=alta)
+    assert _tempo(pa, "montagem") > _tempo(pb, "montagem")
+    tol = next(t for t in next(s for s in pa["passos"] if s["tipo"] == "montagem")["tolerancias"] if "altura da bancada" in t["categoria"])
+    assert tol["percentual"] == pytest.approx(9.7 * 0.4, abs=0.01)
+    assert not any("altura da bancada" in t["categoria"] for s in pb["passos"] for t in s["tolerancias"])
+    assert _tempo(pa, "corte") == _tempo(pb, "corte")                                  # a máquina não depende de postura do operador
+    assert any("Altura do cotovelo estimada" in x for x in pa["premissas"])
+
+
+def test_sexo_e_peso_corporal_sozinhos_nao_mudam_o_tempo(admin, unidade_id):
     _cadastrar_contorno(admin, unidade_id)
     pid, _, _ = _mesa(admin)
     tempos = []
-    for sexo, est, peso in (("feminino", 155, 52), ("masculino", 190, 98)):
-        perfil = admin.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": f"P-{sexo}", "sexo": sexo,
-                                                     "estatura_cm": est, "peso_corporal_kg": peso}).json()
-        p = _gerar(admin, pid, unidade_id, perfil_id=perfil["id"])
-        tempos.append(p["totais"]["tempo_padrao_min"])
-    assert tempos[0] == tempos[1]
+    for sexo, peso in (("feminino", 52), ("misto", 75), ("masculino", 98)):
+        perfil = _perfil(admin, unidade_id, f"P-{sexo}", sexo=sexo, estatura_cm=170, peso_corporal_kg=peso)
+        tempos.append(_gerar(admin, pid, unidade_id, perfil_id=perfil)["totais"]["tempo_padrao_min"])
+    assert len(set(tempos)) == 1                                                       # sem bancada informada, sem limite energético e carga leve: nada muda
+
+
+def test_sexo_age_pelo_limite_de_carga_e_o_peso_corporal_pelo_gasto_de_energia(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    p = admin.post("/produtos", {"nome": "Painel"}).json()
+    admin.post(f"/produtos/{p['id']}/componentes", {"nome": "Chapa", "material": "mdf", "comprimento_m": 2.4, "largura_m": 1.0, "espessura_m": 0.0131})   # ≈ 22 kg
+    fem = _perfil(admin, unidade_id, "F", sexo="feminino", estatura_cm=165)
+    masc = _perfil(admin, unidade_id, "M", sexo="masculino", estatura_cm=175)
+    pf, pm = _gerar(admin, p["id"], unidade_id, perfil_id=fem), _gerar(admin, p["id"], unidade_id, perfil_id=masc)
+    mov = lambda pl: next(s for s in pl["passos"] if s["tipo"] == "movimentacao")  # noqa: E731
+    assert mov(pf)["pessoas"] == 2 and mov(pm)["pessoas"] == 1                          # 22 kg: acima de 20 kg (CLT), abaixo de 23 kg (NIOSH LC)
+    assert any("adulto masculino" in x for x in pm["premissas"]) and any("mais restritivo" in x for x in pf["premissas"])
+    # peso corporal: só pesa no tempo quando o limite energético foi informado
+    leve = _perfil(admin, unidade_id, "Leve", sexo="feminino", estatura_cm=165, peso_corporal_kg=50, limite_energetico_kcal_min=3.0)
+    pesada = _perfil(admin, unidade_id, "Pesada", sexo="feminino", estatura_cm=165, peso_corporal_kg=90, limite_energetico_kcal_min=3.0)
+    tl, tp = _gerar(admin, p["id"], unidade_id, perfil_id=leve), _gerar(admin, p["id"], unidade_id, perfil_id=pesada)
+    cats = lambda pl: {t["categoria"] for s in pl["passos"] for t in s["tolerancias"]}  # noqa: E731
+    assert "ergonomia: gasto de energia (Murrell)" in cats(tp)                          # 3,5 MET × 90 kg × 0,0175 = 5,5 kcal/min > 3,0
+    assert tp["totais"]["tempo_padrao_min"] > tl["totais"]["tempo_padrao_min"]
+
+
+def test_sem_perfil_a_ergonomia_nao_e_considerada_e_o_plano_diz_isso(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    assert any("Ergonomia da equipe NÃO considerada" in x for x in _gerar(admin, pid, unidade_id)["premissas"])
+
+
+def test_perfil_da_equipe_da_unidade_e_o_padrao_do_plano(admin, unidade_id):
+    _, _, mon = _cadastrar_contorno(admin, unidade_id)
+    admin.patch(f"/espacos/{mon['id']}", {"altura_trabalho_m": 0.95})
+    pid, _, _ = _mesa(admin)
+    sem = _gerar(admin, pid, unidade_id)
+    alta = _perfil(admin, unidade_id, "Equipe", sexo="masculino", estatura_cm=190)
+    assert admin.patch(f"/unidades/{unidade_id}", {"perfil_equipe_id": alta}).json()["perfil_equipe_id"] == alta
+    com = _gerar(admin, pid, unidade_id)                                               # sem perfil_id no pedido: usa o da unidade
+    assert _tempo(com, "montagem") > _tempo(sem, "montagem")
+    outra = admin.post("/unidades", {"nome": "Filial"}).json()
+    assert admin.patch(f"/unidades/{outra['id']}", {"perfil_equipe_id": alta}).status_code == 422   # perfil de outra unidade
 
 
 def test_so_o_ritmo_do_perfil_age_e_apenas_no_trabalho_do_operador(admin, unidade_id):

@@ -93,7 +93,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
     pendentes = len(faltando)
     return {
         "locais": [{"id": e.id, "nome": e.nome, "tipo": e.tipo, "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct,
-                    "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in locais],
+                    "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db, "altura_trabalho_m": e.altura_trabalho_m} for e in locais],
         "equipamentos": sorted(equipamentos, key=lambda x: x["nome"]),
         "pecas": [{"id": p.id, "nome": p.nome, "peso_kg": p.peso_kg} for p in pecas],
         "tarefas": tarefas, "distancias": sorted(pares.values(), key=lambda x: (x["origem"], x["destino"])),

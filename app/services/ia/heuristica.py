@@ -405,6 +405,7 @@ def planejar(ctx: dict) -> PlanoProposta:
     comps, ligs = ctx["componentes"], ctx["ligacoes"]
     refs = ctx["referencias"]
     pessoas_eq = max(int(ctx.get("pessoas") or 1), 1)
+    carga_ref = float(ctx.get("carga_ref_kg") or REFERENCIAS["carga_manual_max_kg"])  # limite de carga por pessoa (depende do perfil)
     espacos, recursos = ctx.get("espacos", []), ctx.get("recursos", [])
     prem: list[str] = []
     faltam: list[str] = []
@@ -425,18 +426,18 @@ def planejar(ctx: dict) -> PlanoProposta:
         return next((r for r in lista if r.get("capacidade_un_h")), lista[0] if lista else None)
 
     def pessoas_para(peso):
-        return max(pessoas_eq, math.ceil(peso / REFERENCIAS["carga_manual_max_kg"])) if peso else pessoas_eq
+        return max(pessoas_eq, math.ceil(peso / carga_ref)) if peso else pessoas_eq
 
     def mover(origem, destino, nomes, pecas, peso, titulo):
         if not origem or not destino or origem == destino:
             return
         pes = pessoas_para(peso)
-        itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pes // peso), 1) if peso else 1
+        itens = max(int(carga_ref * pes // peso), 1) if peso else 1
         passos.append(PassoIA(nome=titulo, tipo="movimentacao", componentes=nomes, qtd_pecas=pecas, espaco_origem=origem, espaco_destino=destino,
                               pessoas=pes, elementos=[ElementoTempo(
                                   nome=f"Levar de {origem} até {destino}", tipo="deslocamento", metodo="deslocamento",
                                   velocidade_m_min=REFERENCIAS["velocidade_caminhada_m_min"], itens_por_viagem=itens, ida_e_volta=True,
-                                  justificativa=f"{itens} peça(s) por viagem (carga manual de referência: {REFERENCIAS['carga_manual_max_kg']:g} kg por pessoa).")]))
+                                  justificativa=f"{itens} peça(s) por viagem (carga manual de referência: {carga_ref:g} kg por pessoa).")]))
 
     paineis = [c for c in comps if c.get("comp") and c.get("larg")]
     pesos = [c["peso_kg"] for c in paineis if c.get("peso_kg")]

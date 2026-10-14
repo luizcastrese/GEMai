@@ -14,8 +14,8 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
 - **Item e peças (tela única):** a pessoa informa o **item final** (ex.: armário) e as **peças** que o compõem (material, medidas, peso, furos, borda, como se ligam) —
-  ou descreve em texto e a IA propõe a lista. Na mesma página informa os **agentes** (quantas pessoas, horário, a máquina de cada atividade e quantas peças por hora faz)
-  e o **ambiente** (locais, onde fica cada máquina, distâncias; calor e ruído são opcionais).
+  ou descreve em texto e a IA propõe a lista. Na mesma página informa os **agentes** (quantas pessoas, horário, **sexo, altura e peso da equipe para a ergonomia**, a máquina de cada atividade e quantas peças por hora faz)
+  e o **ambiente** (locais, **altura da bancada**, onde fica cada máquina, distâncias; calor e ruído são opcionais).
 - **As atividades não são perguntadas:** saem das peças (furos → furação; borda → colagem de borda; várias peças → montagem…). No topo da página a plataforma mostra as
   atividades deduzidas e, em cada seção, o que falta (ex.: "Cadastre a máquina que faz furação"), cobrando só o que as atividades deduzidas exigem.
 - **Plano de trabalho:** botão na própria página do item. O sistema monta os passos e **calcula o tempo de cada um** com as peças, máquinas, pessoas e distâncias; o que
@@ -62,13 +62,22 @@ O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo norma
 | **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
 | **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
 | **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %. Padrão: necessidades pessoais 5 % + fadiga básica 4 % + em pé 2 % | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
-| **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** |
+| **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** (no plano, W é estimado por MET × peso corporal) |
 | **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
 | **Postura / altura de trabalho** | Postura entra nas tolerâncias; altura de trabalho é comparada à altura do cotovelo do perfil, **sem julgar** (as faixas recomendadas divergem entre fontes) | — |
 
-**Sexo, estatura e peso corporal:** ficam no **perfil de mão de obra** (referência, não é uma pessoa) e são usados **apenas** para limites de carga e conferências ergonômicas.
-Eles **não alteram o tempo nem medem produtividade** (há teste automatizado garantindo isso). O ritmo é calibrado por medição. Não use esses dados
-para decisões de contratação ou alocação de pessoas; se vincular perfis a pessoas reais, trate como dado pessoal (LGPD: finalidade, minimização e consentimento).
+**Sexo, estatura e peso corporal** ficam no **perfil da equipe** (referência, não é uma pessoa; informado na seção Agentes do item) e **entram no tempo só pela ergonomia**,
+nunca como multiplicador de produtividade (o ritmo continua calibrado por medição). Três mecanismos, todos declarados nas premissas de cada plano:
+
+| Mecanismo | O que usa | Efeito no tempo | Base |
+|---|---|---|---|
+| **Altura da bancada × cotovelo** | estatura (cotovelo ≈ 63 % da estatura, ou informado) × altura da bancada do local de montagem | fora da faixa recomendada (montagem: de 15 cm abaixo a 0; conferência: de 5 cm abaixo a 10 cm acima), +0,4 % de fadiga por cm, até 8 % | premissa do sistema; calibrar |
+| **Limite de carga por pessoa** | sexo e faixa etária | 20 kg (CLT arts. 390/405: mulher, menor, equipe mista ou não informado) ou 23 kg (NIOSH LC: adulto masculino) define quantas pessoas e peças por viagem | CLT; NIOSH Pub. 94-110 |
+| **Gasto de energia** | peso corporal × MET do passo, contra o limite energético **informado** | descanso de Murrell quando o gasto passa do limite | Murrell; MET genéricos, calibrar |
+
+Sem perfil, o plano avisa que a ergonomia **não foi considerada**; sem a altura da bancada, a altura não entra no tempo (e o plano diz isso). Equipe com pessoas diferentes:
+informe a mais restritiva ou "equipe mista". **Não use esses dados para decisões de contratação ou alocação de pessoas**; se vincular perfis a pessoas reais, trate como dado pessoal
+(LGPD: finalidade, minimização e consentimento). A API do fluxo antigo por operação (sem tela) mantém a regra anterior: sexo/estatura/peso só em alertas.
 
 **Ainda não coberto** (próximos passos): curva de aprendizagem/experiência como multiplicador, tabelas MTM-1 completas, RULA/REBA/OWAS, Snook & Ciriello
 (empurrar/puxar), exposição a calor (IBUTG), iluminação por tarefa, fadiga cumulativa por turno e calibração automática dos coeficientes por bloco.

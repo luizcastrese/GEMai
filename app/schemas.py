@@ -132,6 +132,7 @@ class UnidadeUpdate(In):
     principais_problemas: Texto | None = None
     informacoes_disponiveis: Texto | None = None
     equipe_pessoas: int | None = Field(None, ge=1, le=50)
+    perfil_equipe_id: int | None = None
     jornada: JornadaTrabalho | None = None
     ativa: bool | None = None
 
@@ -144,6 +145,7 @@ class UnidadeOut(Out):
     principais_problemas: str
     informacoes_disponiveis: str
     equipe_pessoas: int | None = None
+    perfil_equipe_id: int | None = None
     jornada: dict | None = None
     ativa: bool
 
@@ -540,6 +542,7 @@ class EspacoIn(In):
     comprimento_m: float | None = Field(None, gt=0, le=10000)
     largura_m: float | None = Field(None, gt=0, le=10000)
     pe_direito_m: float | None = Field(None, gt=0, le=100)
+    altura_trabalho_m: float | None = Field(None, ge=0.3, le=2.5)
     piso: Annotated[str, Field(max_length=80)] = ""
     temperatura_c: float | None = Field(None, ge=-60, le=80)
     umidade_pct: float | None = Field(None, ge=0, le=100)
@@ -555,6 +558,7 @@ class EspacoUpdate(In):
     comprimento_m: float | None = Field(None, gt=0, le=10000)
     largura_m: float | None = Field(None, gt=0, le=10000)
     pe_direito_m: float | None = Field(None, gt=0, le=100)
+    altura_trabalho_m: float | None = Field(None, ge=0.3, le=2.5)
     piso: Annotated[str, Field(max_length=80)] | None = None
     temperatura_c: float | None = Field(None, ge=-60, le=80)
     umidade_pct: float | None = Field(None, ge=0, le=100)
@@ -573,6 +577,7 @@ class EspacoOut(Out):
     comprimento_m: float | None
     largura_m: float | None
     pe_direito_m: float | None
+    altura_trabalho_m: float | None = None
     piso: str
     temperatura_c: float | None
     umidade_pct: float | None = None

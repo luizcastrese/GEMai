@@ -109,8 +109,8 @@ def planejar(ctx: dict) -> PlanoProposta:
         "(a_min), 'linear_driver', 'deslocamento' (distância vem dos locais; informe velocidade_m_min, itens_por_viagem), "
         "'capacidade_recurso' (capacidade do equipamento; depende_operador=false) e 'indices_most' (índices só em 0,1,3,6,10,16). "
         "Considere carga (peso por pessoa), distâncias e a tabela de referências recebida. NÃO invente medidas, pesos, capacidades nem "
-        "distâncias ausentes: liste em 'dados_faltantes'. Declare premissas e a confiança. Sexo/estatura/peso corporal NÃO alteram tempo. "
-        "O sistema aplica tolerâncias, ritmo, ambiente e jornada e faz as contas.", ctx, PlanoProposta)
+        "distâncias ausentes: liste em 'dados_faltantes'. Declare premissas e a confiança. A ergonomia da equipe (estatura, sexo, peso corporal × altura da bancada, limite de carga) é aplicada "
+        "pelo sistema às tolerâncias: não estime esse efeito. O sistema aplica tolerâncias, ritmo, ambiente e jornada e faz as contas.", ctx, PlanoProposta)
 
 
 def analisar(tipo: str, fatos: dict) -> AnaliseTexto:
