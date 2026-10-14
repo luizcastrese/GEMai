@@ -1,17 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from app.services import timecalc as t
 
 
 def dt(h, m=0):
     return datetime(2026, 1, 5, h, m, tzinfo=timezone.utc)
-
-
-def test_formulas():
-    assert t.estimar("linear", 10, 5, 2) == (5, 20)
-    assert t.estimar("fixo", 10, 5, 30) == (5, 30)
-    assert t.estimar("lote", 25, 0, 10, tamanho_lote=10) == (0, 30)  # 3 lotes
-    assert t.estimar("linear", 10, 5, None) == (5, None)  # sem base: não inventa tempo
 
 
 def test_desvio_eficiencia():

@@ -1,13 +1,14 @@
 # ERP de Produção com IA
 
-ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitual do Sistema ERP de Produção*
-(PUC-Campinas – Engenharia de Produção), construído como um **gêmeo digital da operação**.
+ERP de produção multiempresa, baseado no *Script Conceitual do Sistema ERP de Produção* (PUC-Campinas – Engenharia de Produção).
+Pensado para quem fabrica **itens compostos por peças** (ex.: móveis): a pessoa informa o item, as peças, os agentes e o ambiente, e a plataforma
+**monta o plano de trabalho com o tempo de cada passo**.
 
-- A empresa descreve a operação com as próprias palavras; a IA sugere perguntas e uma estrutura de processo.
-- O processo é uma **reunião de blocos** (mão de obra + atividade + equipamento + espaço físico + item).
-- A IA **estima o tempo planejado** a partir desses blocos e do contorno físico; o sistema faz a conta.
-- Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
-- **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
+- A pessoa informa o **item final** e as **peças** que o compõem; as **atividades** (corte, borda, furação, montagem…) são deduzidas das peças.
+- A pessoa informa os **agentes** (pessoas, com sexo e altura para a ergonomia, e máquinas) e o **ambiente** (locais, bancada, distâncias).
+- A IA (ou o provedor local, por regras) **propõe os passos**; o **sistema calcula** o tempo de cada um (vocabulário fechado, sem `eval`) e agenda na jornada.
+- Quando a ordem termina, o tempo **real é contrastado com o planejado**.
+- **A IA sugere, o sistema valida** — o que falta vira pendência, nunca um valor inventado, e tudo fica na trilha de auditoria.
 
 ## Experiência do usuário: um só tipo de usuário, simples por padrão
 
@@ -27,44 +28,37 @@ Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas tela
 - **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
 
 Regras que substituem os papéis:
-- **Dois olhos nos registros de produção:** quem registrou um apontamento não o aprova sozinho, a menos que a equipe tenha uma só pessoa. Só histórico conferido por outra pessoa melhora as estimativas.
+- **Dois olhos nos registros de produção:** quem registrou um apontamento não o aprova sozinho, a menos que a equipe tenha uma só pessoa. (Hoje a aprovação só valida o registro; o histórico aprovado ainda **não** recalibra os tempos dos planos.)
 - **A equipe precisa de ao menos uma pessoa ativa;** ninguém desativa a si mesmo.
 - **Unidades:** por padrão todos acessam todas as unidades; opcionalmente uma pessoa pode ser restrita a algumas (redes com várias unidades).
 - Alertas de segurança (carga, ruído, esforço) aparecem para todos, em linguagem simples; a referência normativa fica nos detalhes técnicos.
 
-## Gêmeo digital: como o tempo planejado nasce
+## Como o tempo planejado nasce
 
 ```
-blocos (lego)                         IA propõe                    sistema calcula             contraste
-mão de obra (função, nº pessoas) ┐
-equipamento (capacidade un/h)    ├─►  modelo de tempo      ─►    minutos por elemento   ─►   planejado × real
-espaços + distâncias (m)         │    (elementos + premissas      (fórmulas de vocabulário    por fonte de estimativa
-item físico (peso, dimensões)    ┘     + dados faltantes)          FECHADO, sem eval)         (painel de acurácia)
+peças + ligações ─┐
+agentes (pessoas,  ├─►  atividades deduzidas ─►  IA/regras propõem os passos ─►  sistema calcula ─►  agenda na jornada ─►  planejado × real
+ máquinas)         │                              (elementos de tempo)            (vocabulário fechado)
+ambiente (locais,  ┘
+ distâncias)
 ```
 
-1. **Contorno físico estruturado:** *Espaços* (dimensões, piso, temperatura), *distâncias* entre espaços, *equipamentos* com capacidade, *item típico* da operação (peso/dimensões) que o *produto* da ordem sobrepõe.
-2. **Operação = composição de blocos:** função e nº de pessoas, equipamento, espaço de origem e destino, item e **marcos de início/fim do apontamento** (para o tempo medido ser comparável ao planejado).
-3. **Modelo de tempo (IA propõe):** decompõe a operação em elementos (`preparacao`, `deslocamento`, `manuseio`, `processamento`…) usando 4 métodos fechados — `fixo`, `linear_driver` (peso, área, comprimento, volume, distância), `deslocamento` e `capacidade_recurso`. Traz **premissas**, **confiança** e **dados faltantes**. Nada que a IA escreva é executado: o sistema calcula.
-4. **Sem dado, sem chute:** se falta distância, peso ou capacidade, o elemento **não vira zero**; o modelo fica incompleto e o sistema lista o que falta.
-5. **Prioridade do tempo planejado:** `histórico aprovado` > `parâmetro validado por pessoa` > `modelo da IA` (rotulado *validado* ou *não validado*) > `sem base`.
-6. **Prontidão do processo:** checagem determinística (e revisão narrativa por IA) apontando como o processo deve ser descrito e medido para os parâmetros ficarem consistentes.
-7. **Contraste e acurácia:** o painel mostra, por fonte (modelo IA, parâmetro, histórico), o desvio médio e o erro médio do planejado contra o real.
+1. **Elementos de tempo (vocabulário fechado):** cada passo é decomposto em `preparacao`, `deslocamento`, `manuseio`, `processamento`… com 4 métodos — `fixo`, `linear_driver` (peso, área, comprimento, volume, distância), `deslocamento` e `capacidade_recurso` — mais `indices_most` para tipos de movimento. Nada que a IA escreva é executado: o sistema calcula e sanitiza os limites.
+2. **Sem dado, sem chute:** se falta distância, peso ou capacidade, o passo **não vira zero**: fica "sem tempo" e o plano lista o que falta.
+3. **Tempo padrão:** tempo normal → ritmo → tolerâncias → tempo padrão (`FT = 1/(1 − Σp)`, p ≤ 50 %).
+4. **Contraste e acurácia:** a ordem e o painel comparam o planejado com o real (desvio, retrabalho, esperas, gargalos).
 
 ### Fatores humanos e normas (engenharia de métodos e ergonomia)
-
-O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo normal → ritmo → tolerâncias → tempo padrão**.
 
 | Fator | Como entra | Base |
 |---|---|---|
 | **Tipo de movimento** | Elemento `indices_most`: Σ índices × 10 TMU (1 TMU = 0,036 s), sequência *General Move* (A B G A B P A). Tipos pré-definidos usam índices **ilustrativos** | Inspirado no BasicMOST (Maynard). Conferir com o cartão certificado |
-| **Peso / tamanho do item** | Peso e dimensões do item típico (o do produto da ordem prevalece); alimentam manuseio, deslocamento (itens por viagem) e NIOSH | — |
-| **Carga manual** | Triagem **NIOSH** (RWL, índice de levantamento) com os multiplicadores HM/VM/DM/AM/FM/CM; LI > 1 gera alerta e uma tolerância de fadiga | NIOSH Pub. 94-110; tabelas FM/CM conferidas em fontes secundárias |
+| **Peso / tamanho das peças** | Peso informado (ou estimado por material × medidas, rotulado) alimenta manuseio, deslocamento (peças por viagem) e o número de pessoas | — |
 | **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
 | **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
 | **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %. Padrão: necessidades pessoais 5 % + fadiga básica 4 % + em pé 2 % | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
 | **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** (no plano, W é estimado por MET × peso corporal) |
-| **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
-| **Postura / altura de trabalho** | Postura entra nas tolerâncias; altura de trabalho é comparada à altura do cotovelo do perfil, **sem julgar** (as faixas recomendadas divergem entre fontes) | — |
+| **Ambiente** | Temperatura e ruído por local; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica; a folga extra (%) só entra se informada | NR-15 (ruído, 8 h). Sem percentual inventado para calor |
 
 **Sexo, estatura e peso corporal** ficam no **perfil da equipe** (referência, não é uma pessoa; informado na seção Agentes do item) e **entram no tempo só pela ergonomia**,
 nunca como multiplicador de produtividade (o ritmo continua calibrado por medição). Três mecanismos, todos declarados nas premissas de cada plano:
@@ -77,15 +71,14 @@ nunca como multiplicador de produtividade (o ritmo continua calibrado por mediç
 
 Sem perfil, o plano avisa que a ergonomia **não foi considerada**; sem a altura da bancada, a altura não entra no tempo (e o plano diz isso). Equipe com pessoas diferentes:
 informe a mais restritiva ou "equipe mista". **Não use esses dados para decisões de contratação ou alocação de pessoas**; se vincular perfis a pessoas reais, trate como dado pessoal
-(LGPD: finalidade, minimização e consentimento). A API do fluxo antigo por operação (sem tela) mantém a regra anterior: sexo/estatura/peso só em alertas.
+(LGPD: finalidade, minimização e consentimento).
 
 **Ainda não coberto** (próximos passos): curva de aprendizagem/experiência como multiplicador, tabelas MTM-1 completas, RULA/REBA/OWAS, Snook & Ciriello
 (empurrar/puxar), exposição a calor (IBUTG), iluminação por tarefa, fadiga cumulativa por turno e calibração automática dos coeficientes por bloco.
 O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
 
-`ERP_USAR_MODELO_IA_NAO_VALIDADO=false` exige que um gestor valide o modelo antes de ele valer como tempo planejado.
 O provedor local usa referências genéricas (caminhada 75 m/min, carga manual 20 kg/pessoa, manuseio 0,15 min + 0,012 min/kg,
-preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, o modelo é derivado do contexto da empresa.
+preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, a proposta de passos é derivada do contexto da empresa (e o sistema continua fazendo as contas).
 
 ## Do produto ao plano de trabalho
 
@@ -108,12 +101,10 @@ Fluxo único da plataforma: **Item e peças + Agentes + Ambiente → (atividades
 
 Limites assumidos (declarados na tela e nas premissas do plano): sequência única de passos (sem trabalho em paralelo entre passos); tempos de montagem e
 conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
-declare é descartada) porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
+declare é descartada) porque ainda não há histórico medido de passos de plano. **Os apontamentos aprovados ainda não recalibram os tempos**: hoje servem ao planejado × realizado; usar esse histórico para ajustar os próximos planos é o passo natural seguinte.
 Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
 
-> **API do fluxo antigo.** Os endpoints de implantação genérica (diagnóstico/estrutura por IA, processos e operações, gêmeo digital por operação, ordem a partir de processo)
-> continuam na API e nos testes, mas **não têm mais tela**: a interface só oferece o fluxo acima. `GET /produtos/{id}/preparo?unidade_id=` devolve as atividades
-> deduzidas e o que falta em cada seção; `POST /planos` nunca bloqueia, ele lista as pendências no próprio plano.
+`GET /produtos/{id}/preparo?unidade_id=` devolve as atividades deduzidas e o que falta em cada seção; `POST /planos` nunca bloqueia: lista as pendências no próprio plano.
 
 ## Rodando
 
@@ -130,34 +121,25 @@ Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produç�
 Produção com Docker: `cp .env.example .env`, preencha `ERP_SECRET_KEY` e `POSTGRES_PASSWORD`, `docker compose up -d`
 e ponha um proxy reverso com HTTPS na frente.
 
-## O que cada seção do documento virou
+## O que existe
 
-| Documento | Implementação |
+| Parte | Implementação |
 |---|---|
-| Tela 1 – Cadastro e descrição | Unidade com descrição, objetivo, problemas, fontes (`/unidades`) |
-| Tela 2 – Diagnóstico inteligente | Perguntas adaptativas por grupo (11 grupos), respostas gravadas (`/unidades/{id}/diagnostico`) |
-| Tela 3 – Estrutura automática | Proposta da IA (processo › etapas › operações, recursos, materiais, indicadores, etapas possivelmente omitidas), **editável** antes de aprovar; cria **rascunho** |
-| Tela 4 – Recursos | Ficha do recurso (capacidade, espaço onde está); tempo médio e de preparação **calculados do histórico aprovado** |
-| (novo) Produto → plano | Componentes, ligações, plano de trabalho com horários, ordem a partir do plano — ver seção acima |
-| (novo) Gêmeo digital | Espaços, distâncias, modelo de tempo por operação, simulação (what-if), prontidão e acurácia — ver seção acima |
-| Tela 5 – Ordem | Roteiro copiado do processo ativo, estimativa por operação, status planejada → liberada → em produção ⇄ parada → concluída/cancelada |
-| §10 Tempo e cálculo | `app/services/timecalc.py` — fórmulas configuráveis por operação (`linear`, `lote`, `fixo`) |
-| §11 IA em uso | Perguntas, estrutura, indicadores, operações semelhantes, explicação de desvios, gargalos, relatório (sempre como sugestão com evidências) |
-| §12 Ergonomia | Fatores por operação + **sinalização** (não é avaliação ergonômica formal) |
-| §13 Dashboard | Ordens abertas/atrasadas, planejado × realizado, gargalos, paradas, retrabalho, produtividade, utilização, qualidade, tendência semanal |
-| §14 Entidades | `app/models.py` |
-| §17 IA sugere, sistema valida | Ver abaixo |
-| §18 Segurança e permissões | Ver abaixo |
+| Item, peças e ligações | `/produtos`, `/produtos/{id}/componentes`, `/ligacoes`, interpretação por IA que **propõe** e só grava após conferência |
+| Agentes e ambiente | `/recursos`, `/espacos`, `/distancias`, `/perfis-mao-de-obra`, equipe e horário na unidade, `/referencias-tempo` |
+| Prontidão do item | `app/services/preparo.py`: atividades deduzidas e pendências por seção |
+| Plano de trabalho | `app/services/plano.py`, `/planos` (gerar, recalcular, confirmar, cancelar, CSV, gerar ordem) |
+| Ordem e produção | `/ordens` (nascem de planos), `/apontamentos`, `/ocorrencias`, fila do operador |
+| Cálculo de tempo e ergonomia | `app/services/modelo_tempo.py`, `ergonomia.py`, `timecalc.py` |
+| IA em uso | interpretar item, propor passos, explicar desvios, gargalos e relatório (sempre como sugestão com evidências) |
+| Dashboard | ordens abertas/atrasadas, planejado × realizado, gargalos, paradas, retrabalho, produtividade, utilização, qualidade, tendência semanal |
 
 ### Regras de negócio que merecem atenção
 
-- **Origem do dado.** Todo parâmetro tem origem (`informado`, `medido`, `calculado`, `ia_sugerido`), status de validação e versão. Só parâmetro **vigente e validado** entra nas estimativas; sugestão da IA nunca entra sozinha.
-- **Tempo da IA é rotulado, nunca disfarçado.** A estimativa da IA vem do modelo de tempo, com fonte `modelo_ia`, flag de validação e composição por elemento. Sem modelo, parâmetro nem histórico (ou com dado físico faltando), a operação fica `sem_base`.
-- **Estimativa.** Histórico (mediana de apontamentos **aprovados**, mín. `ERP_MIN_AMOSTRAS_HISTORICO`) > parâmetro validado > modelo da IA > sem base. A fonte é exibida em cada operação. "Atualizar pelo histórico" grava nova versão do parâmetro, rastreável.
-- **Referências genéricas do provedor local** (velocidade de caminhada, carga manual, manuseio) são aproximações e não substituem estudo de tempos; valide ou substitua por medições. Para um modelo calibrado à sua empresa, use o provedor Claude e/ou um modelo manual.
-- **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. Fila entre operações é calculada (fim da anterior → início da próxima). Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
-- **Versionamento de processo.** Cada versão é uma linha; só rascunho edita estrutura; ordens ficam presas à versão em que nasceram.
-- **Apontamentos nunca são apagados**, só anulados com motivo; operador só vê os próprios.
+- **Tempo da IA é rotulado, nunca disfarçado.** Passos vêm de IA ou de regras locais (indicado no plano); o sistema calcula. Sem dado físico, o passo fica `sem_base`.
+- **Referências genéricas do provedor local** (velocidade de caminhada, carga manual, manuseio, montagem) são aproximações e não substituem estudo de tempos; substitua por medições da sua oficina (`/referencias-tempo`).
+- **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
+- **Apontamentos nunca são apagados**, só anulados com motivo.
 
 ## Segurança (uso por terceiros)
 
@@ -176,7 +158,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 116 testes automatizados (SQLite) + percurso completo no navegador (armário → peças → agentes → ambiente → plano com tempo). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 78 testes automatizados (SQLite) + percurso completo no navegador (armário → peças → agentes → ambiente → plano com tempo). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 
@@ -191,3 +173,8 @@ tests/          pytest
 
 Estoque/compras, vendas/CRM, integrações, importação de listas de materiais, IoT/CNC, modelos preditivos,
 app móvel, manutenção, módulo de qualidade, programação da produção e simulação de capacidade.
+
+## Migração do fluxo antigo
+
+A migração `0009` **remove** as tabelas e colunas do fluxo antigo (diagnóstico, processos, etapas, operações, parâmetros, modelo de tempo por operação, ordem a partir de
+processo, descrição da unidade). Ela é **destrutiva e sem volta**: faça backup antes de `alembic upgrade head`. Ordens, apontamentos, planos, itens e cadastros são preservados.

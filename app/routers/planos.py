@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .. import audit
 from ..deps import Ctx, get_ctx
-from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoPasso, PlanoTrabalho, Produto, Recurso, ReferenciaTempo, Unidade
+from ..models import Componente, Espaco, Ligacao, PlanoTrabalho, Produto, Recurso, ReferenciaTempo, Unidade
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
                        PlanoPassoOut, ReferenciaIn, ReferenciaOut)

@@ -7,7 +7,7 @@ import { formulario, h, modal, montar, tabela, tentar, toast, badge, fmtNum } fr
 const ENT = {
   recursos: { rot: 'Recursos', un: true, campos: [
     { k: 'nome', rotulo: 'Nome (ex.: Máquina 01)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['maquina', 'Máquina'], ['posto', 'Posto'], ['ferramenta', 'Ferramenta'], ['instalacao', 'Instalação']] },
-    { k: 'processos_relacionados', rotulo: 'Processos relacionados', tipo: 'lista' }, { k: 'capacidade', rotulo: 'Capacidade', tipo: 'number', nulo: true },
+    { k: 'capacidade', rotulo: 'Capacidade', tipo: 'number', nulo: true },
     { k: 'capacidade_unidade', rotulo: 'Unidade da capacidade (use un/h ou un/min para o gêmeo digital)', padrao: 'un/h' }, { k: 'equipes_habilitadas', rotulo: 'Equipes habilitadas', tipo: 'lista' },
     { k: 'local_posto', rotulo: 'Local / posto' }, { k: 'horas_disponiveis_dia', rotulo: 'Horas disponíveis por dia útil', tipo: 'number', padrao: 8 },
     { k: 'ultima_manutencao', rotulo: 'Última manutenção', tipo: 'date', nulo: true }, { k: 'proxima_manutencao', rotulo: 'Próxima manutenção', tipo: 'date', nulo: true }],
@@ -45,7 +45,7 @@ const ENT = {
 
 // Campos e colunas que só aparecem no modo especialista.
 const AVANCADO = {
-  recursos: ['processos_relacionados', 'equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao', 'capacidade_unidade'],
+  recursos: ['equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao', 'capacidade_unidade'],
   espacos: ['pe_direito_m', 'piso', 'temperatura_c', 'umidade_pct', 'ruido_db', 'iluminancia_lux', 'observacoes'],
   pessoas: ['habilitacoes'], produtos: ['comprimento_m', 'largura_m', 'altura_m'],
 };

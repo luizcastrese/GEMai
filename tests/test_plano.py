@@ -5,34 +5,9 @@ import pytest
 
 from app.services import plano as svc
 from tests.conftest import registrar
+from tests.helpers import _cadastrar_contorno, _mesa
 
 FT = 1 / 0.91  # tolerâncias: pessoal 5 % + fadiga básica 4 % (OIT) → FT = 1/(1 − 0,09)
-
-
-def _cadastrar_contorno(a, u, *, capacidade=30, distancias=True):
-    est = a.post("/espacos", {"unidade_id": u, "nome": "Estoque", "tipo": "estoque"}).json()
-    cor = a.post("/espacos", {"unidade_id": u, "nome": "Corte", "tipo": "area"}).json()
-    mon = a.post("/espacos", {"unidade_id": u, "nome": "Montagem", "tipo": "montagem"}).json()
-    if distancias:
-        for o, d, m in ((est, cor, 30), (cor, mon, 15)):
-            assert a.c.put("/api/v1/distancias", headers=a.h, json={"origem_id": o["id"], "destino_id": d["id"], "metros": m}).status_code == 200
-    rec = {"unidade_id": u, "nome": "Seccionadora", "funcao": "corte", "espaco_id": cor["id"]}
-    if capacidade:
-        rec.update(capacidade=capacidade, capacidade_unidade="un/h")
-    assert a.post("/recursos", rec).status_code == 201
-    return est, cor, mon
-
-
-def _mesa(a, parafusos=8):
-    """Mesa: Tampo 1,0×0,5×0,02 m (MDF → 7 kg) e 2 Laterais 0,7×0,5×0,02 m (4,9 kg), tudo no grupo Corpo."""
-    p = a.post("/produtos", {"nome": "Mesa"}).json()
-    base = {"material": "mdf", "espessura_m": 0.02, "largura_m": 0.5}
-    tampo = a.post(f"/produtos/{p['id']}/componentes", {"nome": "Tampo", "quantidade": 1, "comprimento_m": 1.0, **base}).json()
-    lat = a.post(f"/produtos/{p['id']}/componentes", {"nome": "Lateral", "quantidade": 2, "comprimento_m": 0.7, **base}).json()
-    if parafusos:
-        assert a.post(f"/produtos/{p['id']}/ligacoes", {"componente_id": lat["id"], "ligado_a_id": tampo["id"],
-                                                         "metodo": "parafuso", "fixadores": parafusos}).status_code == 201
-    return p["id"], tampo, lat
 
 
 def _gerar(a, pid, u, **kw):
@@ -281,10 +256,10 @@ def test_confirmacao_e_manual_e_gera_ordem_com_os_tempos_do_plano(admin, unidade
     r = admin.post(f"/planos/{p['id']}/gerar-ordem", {"cliente": "Cliente X"})
     assert r.status_code == 201, r.text
     o = r.json()
-    assert o["processo_id"] is None and o["plano_id"] == p["id"] and o["quantidade"] == 3 and o["status"] == "planejada"
+    assert o["plano_id"] == p["id"] and o["quantidade"] == 3 and o["status"] == "planejada"
     plano = admin.get(f"/planos/{p['id']}").json()
     assert len(o["operacoes"]) == len(plano["passos"]) and o["tempo_estimado_min"] == pytest.approx(plano["totais"]["tempo_padrao_min"], abs=0.01)
-    assert {x["fonte_estimativa"] for x in o["operacoes"]} == {"plano"} and o["operacoes"][0]["operacao_id"] is None
+    assert {x["fonte_estimativa"] for x in o["operacoes"]} == {"plano"}
     assert [x["etapa_nome"] for x in o["operacoes"]][:2] == ["Transporte", "Corte"]
     assert admin.post(f"/planos/{p['id']}/gerar-ordem", {}).status_code == 409           # uma ordem por plano
     assert admin.post(f"/planos/{p['id']}/cancelar").status_code == 409                  # plano com ordem não cancela
@@ -323,7 +298,7 @@ def test_estrutura_do_produto_validacoes(admin, unidade_id):
     assert admin.post(f"/produtos/{pid}/componentes", {"nome": "Tampo"}).status_code == 409
     assert admin.post(f"/produtos/{pid}/ligacoes", {"componente_id": tampo["id"], "ligado_a_id": tampo["id"]}).status_code == 422
     assert admin.post(f"/produtos/{pid}/ligacoes", {"componente_id": 99999}).status_code == 404
-    assert admin.post(f"/planos", {"produto_id": admin.post("/produtos", {"nome": "Vazio"}).json()["id"], "unidade_id": unidade_id}).status_code == 422
+    assert admin.post("/planos", {"produto_id": admin.post("/produtos", {"nome": "Vazio"}).json()["id"], "unidade_id": unidade_id}).status_code == 422
     est = admin.get(f"/produtos/{pid}/estrutura").json()
     assert est["componentes"][0]["peso_estimado_kg"] == 7.0 and len(est["ligacoes"]) == 1
     assert admin.delete(f"/produtos/{pid}/componentes/{tampo['id']}").status_code == 204

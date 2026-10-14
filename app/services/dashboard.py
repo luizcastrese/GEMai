@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..constants import ORDEM_ABERTA
-from ..models import Apontamento, Empresa, Ocorrencia, Operacao, Ordem, Processo, Etapa, Recurso
+from ..models import Apontamento, Empresa, Ocorrencia, Ordem, Recurso
 from . import metricas, timecalc
 
 
@@ -24,15 +24,6 @@ def _limites(de: date, ate: date, tz: ZoneInfo) -> tuple[datetime, datetime]:
     ini = datetime.combine(de, time.min, tzinfo=tz).astimezone(timezone.utc)
     fim = datetime.combine(ate + timedelta(days=1), time.min, tzinfo=tz).astimezone(timezone.utc)
     return ini, fim
-
-
-def alerta_ergonomia(erg: dict | None) -> bool:
-    """Sinaliza operação que merece avaliação formal (não é uma avaliação ergonômica)."""
-    if not erg:
-        return False
-    altos = sum(1 for k in ("repetitividade", "esforco_fisico", "postura", "deslocamento", "tempo_em_pe")
-                if erg.get(k) == "alto")
-    return altos >= 2 or (altos >= 1 and erg.get("pausas") == "insuficientes")
 
 
 def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, ate: date) -> dict:
@@ -183,16 +174,6 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
                           "un_por_hora": timecalc.arred(v["boa"] / (v["min"] / 60)) if v["min"] else None}
                          for rid, v in por_rec_prod.items()]
 
-    # ---- ergonomia: operações de processos ativos sinalizadas
-    erg = []
-    rows = db.execute(select(Operacao, Etapa, Processo).join(Etapa, Etapa.id == Operacao.etapa_id)
-                      .join(Processo, Processo.id == Etapa.processo_id)
-                      .where(Operacao.empresa_id == empresa.id, Processo.status == "ativo",
-                             Processo.unidade_id.in_(unidade_ids))).all()
-    for op, et, pr in rows:
-        if alerta_ergonomia(op.ergonomia):
-            erg.append({"processo": pr.nome, "etapa": et.nome, "operacao": op.nome, "ergonomia": op.ergonomia})
-
     semanas = []
     for s in sorted(tend):
         t = tend[s]
@@ -234,5 +215,4 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
         "qualidade": {"refugo": refugo, "refugo_pct": timecalc.arred(refugo / total_q * 100) if total_q else None,
                       "ocorrencias_qualidade": n_qual, "retrabalho_min": timecalc.arred(ret_min)},
         "tendencia_semanal": semanas,
-        "alertas_ergonomia": erg,
     }

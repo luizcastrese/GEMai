@@ -36,7 +36,7 @@ export async function ordemDetalhe(el, id) {
   const aberta = ['liberada', 'em_producao', 'parada'].includes(o.status);
   const ativas = o.operacoes.filter((x) => x.status !== 'pulada');
   const feitas = ativas.filter((x) => x.status === 'concluida').length;
-  const daIA = o.operacoes.some((x) => x.fonte_estimativa === 'modelo_ia' && !x.estimativa_validada);
+  const semBase = o.operacoes.some((x) => x.fonte_estimativa === 'sem_base');
   const abertas = ocs.filter((c) => !c.fim);
 
   const cab = h('div', { class: 'card' }, h('div', { class: 'top' },
@@ -49,7 +49,7 @@ export async function ordemDetalhe(el, id) {
     h('div', { class: 'grid g4' },
       kpi('Tempo previsto', o.tempo_estimado_min === null ? 'Sem previsão' : fmtMin(o.tempo_estimado_min)),
       kpi('Tarefas concluídas', `${feitas} de ${ativas.length}`), kpi('Início', fmtData(o.iniciada_em)), kpi('Fim', fmtData(o.concluida_em))),
-    daIA ? h('div', { class: 'aviso-ia' }, 'O tempo previsto foi estimado pela IA. Depois que a produção acontecer, o sistema compara com o tempo real e vai ficando mais preciso.') : null,
+    semBase ? h('div', { class: 'aviso' }, 'Algumas tarefas ficaram sem previsão de tempo porque o plano não tinha dados para elas. Complete o item e gere um novo plano para prever.') : null,
     abertas.some((c) => c.tipo === 'parada') ? h('div', { class: 'aviso' }, 'Há uma parada em aberto nesta ordem. Encerre-a para continuar produzindo.') : null,
     o.observacoes ? h('p', { class: 'muted' }, o.observacoes) : null,
     o.cancelamento_motivo ? h('div', { class: 'aviso' }, `Cancelada: ${o.cancelamento_motivo}`) : null);
@@ -61,15 +61,14 @@ export async function ordemDetalhe(el, id) {
   const roteiro = h('div', { class: 'card' }, h('h2', null, 'Tarefas'), tabela([
     { t: '#', f: (x) => x.sequencia }, { t: 'Tarefa', f: (x) => h('span', null, `${x.etapa_nome} › ${x.nome}`, estado.avancado ? h('div', { class: 'muted small' }, nomeRec(x.recurso_id)) : null) },
     { t: 'Previsto', f: (x) => h('span', null, x.tempo_exec_est_min === null ? h('span', { class: 'muted' }, 'sem previsão') : fmtMin((x.tempo_prep_est_min || 0) + x.tempo_exec_est_min),
-      estado.avancado ? [' ', fonteBadge(x.fonte_estimativa), x.fonte_estimativa === 'modelo_ia' && !x.estimativa_validada ? badge('não validado', 'b-warn') : null,
-        x.fonte_estimativa === 'historico' ? ` (${x.amostras} amostras)` : null,
+      estado.avancado ? [' ', fonteBadge(x.fonte_estimativa), 
         x.detalhe_estimativa ? h('details', { class: 'small muted' }, h('summary', null, 'composição'), h('ul', null, x.detalhe_estimativa.map((e) => h('li', null, `${e.nome}: ${e.minutos === null ? 'falta dado' : fmtMin(e.minutos)}`)))) : null] : null) },
     { t: 'Tempo real', f: (x) => (x.tempo_apontado_min ? fmtMin(x.tempo_apontado_min) : '—') }, { t: 'Situação', f: (x) => statusBadge(x.status) },
     { t: '', f: (x) => aberta ? h('div', { class: 'inline' },
       ['pendente', 'em_andamento'].includes(x.status) ? [
         o.status !== 'parada' ? h('button', { class: 'sm', onclick: () => iniciar(x) }, '▶ Iniciar') : null,
         h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/concluir`), 'Tarefa concluída.') }, '✓ Concluir'),
-        x.opcional && x.status === 'pendente' ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/pular`)) }, 'Pular') : null] : null,
+      ] : null,
       ['concluida', 'pulada'].includes(x.status) ? h('button', { class: 'sm', onclick: cmd(() => post(`/ordens/${id}/operacoes/${x.id}/reabrir`)) }, 'Reabrir') : null) : '' }], o.operacoes));
 
   const secOc = h('div', { class: 'card' }, h('div', { class: 'top' }, h('h2', null, 'Problemas e paradas'),
@@ -134,12 +133,6 @@ function novaOcorrencia(o, recursos, aoSalvar) {
       if (await tentar(() => post('/ocorrencias', { ordem_id: o.id, ...f.valores() }), 'Ocorrência registrada.')) { fechar(); aoSalvar(); }
     } }, 'Registrar')] });
 }
-
-function camposExtras(op, inicial = {}) {
-  return formulario((op.campos_extras || []).map((c) => ({ k: c.nome, rotulo: `${c.nome}${c.unidade ? ` (${c.unidade})` : ''}${c.obrigatorio ? ' *' : ''}`,
-    tipo: c.tipo === 'numero' ? 'number' : c.tipo === 'booleano' ? 'bool' : 'text', nulo: true })), inicial);
-}
-const limparExtras = (v) => Object.fromEntries(Object.entries(v).filter(([, x]) => x !== null && x !== ''));
 
 async function iniciarApontamento(op, aoSalvar) {
   const f = formulario([{ k: 'tipo', rotulo: 'O que você vai fazer?', tipo: 'select', opcoes: Object.entries(TIPO_APT) }, { k: 'observacao', rotulo: 'Observação (opcional)' }]);
@@ -217,15 +210,14 @@ export async function fila(el) {
 }
 
 function finalizar(a, op, aoSalvar) {
-  const ex = camposExtras(op || {});
   const boas = formulario([{ k: 'quantidade_boa', rotulo: 'Quantas peças ficaram boas?', tipo: 'number', padrao: 0, min: 0 }]);
   const mais = formulario([{ k: 'quantidade_refugo', rotulo: 'Quantas saíram com defeito ou foram perdidas?', tipo: 'number', padrao: 0, min: 0 }, { k: 'observacao', rotulo: 'Observação (opcional)' }]);
   const semQtd = a.tipo === 'preparacao' || a.tipo === 'espera';
   modal(`Concluir — ${a.operacao_nome}`, h('div', null, semQtd ? h('p', { class: 'muted' }, 'Tudo certo? Toque em Concluir.') : boas.el,
-    ex.el, detalhes(semQtd ? 'Observação' : 'Teve defeito ou perda? / observação', mais.el)), { acoes: (fechar) => [h('button', { onclick: fechar }, 'Voltar'),
+    detalhes(semQtd ? 'Observação' : 'Teve defeito ou perda? / observação', mais.el)), { acoes: (fechar) => [h('button', { onclick: fechar }, 'Voltar'),
     h('button', { class: 'pri big', onclick: async () => {
       const b = boas.valores(); const m = mais.valores();
-      const corpo = { quantidade_boa: semQtd ? 0 : b.quantidade_boa || 0, quantidade_refugo: semQtd ? 0 : m.quantidade_refugo || 0, observacao: m.observacao, dados_extras: limparExtras(ex.valores()) };
+      const corpo = { quantidade_boa: semQtd ? 0 : b.quantidade_boa || 0, quantidade_refugo: semQtd ? 0 : m.quantidade_refugo || 0, observacao: m.observacao };
       if (await tentar(() => post(`/apontamentos/${a.id}/finalizar`, corpo), 'Concluído. Obrigado!')) { fechar(); aoSalvar(); }
     } }, 'Concluir')] });
 }

@@ -69,7 +69,7 @@ def test_todos_os_usuarios_tem_o_mesmo_acesso(gestor, operador, unidade_id):
     for u in (gestor, operador):
         assert u.get("/usuarios").status_code == 200
         assert u.get("/auditoria").status_code == 200
-        assert u.post("/processos", {"unidade_id": unidade_id, "nome": f"P-{u.usuario['id']}"}).status_code == 201
+        assert u.post("/produtos", {"nome": f"P-{u.usuario['id']}"}).status_code == 201
     novo = gestor.post("/usuarios", {"nome": "Novo", "email": "novo@a.com", "senha": SENHA})
     assert novo.status_code == 201 and "perfil" not in novo.json()
 

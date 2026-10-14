@@ -1,6 +1,6 @@
 """Item final + peças + agentes + ambiente → a plataforma deduz as atividades e diz o que falta para o tempo."""
 from tests.conftest import registrar
-from tests.test_plano import _cadastrar_contorno, _mesa
+from tests.helpers import _cadastrar_contorno, _mesa
 
 
 def _prep(a, pid, uid):

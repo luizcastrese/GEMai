@@ -12,13 +12,11 @@ from datetime import datetime, time, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
                       PlanoTrabalho, Produto, Recurso, ReferenciaTempo)
 from . import ergonomia, ia, modelo_tempo
 from .dashboard import tz_empresa
-from .prontidao import _alerta_simples
 
 BLOCOS_PADRAO = [["08:00", "12:00"], ["13:00", "17:00"]]
 SEM_ELEMENTOS = "Falta informar o equipamento ou os dados deste passo (veja as pendências do plano)"
@@ -231,11 +229,11 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
         alertas = []
         if peso_ref:
             for a in ergonomia.alertas_carga(peso_ref / pessoas, perfil, None):
-                txt, cat = _alerta_simples(a)
+                txt, cat = ergonomia.alerta_simples(a)
                 alertas.append({"msg": txt, "detalhe": a, "categoria": cat})
         if local is not None:
             if local.ruido_db and local.ruido_db > ergonomia.LIMITE_RUIDO_NR15_DBA:
-                txt, cat = _alerta_simples(f"Ruído de {local.ruido_db:g} dB(A) em '{local.nome}' acima de {ergonomia.LIMITE_RUIDO_NR15_DBA:g} dB(A) (NR-15, 8 h)")
+                txt, cat = ergonomia.alerta_simples(f"Ruído de {local.ruido_db:g} dB(A) em '{local.nome}' acima de {ergonomia.LIMITE_RUIDO_NR15_DBA:g} dB(A) (NR-15, 8 h)")
                 alertas.append({"msg": txt, "detalhe": f"Ruído {local.ruido_db:g} dB(A) em '{local.nome}'", "categoria": cat})
             if local.temperatura_c is not None and (local.temperatura_c > 30 or local.temperatura_c < 12):
                 alertas.append({"msg": f"A temperatura em '{local.nome}' ({local.temperatura_c:g} °C) é extrema: avalie o conforto térmico e informe a tolerância do local, se couber.",
@@ -310,7 +308,7 @@ def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) 
     tem_tempo = [p for p in plano.passos if p.tempo_padrao_min is not None]
     o = Ordem(empresa_id=ctx.empresa_id, unidade_id=plano.unidade_id, numero=numero_fn(ctx.db, ctx.empresa_id), cliente=cliente,
               produto_id=plano.produto_id, descricao=produto.nome if produto else plano.nome, quantidade=plano.quantidade, prazo=prazo,
-              processo_id=None, plano_id=plano.id, status="planejada", criada_por=ctx.usuario.id,
+              plano_id=plano.id, status="planejada", criada_por=ctx.usuario.id,
               tempo_estimado_min=round(sum(p.tempo_padrao_min for p in tem_tempo), 2) if tem_tempo else None,
               observacoes=f"Gerada do plano de trabalho #{plano.id}.")
     ctx.db.add(o)
@@ -318,10 +316,10 @@ def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) 
     for p in plano.passos:
         ok = p.tempo_padrao_min is not None
         ctx.db.add(OrdemOperacao(
-            empresa_id=ctx.empresa_id, ordem_id=o.id, operacao_id=None, sequencia=p.sequencia, etapa_nome=p.grupo or ROTULO_TIPO.get(p.tipo, "Outros"), nome=p.nome,
-            recurso_id=p.recurso_id, qtd_planejada=p.qtd_pecas, formula_tipo="fixo", tempo_prep_est_min=p.tempo_prep_min if ok else None,
-            tempo_exec_est_min=p.tempo_exec_min if ok else None, fonte_estimativa="plano" if ok else "sem_base", amostras=0,
-            detalhe_estimativa=p.composicao, estimativa_validada=True, status="pendente"))
+            empresa_id=ctx.empresa_id, ordem_id=o.id, sequencia=p.sequencia, etapa_nome=p.grupo or ROTULO_TIPO.get(p.tipo, "Outros"), nome=p.nome,
+            recurso_id=p.recurso_id, qtd_planejada=p.qtd_pecas, tempo_prep_est_min=p.tempo_prep_min if ok else None,
+            tempo_exec_est_min=p.tempo_exec_min if ok else None, fonte_estimativa="plano" if ok else "sem_base",
+            detalhe_estimativa=p.composicao, status="pendente"))
     plano.ordem_id = o.id
     ctx.db.flush()
     ctx.db.refresh(o)

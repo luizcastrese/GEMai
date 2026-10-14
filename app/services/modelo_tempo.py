@@ -96,22 +96,6 @@ class ElementoTempo(BaseModel):
     justificativa: str = ""
 
 
-class ModeloTempoIA(BaseModel):
-    """Saída esperada da IA (e do provedor local)."""
-
-    elementos: list[ElementoTempo] = Field(default_factory=list)
-    fator_ambiente: float = 1.0
-    ritmo_pct: float = 100.0
-    tolerancias: list[ToleranciaTempo] = Field(default_factory=list)
-    premissas: list[str] = Field(default_factory=list)
-    dados_faltantes: list[str] = Field(default_factory=list)
-    padrao_apontamento_inicio: str = ""
-    padrao_apontamento_fim: str = ""
-    unidade_contagem: str = ""
-    confianca: Literal["baixa", "media", "alta"] = "baixa"
-    justificativa: str = ""
-
-
 def _t(s: str | None, n: int) -> str:
     return (s or "").replace("\x00", "").strip()[:n]
 
@@ -122,10 +106,10 @@ def _num(v: float | None, lo: float, hi: float, padrao: float | None = None) -> 
     return min(max(float(v), lo), hi)
 
 
-def sanear_modelo(m: ModeloTempoIA) -> ModeloTempoIA:
-    """Limites de tamanho e de valores; descarta elementos sem sentido."""
+def sanear_elementos(elementos: list[ElementoTempo]) -> list[ElementoTempo]:
+    """Limites de tamanho e de valores para os elementos de tempo vindos da IA; descarta os sem sentido."""
     els = []
-    for e in m.elementos[:15]:
+    for e in elementos[:15]:
         if not _t(e.nome, 200):
             continue
         els.append(ElementoTempo(
@@ -135,15 +119,7 @@ def sanear_modelo(m: ModeloTempoIA) -> ModeloTempoIA:
             ida_e_volta=e.ida_e_volta, paralelizavel=e.paralelizavel, justificativa=_t(e.justificativa, 500),
             indices_most=[min(INDICES_MOST, key=lambda x: abs(x - int(i))) for i in e.indices_most[:30]],
             depende_operador=False if e.metodo == "capacidade_recurso" else e.depende_operador))
-    return ModeloTempoIA(
-        elementos=els, fator_ambiente=_num(m.fator_ambiente, 0.5, 3.0, 1.0), ritmo_pct=_num(m.ritmo_pct, 50, 150, 100.0),
-        tolerancias=[ToleranciaTempo(categoria=_t(t.categoria, 120), percentual=_num(t.percentual, 0, 50, 0.0),
-                                     justificativa=_t(t.justificativa, 400), fonte=_t(t.fonte, 200))
-                     for t in m.tolerancias[:15] if _t(t.categoria, 120)],
-        premissas=[_t(x, 400) for x in m.premissas[:20] if _t(x, 400)],
-        dados_faltantes=[_t(x, 300) for x in m.dados_faltantes[:20] if _t(x, 300)],
-        padrao_apontamento_inicio=_t(m.padrao_apontamento_inicio, 300), padrao_apontamento_fim=_t(m.padrao_apontamento_fim, 300),
-        unidade_contagem=_t(m.unidade_contagem, 60), confianca=m.confianca, justificativa=_t(m.justificativa, 3000))
+    return els
 
 
 # ---------------------------------------------------------------- contexto físico
@@ -196,24 +172,6 @@ def distancia_entre(db: Session, empresa_id: int, a: int | None, b: int | None) 
         Distancia.empresa_id == empresa_id,
         ((Distancia.origem_id == a) & (Distancia.destino_id == b)) | ((Distancia.origem_id == b) & (Distancia.destino_id == a))))
     return d
-
-
-def montar_contexto(db: Session, empresa_id: int, operacao, quantidade: float, produto=None, recurso=None) -> Contexto:
-    """Contorno físico efetivo: item típico da operação, sobreposto pelo produto da ordem."""
-    c = Contexto(quantidade=quantidade, num_pessoas=max(operacao.num_pessoas or 1, 1))
-    for campo, op_campo in (("peso_kg", "item_peso_kg"), ("comprimento_m", "item_comprimento_m"),
-                            ("largura_m", "item_largura_m"), ("altura_m", "item_altura_m")):
-        v = getattr(produto, campo, None) if produto is not None else None
-        setattr(c, campo, v if v is not None else getattr(operacao, op_campo))
-    c.distancia_m = operacao.distancia_m if operacao.distancia_m is not None else distancia_entre(
-        db, empresa_id, operacao.espaco_origem_id, operacao.espaco_destino_id)
-    rec = recurso
-    if rec is None and operacao.recurso_padrao_id:
-        from ..models import Recurso
-        rec = db.get(Recurso, operacao.recurso_padrao_id)
-    if rec is not None:
-        c.capacidade_un_h = capacidade_por_hora(rec.capacidade, rec.capacidade_unidade)
-    return c
 
 
 # ---------------------------------------------------------------- cálculo
@@ -307,10 +265,3 @@ def calcular(elementos: list[dict], fator_ambiente: float, c: Contexto, toleranc
     r.prep, r.exec = round(base_prep * ft, 3), round(base_exec * ft, 3)
     return r
 
-
-def modelo_ativo(db: Session, empresa_id: int, operacao_id: int):
-    """Versão mais recente não rejeitada."""
-    from ..models import ModeloTempo
-    return db.scalar(select(ModeloTempo).where(
-        ModeloTempo.empresa_id == empresa_id, ModeloTempo.operacao_id == operacao_id,
-        ModeloTempo.status_validacao != "rejeitado").order_by(ModeloTempo.versao.desc()).limit(1))

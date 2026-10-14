@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from .. import audit
 from ..deps import Ctx, get_ctx
-from ..models import Apontamento, Ocorrencia, Operacao, Ordem, OrdemOperacao, Pessoa, Recurso, Usuario
+from ..models import Apontamento, Ocorrencia, Ordem, OrdemOperacao, Pessoa, Recurso, Usuario
 from ..schemas import (AnularIn, ApontamentoManualIn, ApontamentoOut, DecisaoIn, FecharOcorrenciaIn,
                        FinalizarApontamentoIn, IniciarApontamentoIn, OcorrenciaIn, OcorrenciaOut)
 from ..services import timecalc
@@ -84,28 +84,6 @@ def _contexto_operacao(ctx: Ctx, ooid: int) -> tuple[OrdemOperacao, Ordem]:
     if not oo or oo.empresa_id != ctx.empresa_id:
         raise HTTPException(404, "Registro não encontrado.")
     return oo, ctx.obter(Ordem, oo.ordem_id)
-
-
-def _validar_extras(ctx: Ctx, oo: OrdemOperacao, extras: dict) -> dict:
-    """Valida campos personalizados definidos na operação (seção 4, passo 6–7)."""
-    op = ctx.db.get(Operacao, oo.operacao_id) if oo.operacao_id else None
-    defs = {c["nome"]: c for c in (op.campos_extras if op else [])}
-    desconhecidos = set(extras) - set(defs)
-    if desconhecidos:
-        raise HTTPException(422, "Campos não definidos para esta operação: " + ", ".join(sorted(desconhecidos)))
-    limpo = {}
-    for nome, d in defs.items():
-        v = extras.get(nome)
-        if v is None or v == "":
-            if d.get("obrigatorio"):
-                raise HTTPException(422, f"Campo obrigatório: {nome}")
-            continue
-        ok = {"numero": isinstance(v, (int, float)) and not isinstance(v, bool),
-              "texto": isinstance(v, str) and len(v) <= 500, "booleano": isinstance(v, bool)}[d["tipo"]]
-        if not ok:
-            raise HTTPException(422, f"Valor inválido para '{nome}' (esperado {d['tipo']}).")
-        limpo[nome] = v
-    return limpo
 
 
 def _checar_quantidades(tipo: str, boa: float, refugo: float) -> None:
@@ -186,10 +164,8 @@ def finalizar(aid: int, dados: FinalizarApontamentoIn, ctx: Ctx = Depends(get_ct
     fim = dados.fim or _agora()
     _checar_periodo(a.inicio, fim)
     _checar_quantidades(a.tipo, dados.quantidade_boa, dados.quantidade_refugo)
-    oo = ctx.db.get(OrdemOperacao, a.ordem_operacao_id)
-    extras = _validar_extras(ctx, oo, dados.dados_extras)
     antes = audit.snap(a)
-    a.fim, a.quantidade_boa, a.quantidade_refugo, a.dados_extras = fim, dados.quantidade_boa, dados.quantidade_refugo, extras
+    a.fim, a.quantidade_boa, a.quantidade_refugo = fim, dados.quantidade_boa, dados.quantidade_refugo
     if dados.observacao is not None:
         a.observacao = dados.observacao
     ctx.auditar("apontamento.finalizar", "apontamento", a.id, antes, audit.snap(a))
@@ -206,11 +182,10 @@ def registrar_manual(dados: ApontamentoManualIn, ctx: Ctx = Depends(get_ctx)):
     _checar_quantidades(dados.tipo, dados.quantidade_boa, dados.quantidade_refugo)
     pessoa_id = _resolver_pessoa(ctx, o.unidade_id, dados.pessoa_id)
     rec = _recurso(ctx, dados.recurso_id or oo.recurso_id, o.unidade_id)
-    extras = _validar_extras(ctx, oo, dados.dados_extras)
     a = Apontamento(empresa_id=ctx.empresa_id, unidade_id=o.unidade_id, ordem_id=o.id, ordem_operacao_id=oo.id,
                     tipo=dados.tipo, pessoa_id=pessoa_id, recurso_id=rec.id if rec else None, inicio=dados.inicio,
                     fim=dados.fim, quantidade_boa=dados.quantidade_boa, quantidade_refugo=dados.quantidade_refugo,
-                    dados_extras=extras, observacao=dados.observacao, registrado_por=ctx.usuario.id)
+                    observacao=dados.observacao, registrado_por=ctx.usuario.id)
     ctx.db.add(a)
     if o.status in ("liberada", "em_producao"):
         _aplicar_inicio(oo, o, dados.inicio)

@@ -1,4 +1,4 @@
-"""Tela 5: ordens de produção/processo, com roteiro, estimativa e controle de status."""
+"""Ordens de produção (nascem de planos de trabalho confirmados): tarefas, status e análise."""
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..constants import ORDEM_ABERTA, ORDEM_FINAL
 from ..deps import Ctx, get_ctx
-from ..models import Apontamento, Empresa, Ocorrencia, Operacao, Ordem, OrdemOperacao, Processo, Produto, Recurso
-from ..schemas import CancelarIn, OrdemIn, OrdemOperacaoOut, OrdemOut, OrdemUpdate
-from ..services import estimativa, metricas
+from ..models import Apontamento, Empresa, Ocorrencia, Ordem, OrdemOperacao
+from ..schemas import CancelarIn, OrdemOperacaoOut, OrdemOut, OrdemUpdate
+from ..services import metricas
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["ordens"])
@@ -35,20 +35,8 @@ def ordem_out(ctx: Ctx, o: Ordem, detalhado: bool = False) -> OrdemOut:
             oo.qtd_boa, oo.qtd_refugo = m.get("qtd_boa", 0), m.get("qtd_refugo", 0)
             oo.tempo_apontado_min = round(m.get("realizado_min", 0) + m.get("espera_min", 0), 2)
             ops.append(oo)
-        _preencher_definicoes(ctx.db, ops)
         out.operacoes = ops
     return out
-
-
-def _preencher_definicoes(db: Session, itens: list[OrdemOperacaoOut]) -> None:
-    ids = {i.operacao_id for i in itens if i.operacao_id}
-    if not ids:
-        return
-    defs = {o.id: o for o in db.scalars(select(Operacao).where(Operacao.id.in_(ids)))}
-    for i in itens:
-        op = defs.get(i.operacao_id)
-        if op:
-            i.campos_extras, i.dados_medidos = op.campos_extras, op.dados_medidos
 
 
 def _numero(db: Session, empresa_id: int) -> str:
@@ -74,7 +62,7 @@ def _oo(ctx: Ctx, ordem: Ordem, ooid: int) -> OrdemOperacao:
     return oo
 
 
-# ------------------------------------------------------------------ CRUD
+# ------------------------------------------------------------------ consulta e edição
 @router.get("/ordens", response_model=list[OrdemOut])
 def listar(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None, status: str | None = None,
            atrasadas: bool = False, q: str | None = Query(None, max_length=100),
@@ -91,67 +79,6 @@ def listar(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None, status: s
         stmt = stmt.where(Ordem.numero.ilike(f"%{q}%") | Ordem.cliente.ilike(f"%{q}%") | Ordem.descricao.ilike(f"%{q}%"))
     os_ = ctx.db.scalars(stmt.order_by(Ordem.id.desc()).limit(limite).offset(deslocamento)).all()
     return [ordem_out(ctx, o) for o in os_]
-
-
-@router.post("/ordens", response_model=OrdemOut, status_code=201)
-def criar(dados: OrdemIn, ctx: Ctx = Depends(get_ctx)):
-    uni = ctx.exige_unidade(dados.unidade_id)
-    proc = ctx.obter(Processo, dados.processo_id)
-    if proc.unidade_id != uni.id:
-        raise HTTPException(422, "O processo não pertence a esta unidade.")
-    if proc.status != "ativo":
-        raise HTTPException(409, "Somente processos ativos (publicados) podem gerar ordens.")
-    pr = None
-    if dados.produto_id is not None:
-        pr = ctx.db.get(Produto, dados.produto_id)
-        if not pr or pr.empresa_id != ctx.empresa_id:
-            raise HTTPException(422, "Produto inválido.")
-    ops_proc = [op for e in proc.etapas for op in e.operacoes]
-    ids_validos = {op.id for op in ops_proc}
-    recursos_sel, recursos_obj = {}, {}
-    for r in dados.recursos:
-        if r.operacao_id not in ids_validos:
-            raise HTTPException(422, "Operação não pertence ao processo.")
-        rec = ctx.db.get(Recurso, r.recurso_id)
-        if not rec or rec.empresa_id != ctx.empresa_id or rec.unidade_id != uni.id or not rec.ativo:
-            raise HTTPException(422, "Recurso inválido para esta unidade.")
-        recursos_sel[r.operacao_id] = rec.id
-        recursos_obj[r.operacao_id] = rec
-    opcionais = {op.id for e in proc.etapas if e.opcional for op in e.operacoes}
-    for pid in dados.pular_operacoes:
-        if pid not in opcionais:
-            raise HTTPException(422, "Só é possível pular operações de etapas opcionais.")
-
-    o = Ordem(empresa_id=ctx.empresa_id, unidade_id=uni.id, numero=_numero(ctx.db, ctx.empresa_id),
-              cliente=dados.cliente or "", produto_id=dados.produto_id, descricao=dados.descricao,
-              quantidade=dados.quantidade, prazo=dados.prazo, processo_id=proc.id, observacoes=dados.observacoes,
-              status="planejada", criada_por=ctx.usuario.id)
-    ctx.db.add(o)
-    ctx.db.flush()
-    total, algum = 0.0, False
-    seq = 0
-    for e in proc.etapas:
-        for op in e.operacoes:
-            seq += 1
-            pulada = op.id in dados.pular_operacoes
-            est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, dados.quantidade, pr, recursos_obj.get(op.id))
-            if not pulada and est.exec is not None:
-                total += (est.prep or 0.0) + est.exec
-                algum = True
-            ctx.db.add(OrdemOperacao(
-                empresa_id=ctx.empresa_id, ordem_id=o.id, operacao_id=op.id, sequencia=seq, etapa_nome=e.nome,
-                nome=op.nome, recurso_id=recursos_sel.get(op.id, op.recurso_padrao_id),
-                qtd_planejada=dados.quantidade, formula_tipo=op.formula_tipo,
-                tempo_prep_est_min=est.prep if est.exec is not None else None, tempo_exec_est_min=est.exec,
-                fonte_estimativa=est.fonte, amostras=est.amostras, opcional=e.opcional,
-                detalhe_estimativa=est.detalhe, estimativa_validada=est.validada,
-                status="pulada" if pulada else "pendente"))
-    o.tempo_estimado_min = round(total, 2) if algum else None
-    ctx.db.flush()
-    ctx.db.refresh(o)
-    ctx.auditar("ordem.criar", "ordem", o.id, None, audit.snap(o))
-    ctx.db.commit()
-    return ordem_out(ctx, o, True)
 
 
 @router.get("/ordens/{oid}", response_model=OrdemOut)
@@ -263,18 +190,6 @@ def reabrir_operacao(oid: int, ooid: int, ctx: Ctx = Depends(get_ctx)):
     return ordem_out(ctx, o, True)
 
 
-@router.post("/ordens/{oid}/operacoes/{ooid}/pular", response_model=OrdemOut)
-def pular_operacao(oid: int, ooid: int, ctx: Ctx = Depends(get_ctx)):
-    o = ctx.obter(Ordem, oid)
-    oo = _oo(ctx, o, ooid)
-    if not oo.opcional or oo.status != "pendente" or o.status in ORDEM_FINAL:
-        raise HTTPException(409, "Só é possível pular operações opcionais ainda não iniciadas.")
-    oo.status = "pulada"
-    ctx.auditar("ordem_operacao.pular", "ordem_operacao", oo.id, {"status": "pendente"}, {"status": "pulada"})
-    ctx.db.commit()
-    return ordem_out(ctx, o, True)
-
-
 # ------------------------------------------------------------------ interface do operador
 @router.get("/operador/fila", response_model=list[OrdemOperacaoOut])
 def fila_operador(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
@@ -294,5 +209,4 @@ def fila_operador(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
         x = OrdemOperacaoOut.model_validate(oo)
         x.ordem_numero = numero
         saida.append(x)
-    _preencher_definicoes(ctx.db, saida)
     return saida

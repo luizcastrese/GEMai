@@ -9,10 +9,8 @@ import logging
 
 from ...config import get_settings
 from ...models import Empresa
-from ..modelo_tempo import ModeloTempoIA, sanear_modelo
 from . import claude, heuristica
-from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, ListaPerguntas, PerguntaIA, PlanoProposta,
-                       sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
+from .esquemas import AnaliseTexto, EstruturaProdutoIA, PlanoProposta, sanear_analise, sanear_estrutura_produto, sanear_plano
 
 log = logging.getLogger("erp.ia")
 
@@ -38,24 +36,9 @@ def _executar(empresa: Empresa, fn: str, *args):
     return getattr(heuristica, fn)(*args), heuristica.NOME, ""
 
 
-def gerar_perguntas(empresa: Empresa, ctx: dict) -> tuple[list[PerguntaIA], str, str]:
-    r, prov, aviso = _executar(empresa, "gerar_perguntas", ctx)
-    return sanear_perguntas(r, ctx.get("max", 12)), prov, aviso
-
-
-def estruturar(empresa: Empresa, ctx: dict) -> tuple[EstruturaProposta, str, str]:
-    r, prov, aviso = _executar(empresa, "estruturar", ctx)
-    return sanear_estrutura(r), prov, aviso
-
-
 def analisar(empresa: Empresa, tipo: str, fatos: dict) -> tuple[AnaliseTexto, str, str]:
     r, prov, aviso = _executar(empresa, "analisar", tipo, fatos)
     return sanear_analise(r), prov, aviso
-
-
-def modelar_tempo(empresa: Empresa, ctx: dict) -> tuple[ModeloTempoIA, str, str]:
-    r, prov, aviso = _executar(empresa, "modelar", ctx)
-    return sanear_modelo(r), prov, aviso
 
 
 def interpretar_produto(empresa: Empresa, ctx: dict) -> tuple[EstruturaProdutoIA, str, str]:

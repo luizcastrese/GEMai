@@ -9,7 +9,6 @@ Convenções (seção 10 do documento):
 """
 from __future__ import annotations
 
-import math
 from datetime import date, datetime, timedelta
 from typing import Iterable
 
@@ -18,20 +17,6 @@ def duracao_min(inicio: datetime, fim: datetime | None) -> float | None:
     if fim is None:
         return None
     return max((fim - inicio).total_seconds() / 60.0, 0.0)
-
-
-def estimar(formula: str, quantidade: float, prep: float | None, unitario: float | None,
-            tamanho_lote: float | None = None) -> tuple[float, float | None]:
-    """Retorna (preparação, execução). Execução None quando não há base de tempo."""
-    prep = prep or 0.0
-    if unitario is None:
-        return prep, None
-    if formula == "fixo":
-        return prep, unitario
-    if formula == "lote":
-        lote = tamanho_lote if tamanho_lote and tamanho_lote > 0 else 1.0
-        return prep, unitario * math.ceil(quantidade / lote)
-    return prep, unitario * quantidade  # linear
 
 
 def desvio(realizado: float | None, estimado: float | None) -> float | None:

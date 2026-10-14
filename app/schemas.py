@@ -100,10 +100,6 @@ class EmpresaUpdate(In):
 
 class UnidadeIn(In):
     nome: Nome
-    descricao_operacao: Texto = ""
-    objetivo: Texto = ""
-    principais_problemas: Texto = ""
-    informacoes_disponiveis: Texto = ""
 
 
 _HHMM = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
@@ -127,10 +123,6 @@ class JornadaTrabalho(BaseModel):
 
 class UnidadeUpdate(In):
     nome: Nome | None = None
-    descricao_operacao: Texto | None = None
-    objetivo: Texto | None = None
-    principais_problemas: Texto | None = None
-    informacoes_disponiveis: Texto | None = None
     equipe_pessoas: int | None = Field(None, ge=1, le=50)
     perfil_equipe_id: int | None = None
     jornada: JornadaTrabalho | None = None
@@ -140,251 +132,18 @@ class UnidadeUpdate(In):
 class UnidadeOut(Out):
     id: int
     nome: str
-    descricao_operacao: str
-    objetivo: str
-    principais_problemas: str
-    informacoes_disponiveis: str
     equipe_pessoas: int | None = None
     perfil_equipe_id: int | None = None
     jornada: dict | None = None
     ativa: bool
 
 
-# ------------------------------------------------------------------ diagnóstico
-class PerguntaOut(Out):
-    id: int
-    unidade_id: int
-    grupo: str
-    texto: str
-    resposta: str | None
-    ordem: int
-    origem: str
-
-
-class RespostaIn(In):
-    resposta: Annotated[str, Field(max_length=5000)]
-
-
-# ------------------------------------------------------------------ processos
-class CampoExtra(In):
-    nome: Annotated[str, Field(min_length=1, max_length=60)]
-    tipo: Literal["numero", "texto", "booleano"] = "numero"
-    unidade: Annotated[str, Field(max_length=20)] = ""
-    obrigatorio: bool = False
-
-
 Nivel = Literal["baixo", "medio", "alto"]
-
-
-class Ergonomia(In):
-    repetitividade: Nivel | None = None
-    esforco_fisico: Nivel | None = None
-    postura: Nivel | None = None
-    deslocamento: Nivel | None = None
-    tempo_em_pe: Nivel | None = None
-    pausas: Literal["adequadas", "insuficientes"] | None = None
-    condicoes_posto: Annotated[str, Field(max_length=500)] | None = None
-
-
-class Levantamento(In):
-    """Entradas da equação revisada do NIOSH (unidades métricas)."""
-    carga_kg: float | None = Field(None, ge=0, le=1000)
-    h_cm: float | None = Field(None, ge=0, le=300)
-    v_cm: float | None = Field(None, ge=0, le=300)
-    d_cm: float | None = Field(None, ge=0, le=300)
-    a_graus: float | None = Field(None, ge=0, le=180)
-    freq_por_min: float | None = Field(None, ge=0, le=60)
-    duracao: Literal["ate_1h", "1_2h", "2_8h"] | None = None
-    pega: Literal["boa", "regular", "ruim"] | None = None
 
 
 TipoMov = Literal["", "alcance_curto", "transporte_passos", "levantamento_curvado", "posicionamento_preciso",
                   "empurrar_puxar", "giro_tronco", "repetitivo_fino", "outro"]
 Postura = Literal["", "em_pe", "sentado", "alternada", "agachado", "curvado"]
-
-class ProcessoIn(In):
-    unidade_id: int
-    nome: Nome
-    macroprocesso: Annotated[str, Field(max_length=200)] = ""
-    descricao: Texto = ""
-    responsavel_id: int | None = None
-
-
-class ProcessoUpdate(In):
-    nome: Nome | None = None
-    macroprocesso: Annotated[str, Field(max_length=200)] | None = None
-    descricao: Texto | None = None
-    responsavel_id: int | None = None
-
-
-class EtapaIn(In):
-    nome: Nome
-    descricao: Texto = ""
-    sequencia: int | None = Field(None, ge=1)
-    entradas: list[Curto] = Field(default_factory=list, max_length=50)
-    saidas: list[Curto] = Field(default_factory=list, max_length=50)
-    opcional: bool = False
-    condicao: Curto = ""
-
-
-class EtapaUpdate(In):
-    nome: Nome | None = None
-    descricao: Texto | None = None
-    sequencia: int | None = Field(None, ge=1)
-    entradas: list[Curto] | None = Field(None, max_length=50)
-    saidas: list[Curto] | None = Field(None, max_length=50)
-    opcional: bool | None = None
-    condicao: Curto | None = None
-
-
-class OperacaoIn(In):
-    nome: Nome
-    descricao: Texto = ""
-    sequencia: int | None = Field(None, ge=1)
-    formula_tipo: Literal["linear", "lote", "fixo"] = "linear"
-    unidade_medida: Annotated[str, Field(max_length=30)] = "un"
-    recurso_padrao_id: int | None = None
-    dados_medidos: list[Annotated[str, Field(max_length=40)]] = Field(
-        default_factory=lambda: ["tempo", "quantidade"], max_length=30)
-    campos_extras: list[CampoExtra] = Field(default_factory=list, max_length=30)
-    ergonomia: Ergonomia = Field(default_factory=Ergonomia)
-    funcao_requerida: Annotated[str, Field(max_length=120)] = ""
-    num_pessoas: int = Field(1, ge=1, le=50)
-    espaco_origem_id: int | None = None
-    espaco_destino_id: int | None = None
-    distancia_m: float | None = Field(None, ge=0, le=100000)
-    item_peso_kg: float | None = Field(None, ge=0, le=100000)
-    item_comprimento_m: float | None = Field(None, ge=0, le=1000)
-    item_largura_m: float | None = Field(None, ge=0, le=1000)
-    item_altura_m: float | None = Field(None, ge=0, le=1000)
-    inicio_marco: Curto = ""
-    fim_marco: Curto = ""
-    perfil_id: int | None = None
-    tipo_movimento: TipoMov = ""
-    postura_trabalho: Postura = ""
-    altura_trabalho_m: float | None = Field(None, ge=0, le=3)
-    gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
-    levantamento: Levantamento | None = None
-
-
-class OperacaoUpdate(In):
-    nome: Nome | None = None
-    descricao: Texto | None = None
-    sequencia: int | None = Field(None, ge=1)
-    formula_tipo: Literal["linear", "lote", "fixo"] | None = None
-    unidade_medida: Annotated[str, Field(max_length=30)] | None = None
-    recurso_padrao_id: int | None = None
-    dados_medidos: list[Annotated[str, Field(max_length=40)]] | None = Field(None, max_length=30)
-    campos_extras: list[CampoExtra] | None = Field(None, max_length=30)
-    ergonomia: Ergonomia | None = None
-    funcao_requerida: Annotated[str, Field(max_length=120)] | None = None
-    num_pessoas: int | None = Field(None, ge=1, le=50)
-    espaco_origem_id: int | None = None
-    espaco_destino_id: int | None = None
-    distancia_m: float | None = Field(None, ge=0, le=100000)
-    item_peso_kg: float | None = Field(None, ge=0, le=100000)
-    item_comprimento_m: float | None = Field(None, ge=0, le=1000)
-    item_largura_m: float | None = Field(None, ge=0, le=1000)
-    item_altura_m: float | None = Field(None, ge=0, le=1000)
-    inicio_marco: Curto | None = None
-    fim_marco: Curto | None = None
-    perfil_id: int | None = None
-    tipo_movimento: TipoMov | None = None
-    postura_trabalho: Postura | None = None
-    altura_trabalho_m: float | None = Field(None, ge=0, le=3)
-    gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
-    levantamento: Levantamento | None = None
-
-
-class OperacaoOut(Out):
-    id: int
-    etapa_id: int
-    sequencia: int
-    nome: str
-    descricao: str
-    formula_tipo: str
-    unidade_medida: str
-    recurso_padrao_id: int | None
-    dados_medidos: list
-    campos_extras: list
-    ergonomia: dict
-    alerta_ergonomia: bool = False
-    funcao_requerida: str = ""
-    num_pessoas: int = 1
-    espaco_origem_id: int | None = None
-    espaco_destino_id: int | None = None
-    distancia_m: float | None = None
-    item_peso_kg: float | None = None
-    item_comprimento_m: float | None = None
-    item_largura_m: float | None = None
-    item_altura_m: float | None = None
-    inicio_marco: str = ""
-    fim_marco: str = ""
-    perfil_id: int | None = None
-    tipo_movimento: str = ""
-    postura_trabalho: str = ""
-    altura_trabalho_m: float | None = None
-    gasto_energetico_kcal_min: float | None = None
-    levantamento: dict | None = None
-
-
-class EtapaOut(Out):
-    id: int
-    processo_id: int
-    sequencia: int
-    nome: str
-    descricao: str
-    entradas: list
-    saidas: list
-    opcional: bool
-    condicao: str
-    operacoes: list[OperacaoOut] = []
-
-
-class ProcessoOut(Out):
-    id: int
-    unidade_id: int
-    codigo: str
-    versao: int
-    nome: str
-    macroprocesso: str
-    descricao: str
-    status: str
-    origem: str
-    responsavel_id: int | None
-    publicado_em: datetime | None
-    etapas: list[EtapaOut] | None = None
-    avisos: list[str] = []
-
-
-# ------------------------------------------------------------------ parâmetros
-class ParametroIn(In):
-    escopo_tipo: Literal["operacao", "recurso", "processo"]
-    escopo_id: int
-    nome: Annotated[str, Field(min_length=1, max_length=80, pattern=r"^[a-z0-9_]+$")]
-    valor_num: float | None = None
-    valor_texto: Curto | None = None
-    unidade: Annotated[str, Field(max_length=30)] = ""
-    origem: Literal["informado", "medido"] = "informado"
-    justificativa: Texto = ""
-
-
-class ParametroOut(Out):
-    id: int
-    escopo_tipo: str
-    escopo_id: int
-    nome: str
-    valor_num: float | None
-    valor_texto: str | None
-    unidade: str
-    origem: str
-    status_validacao: str
-    versao: int
-    vigente: bool
-    justificativa: str
-    criado_em: datetime
-    validado_em: datetime | None
-
 
 class DecisaoIn(In):
     observacao: Annotated[str, Field(max_length=2000)] = ""
@@ -395,7 +154,6 @@ class RecursoIn(In):
     unidade_id: int
     nome: Nome
     tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] = "maquina"
-    processos_relacionados: list[Curto] = Field(default_factory=list, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] = "un/h"
     equipes_habilitadas: list[Curto] = Field(default_factory=list, max_length=50)
@@ -410,7 +168,6 @@ class RecursoIn(In):
 class RecursoUpdate(In):
     nome: Nome | None = None
     tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] | None = None
-    processos_relacionados: list[Curto] | None = Field(None, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] | None = None
     equipes_habilitadas: list[Curto] | None = Field(None, max_length=50)
@@ -428,7 +185,6 @@ class RecursoOut(Out):
     unidade_id: int
     nome: str
     tipo: str
-    processos_relacionados: list
     capacidade: float | None
     capacidade_unidade: str
     equipes_habilitadas: list
@@ -534,7 +290,7 @@ class ProdutoOut(Out):
     ativo: bool
 
 
-# ------------------------------------------------------------------ gêmeo digital
+# ------------------------------------------------------------------ agentes e ambiente
 class EspacoIn(In):
     unidade_id: int
     nome: Nome
@@ -647,66 +403,7 @@ class DistanciaOut(Out):
     metros: float
 
 
-class ModeloTempoOut(Out):
-    id: int
-    operacao_id: int
-    versao: int
-    elementos: list
-    fator_ambiente: float
-    ritmo_pct: float = 100.0
-    tolerancias: list = []
-    premissas: list
-    dados_faltantes: list
-    padrao_apontamento: dict
-    confianca: str
-    justificativa: str
-    origem: str
-    provedor: str
-    status_validacao: str
-    criado_em: datetime
-    validado_em: datetime | None
-    aviso: str = "Estimativa gerada por IA: não é um fato. Compare com medições e valide."
-
-
-class ModeloTempoManualIn(In):
-    elementos: list[dict[str, Any]] = Field(max_length=15)
-    fator_ambiente: float = Field(1.0, ge=0.5, le=3.0)
-    ritmo_pct: float = Field(100.0, ge=50, le=150)
-    tolerancias: list[dict[str, Any]] = Field(default_factory=list, max_length=15)
-    premissas: list[Curto] = Field(default_factory=list, max_length=20)
-    justificativa: Texto = ""
-
-
-class EstimativaOut(BaseModel):
-    fonte: str
-    validada: bool
-    quantidade: float
-    preparacao_min: float | None
-    execucao_min: float | None
-    total_min: float | None
-    elementos: list | None = None
-    avisos: list[str] = []
-
-
 # ------------------------------------------------------------------ ordens
-class RecursoOperacaoIn(In):
-    operacao_id: int
-    recurso_id: int
-
-
-class OrdemIn(In):
-    unidade_id: int
-    processo_id: int
-    produto_id: int | None = None
-    descricao: Curto = ""
-    cliente: Nome | None = None
-    quantidade: float = Field(gt=0, le=1e9)
-    prazo: date | None = None
-    observacoes: Texto = ""
-    recursos: list[RecursoOperacaoIn] = Field(default_factory=list, max_length=200)
-    pular_operacoes: list[int] = Field(default_factory=list, max_length=200)
-
-
 class OrdemUpdate(In):
     cliente: Nome | None = None
     descricao: Curto | None = None
@@ -721,20 +418,15 @@ class CancelarIn(In):
 class OrdemOperacaoOut(Out):
     id: int
     ordem_id: int
-    operacao_id: int | None
     sequencia: int
     etapa_nome: str
     nome: str
     recurso_id: int | None
     qtd_planejada: float
-    formula_tipo: str
     tempo_prep_est_min: float | None
     tempo_exec_est_min: float | None
     fonte_estimativa: str
-    amostras: int
     detalhe_estimativa: list | None = None
-    estimativa_validada: bool = True
-    opcional: bool
     status: str
     iniciada_em: datetime | None
     concluida_em: datetime | None
@@ -742,8 +434,6 @@ class OrdemOperacaoOut(Out):
     qtd_refugo: float = 0
     tempo_apontado_min: float = 0
     ordem_numero: str | None = None
-    campos_extras: list = []
-    dados_medidos: list = []
 
 
 class OrdemOut(Out):
@@ -755,7 +445,6 @@ class OrdemOut(Out):
     descricao: str
     quantidade: float
     prazo: date | None
-    processo_id: int | None = None
     plano_id: int | None = None
     status: str
     tempo_estimado_min: float | None
@@ -785,7 +474,6 @@ class IniciarApontamentoIn(In):
 class FinalizarApontamentoIn(In):
     quantidade_boa: float = Field(0, ge=0, le=1e9)
     quantidade_refugo: float = Field(0, ge=0, le=1e9)
-    dados_extras: dict[str, Any] = Field(default_factory=dict)
     observacao: Texto | None = None
     fim: UTC | None = None
 
@@ -799,7 +487,6 @@ class ApontamentoManualIn(In):
     fim: UTC
     quantidade_boa: float = Field(0, ge=0, le=1e9)
     quantidade_refugo: float = Field(0, ge=0, le=1e9)
-    dados_extras: dict[str, Any] = Field(default_factory=dict)
     observacao: Texto = ""
 
 
@@ -822,7 +509,6 @@ class ApontamentoOut(Out):
     operacao_nome: str | None = None
     quantidade_boa: float
     quantidade_refugo: float
-    dados_extras: dict
     observacao: str
     status: str
     registrado_por: int
@@ -866,11 +552,9 @@ class OcorrenciaOut(Out):
 
 # ------------------------------------------------------------------ IA
 class AnaliseIn(In):
-    tipo: Literal["analise_desvio", "analise_gargalo", "relatorio_gestor",
-                  "indicadores_sugeridos", "processos_semelhantes", "revisao_processo"]
+    tipo: Literal["analise_desvio", "analise_gargalo", "relatorio_gestor"]
     unidade_id: int
     ordem_id: int | None = None
-    processo_id: int | None = None
     de: date | None = None
     ate: date | None = None
 
@@ -891,10 +575,6 @@ class RecomendacaoOut(Out):
     decidida_em: datetime | None
     decisao_obs: str
     aviso: str = "Sugestão gerada por IA. Não é um fato: requer validação do responsável."
-
-
-class RecomendacaoEditIn(In):
-    conteudo: dict[str, Any]
 
 
 class AuditoriaOut(Out):

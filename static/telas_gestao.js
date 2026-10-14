@@ -62,10 +62,7 @@ export async function painel(el) {
             h('div', { class: 'small muted' }, 'Eficiência (%)'), barras(d.tendencia_semanal.map((s) => fmtDia(s.semana).slice(0, 5)), d.tendencia_semanal.map((s) => s.eficiencia_pct), { sufixo: '' }),
             h('div', { class: 'small muted' }, 'Paradas (min)'), barras(d.tendencia_semanal.map((s) => fmtDia(s.semana).slice(0, 5)), d.tendencia_semanal.map((s) => s.paradas_min), { cor: '#b26a00' }))
             : h('p', { class: 'muted' }, 'Sem dados no período.'))),
-      d.alertas_ergonomia.length ? h('div', { class: 'card' }, h('h3', null, 'Operações que merecem avaliação ergonômica'),
-        h('div', { class: 'aviso' }, 'Sinalização automática a partir dos dados informados. Não é avaliação ergonômica: use método apropriado e profissional competente.'),
-        tabela([{ t: 'Processo › etapa › operação', f: (x) => `${x.processo} › ${x.etapa} › ${x.operacao}` },
-          { t: 'Fatores', f: (x) => Object.entries(x.ergonomia).map(([k, v]) => `${k.replace('_', ' ')}: ${v}`).join(' · ') }], d.alertas_ergonomia)) : null);
+    );
   }
   await carregar();
 }

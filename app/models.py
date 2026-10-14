@@ -66,11 +66,6 @@ class Unidade(Base):
     id: Mapped[int] = _pk()
     empresa_id: Mapped[int] = _empresa()
     nome: Mapped[str] = mapped_column(String(200))
-    # Tela 1 – descrição da operação
-    descricao_operacao: Mapped[str] = mapped_column(Text, default="")
-    objetivo: Mapped[str] = mapped_column(Text, default="")
-    principais_problemas: Mapped[str] = mapped_column(Text, default="")
-    informacoes_disponiveis: Mapped[str] = mapped_column(Text, default="")
     # Agentes: equipe e horário de trabalho (padrões do plano). `None` = não informado → 1 pessoa, 08–12 e 13–17.
     equipe_pessoas: Mapped[int | None] = mapped_column(Integer)
     perfil_equipe_id: Mapped[int | None] = mapped_column(Integer)  # perfil de referência da equipe (sexo, estatura…) → ergonomia do plano
@@ -102,107 +97,6 @@ class UsuarioUnidade(Base):
     unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), primary_key=True)
 
 
-# ---------------------------------------------------------------- diagnóstico
-class DiagnosticoPergunta(Base):
-    __tablename__ = "diagnostico_perguntas"
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
-    grupo: Mapped[str] = mapped_column(String(60))
-    texto: Mapped[str] = mapped_column(Text)
-    resposta: Mapped[str | None] = mapped_column(Text)
-    ordem: Mapped[int] = mapped_column(Integer, default=0)
-    origem: Mapped[str] = mapped_column(String(60), default="heuristica")  # provedor que gerou
-    criada_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
-    respondida_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
-    respondida_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-
-
-# ---------------------------------------------------------------- processos
-class Processo(Base):
-    """Cada versão é uma linha imutável (após publicada); `codigo` agrupa as versões."""
-
-    __tablename__ = "processos"
-    __table_args__ = (UniqueConstraint("empresa_id", "codigo", "versao"),)
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
-    codigo: Mapped[str] = mapped_column(String(36))
-    versao: Mapped[int] = mapped_column(Integer, default=1)
-    nome: Mapped[str] = mapped_column(String(200))
-    macroprocesso: Mapped[str] = mapped_column(String(200), default="")
-    descricao: Mapped[str] = mapped_column(Text, default="")
-    status: Mapped[str] = mapped_column(String(20), default="rascunho")
-    responsavel_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    origem: Mapped[str] = mapped_column(String(20), default="manual")  # manual | ia
-    recomendacao_id: Mapped[int | None] = mapped_column(ForeignKey("recomendacoes_ia.id"))
-    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
-    publicado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
-    publicado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-
-    etapas: Mapped[list["Etapa"]] = relationship(
-        back_populates="processo", order_by="Etapa.sequencia", cascade="all, delete-orphan"
-    )
-
-
-class Etapa(Base):
-    __tablename__ = "etapas"
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    processo_id: Mapped[int] = mapped_column(ForeignKey("processos.id"), index=True)
-    sequencia: Mapped[int] = mapped_column(Integer)
-    nome: Mapped[str] = mapped_column(String(200))
-    descricao: Mapped[str] = mapped_column(Text, default="")
-    entradas: Mapped[list] = mapped_column(JSON, default=list)
-    saidas: Mapped[list] = mapped_column(JSON, default=list)
-    opcional: Mapped[bool] = mapped_column(Boolean, default=False)  # caminho alternativo
-    condicao: Mapped[str] = mapped_column(String(300), default="")
-
-    processo: Mapped[Processo] = relationship(back_populates="etapas")
-    operacoes: Mapped[list["Operacao"]] = relationship(
-        back_populates="etapa", order_by="Operacao.sequencia", cascade="all, delete-orphan"
-    )
-
-
-class Operacao(Base):
-    __tablename__ = "operacoes"
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    etapa_id: Mapped[int] = mapped_column(ForeignKey("etapas.id"), index=True)
-    sequencia: Mapped[int] = mapped_column(Integer)
-    nome: Mapped[str] = mapped_column(String(200))
-    descricao: Mapped[str] = mapped_column(Text, default="")
-    formula_tipo: Mapped[str] = mapped_column(String(20), default="linear")
-    unidade_medida: Mapped[str] = mapped_column(String(30), default="un")
-    recurso_padrao_id: Mapped[int | None] = mapped_column(ForeignKey("recursos.id"))
-    dados_medidos: Mapped[list] = mapped_column(JSON, default=lambda: ["tempo", "quantidade"])
-    campos_extras: Mapped[list] = mapped_column(JSON, default=list)
-    ergonomia: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Blocos do "lego": mão de obra, espaços e item físico típico
-    funcao_requerida: Mapped[str] = mapped_column(String(120), default="")
-    num_pessoas: Mapped[int] = mapped_column(Integer, default=1)
-    espaco_origem_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
-    espaco_destino_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
-    distancia_m: Mapped[float | None] = mapped_column(Float)  # sobrepõe a tabela de distâncias
-    item_peso_kg: Mapped[float | None] = mapped_column(Float)
-    item_comprimento_m: Mapped[float | None] = mapped_column(Float)
-    item_largura_m: Mapped[float | None] = mapped_column(Float)
-    item_altura_m: Mapped[float | None] = mapped_column(Float)
-    # Padrão de apontamento: quando começa/termina, para que o parâmetro seja medido de forma consistente
-    inicio_marco: Mapped[str] = mapped_column(String(300), default="")
-    fim_marco: Mapped[str] = mapped_column(String(300), default="")
-    # Fatores humanos e de carga (engenharia de métodos / ergonomia)
-    perfil_id: Mapped[int | None] = mapped_column(ForeignKey("perfis_mao_de_obra.id"))
-    tipo_movimento: Mapped[str] = mapped_column(String(40), default="")
-    postura_trabalho: Mapped[str] = mapped_column(String(20), default="")
-    altura_trabalho_m: Mapped[float | None] = mapped_column(Float)
-    gasto_energetico_kcal_min: Mapped[float | None] = mapped_column(Float)
-    levantamento: Mapped[dict | None] = mapped_column(JSON)  # entradas da equação do NIOSH
-
-    etapa: Mapped[Etapa] = relationship(back_populates="operacoes")
-
-
 # ---------------------------------------------------------------- recursos
 class Recurso(Base):
     __tablename__ = "recursos"
@@ -212,7 +106,6 @@ class Recurso(Base):
     unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
     nome: Mapped[str] = mapped_column(String(200))
     tipo: Mapped[str] = mapped_column(String(20), default="maquina")
-    processos_relacionados: Mapped[list] = mapped_column(JSON, default=list)
     capacidade: Mapped[float | None] = mapped_column(Float)
     capacidade_unidade: Mapped[str] = mapped_column(String(40), default="un/h")
     equipes_habilitadas: Mapped[list] = mapped_column(JSON, default=list)
@@ -269,7 +162,7 @@ class Produto(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-# ---------------------------------------------------------------- gêmeo digital
+# ---------------------------------------------------------------- agentes e ambiente
 class PerfilMaoDeObra(Base):
     """Perfil de REFERÊNCIA da mão de obra (não é uma pessoa).
 
@@ -332,39 +225,6 @@ class Distancia(Base):
     origem_id: Mapped[int] = mapped_column(ForeignKey("espacos.id"))
     destino_id: Mapped[int] = mapped_column(ForeignKey("espacos.id"))
     metros: Mapped[float] = mapped_column(Float)
-
-
-class ModeloTempo(Base):
-    """Modelo de tempo de uma operação: elementos com fórmulas de vocabulário FECHADO.
-
-    A IA propõe os elementos e coeficientes; o sistema calcula (sem executar código da IA).
-    Cada nova geração cria uma versão; a ativa é a mais recente não rejeitada.
-    """
-
-    __tablename__ = "modelos_tempo"
-    __table_args__ = (Index("ix_modelo_op", "empresa_id", "operacao_id"),)
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
-    operacao_id: Mapped[int] = mapped_column(ForeignKey("operacoes.id"))
-    versao: Mapped[int] = mapped_column(Integer, default=1)
-    elementos: Mapped[list] = mapped_column(JSON, default=list)
-    fator_ambiente: Mapped[float] = mapped_column(Float, default=1.0)
-    ritmo_pct: Mapped[float] = mapped_column(Float, default=100.0)
-    tolerancias: Mapped[list] = mapped_column(JSON, default=list)  # [{categoria, percentual, justificativa, fonte}]
-    premissas: Mapped[list] = mapped_column(JSON, default=list)
-    dados_faltantes: Mapped[list] = mapped_column(JSON, default=list)
-    padrao_apontamento: Mapped[dict] = mapped_column(JSON, default=dict)
-    confianca: Mapped[str] = mapped_column(String(10), default="baixa")  # baixa | media | alta
-    justificativa: Mapped[str] = mapped_column(Text, default="")
-    origem: Mapped[str] = mapped_column(String(20), default="ia")  # ia | manual
-    provedor: Mapped[str] = mapped_column(String(80), default="")
-    status_validacao: Mapped[str] = mapped_column(String(20), default="pendente")
-    contexto: Mapped[dict] = mapped_column(JSON, default=dict)  # retrato do contorno físico usado pela IA
-    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
-    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 # ---------------------------------------------------------------- produto → plano de trabalho
@@ -473,33 +333,6 @@ class PlanoPasso(Base):
     plano: Mapped[PlanoTrabalho] = relationship(back_populates="passos")
 
 
-# ---------------------------------------------------------------- parâmetros
-class Parametro(Base):
-    """Variável com origem e versão. Só `vigente` + validado entra nos cálculos."""
-
-    __tablename__ = "parametros"
-    __table_args__ = (Index("ix_param_escopo", "empresa_id", "escopo_tipo", "escopo_id", "nome"),)
-    id: Mapped[int] = _pk()
-    empresa_id: Mapped[int] = _empresa()
-    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"), index=True)
-    escopo_tipo: Mapped[str] = mapped_column(String(20))  # operacao | recurso | processo
-    escopo_id: Mapped[int] = mapped_column(Integer)
-    nome: Mapped[str] = mapped_column(String(80))
-    valor_num: Mapped[float | None] = mapped_column(Float)
-    valor_texto: Mapped[str | None] = mapped_column(String(300))
-    unidade: Mapped[str] = mapped_column(String(30), default="")
-    origem: Mapped[str] = mapped_column(String(20), default="informado")
-    status_validacao: Mapped[str] = mapped_column(String(20), default="pendente")
-    versao: Mapped[int] = mapped_column(Integer, default=1)
-    vigente: Mapped[bool] = mapped_column(Boolean, default=False)
-    justificativa: Mapped[str] = mapped_column(Text, default="")
-    recomendacao_id: Mapped[int | None] = mapped_column(ForeignKey("recomendacoes_ia.id"))
-    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
-    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
-    validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
-
-
 # ---------------------------------------------------------------- produção
 class Ordem(Base):
     __tablename__ = "ordens"
@@ -516,7 +349,6 @@ class Ordem(Base):
     descricao: Mapped[str] = mapped_column(String(300), default="")
     quantidade: Mapped[float] = mapped_column(Float)
     prazo: Mapped[date | None] = mapped_column(Date)
-    processo_id: Mapped[int | None] = mapped_column(ForeignKey("processos.id"))  # None quando nasce de um plano
     plano_id: Mapped[int | None] = mapped_column(ForeignKey("planos_trabalho.id"))
     status: Mapped[str] = mapped_column(String(20), default="planejada")
     tempo_estimado_min: Mapped[float | None] = mapped_column(Float)  # None = sem base
@@ -540,20 +372,15 @@ class OrdemOperacao(Base):
     id: Mapped[int] = _pk()
     empresa_id: Mapped[int] = _empresa()
     ordem_id: Mapped[int] = mapped_column(ForeignKey("ordens.id"), index=True)
-    operacao_id: Mapped[int | None] = mapped_column(ForeignKey("operacoes.id"))
     sequencia: Mapped[int] = mapped_column(Integer)
     etapa_nome: Mapped[str] = mapped_column(String(200))
     nome: Mapped[str] = mapped_column(String(200))
     recurso_id: Mapped[int | None] = mapped_column(ForeignKey("recursos.id"))
     qtd_planejada: Mapped[float] = mapped_column(Float)
-    formula_tipo: Mapped[str] = mapped_column(String(20), default="linear")
     tempo_prep_est_min: Mapped[float | None] = mapped_column(Float)
     tempo_exec_est_min: Mapped[float | None] = mapped_column(Float)
     fonte_estimativa: Mapped[str] = mapped_column(String(20), default="sem_base")
-    amostras: Mapped[int] = mapped_column(Integer, default=0)
     detalhe_estimativa: Mapped[list | None] = mapped_column(JSON)  # elementos do modelo, em minutos
-    estimativa_validada: Mapped[bool] = mapped_column(Boolean, default=True)
-    opcional: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="pendente")
     iniciada_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
     concluida_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
@@ -582,7 +409,6 @@ class Apontamento(Base):
     fim: Mapped[datetime | None] = mapped_column(UTCDateTime)
     quantidade_boa: Mapped[float] = mapped_column(Float, default=0)
     quantidade_refugo: Mapped[float] = mapped_column(Float, default=0)
-    dados_extras: Mapped[dict] = mapped_column(JSON, default=dict)
     observacao: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(20), default="registrado")
     registrado_por: Mapped[int] = mapped_column(ForeignKey("usuarios.id"))

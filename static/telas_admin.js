@@ -16,11 +16,8 @@ export async function recomendacoes(el) {
   };
   montar(el, h('h1', null, 'Sugestões da IA'), avisoIA('Toda saída da IA fica aqui como sugestão. Nada vira dado do ERP sem a decisão de um responsável.'),
     h('div', { class: 'card row' }, h('div', null, h('label', null, 'Situação'), h('select', { onchange: (e) => { filtro.status = e.target.value; carregar(); } },
-      [['pendente', 'Pendentes'], ['aprovada', 'Validadas'], ['aplicada', 'Aplicadas'], ['rejeitada', 'Rejeitadas'], ['', 'Todas']].map(([v, r]) => h('option', { value: v }, r)))),
-      h('button', { class: 'ia', onclick: async () => {
-        const mk = (tipo) => async () => { const r = await tentar(() => post('/ia/analises', { tipo, unidade_id: estado.unidadeId })); if (r) { carregar(); verRecomendacao(r, carregar); } };
-        modal('Nova análise', h('div', { class: 'inline' }, h('button', { class: 'ia', onclick: mk('indicadores_sugeridos') }, 'Indicadores sugeridos'), h('button', { class: 'ia', onclick: mk('processos_semelhantes') }, 'Operações semelhantes')), { acoes: (f) => [h('button', { onclick: f }, 'Fechar')] });
-      } }, 'Nova análise…')), area);
+      [['pendente', 'Pendentes'], ['aprovada', 'Validadas'], ['rejeitada', 'Rejeitadas'], ['', 'Todas']].map(([v, r]) => h('option', { value: v }, r)))),
+      h('a', { class: 'btn', href: '#/analises' }, 'Gerar análise no painel')), area);
   await carregar();
 }
 

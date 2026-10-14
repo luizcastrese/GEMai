@@ -107,23 +107,3 @@ def gestor(admin, unidade_id):
 @pytest.fixture()
 def operador(admin, unidade_id):
     return criar_usuario(admin, "op@a.com", [unidade_id])
-
-
-def montar_processo(gestor: Sessao, unidade_id: int, *, tempo_unit=2.0, tempo_prep=10.0, publicar=True):
-    """Processo com 2 etapas / 2 operações, parâmetros validados e (opcionalmente) publicado."""
-    p = gestor.post("/processos", {"unidade_id": unidade_id, "nome": "Armário", "macroprocesso": "Produção"}).json()
-    e1 = gestor.post(f"/processos/{p['id']}/etapas", {"nome": "Corte"}).json()
-    e2 = gestor.post(f"/processos/{p['id']}/etapas", {"nome": "Montagem"}).json()
-    o1 = gestor.post(f"/etapas/{e1['id']}/operacoes", {"nome": "Cortar chapas"}).json()
-    o2 = gestor.post(f"/etapas/{e2['id']}/operacoes", {
-        "nome": "Montar", "campos_extras": [{"nome": "temperatura", "tipo": "numero", "obrigatorio": False}]}).json()
-    if tempo_unit is not None:
-        for op in (o1, o2):
-            assert gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": op["id"],
-                                               "nome": "tempo_unitario_min", "valor_num": tempo_unit}).status_code == 201
-            assert gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": op["id"],
-                                               "nome": "tempo_preparacao_min", "valor_num": tempo_prep}).status_code == 201
-    if publicar:
-        r = gestor.post(f"/processos/{p['id']}/publicar")
-        assert r.status_code == 200, r.text
-    return p["id"], [o1["id"], o2["id"]]
