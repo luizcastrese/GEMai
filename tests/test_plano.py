@@ -223,6 +223,7 @@ def test_confirmacao_e_manual_e_gera_ordem_com_os_tempos_do_plano(admin, unidade
     plano = admin.get(f"/planos/{p['id']}").json()
     assert len(o["operacoes"]) == len(plano["passos"]) and o["tempo_estimado_min"] == pytest.approx(plano["totais"]["tempo_padrao_min"], abs=0.01)
     assert {x["fonte_estimativa"] for x in o["operacoes"]} == {"plano"} and o["operacoes"][0]["operacao_id"] is None
+    assert [x["etapa_nome"] for x in o["operacoes"]][:2] == ["Transporte", "Corte"]
     assert admin.post(f"/planos/{p['id']}/gerar-ordem", {}).status_code == 409           # uma ordem por plano
     assert admin.post(f"/planos/{p['id']}/cancelar").status_code == 409                  # plano com ordem não cancela
     # a ordem segue o fluxo normal: liberar e apontar
@@ -241,6 +242,8 @@ def test_passo_sem_tempo_vira_operacao_sem_base_na_ordem(admin, unidade_id):
 
 def test_exporta_csv_com_defesa_contra_formulas(admin, unidade_id):
     _cadastrar_contorno(admin, unidade_id)
+    serra = admin.get("/recursos").json()[0]
+    assert admin.patch(f"/recursos/{serra['id']}", {"nome": "=Seccionadora"}).status_code == 200
     p = admin.post("/produtos", {"nome": "Caixa"}).json()
     admin.post(f"/produtos/{p['id']}/componentes", {"nome": "=Tampa", "material": "mdf", "comprimento_m": 0.3, "largura_m": 0.3, "espessura_m": 0.015})
     plano = _gerar(admin, p["id"], unidade_id)
@@ -249,6 +252,8 @@ def test_exporta_csv_com_defesa_contra_formulas(admin, unidade_id):
     linhas = r.content.decode("utf-8-sig").splitlines()
     assert linhas[0].startswith("#;Passo;Tipo") and len(linhas) == len(plano["passos"]) + 1
     assert not any(c.startswith("=") for l in linhas for c in l.split(";"))
+    assert any(l.startswith("1;") and "'" not in l for l in linhas)               # células vazias continuam vazias
+    assert any("'=Seccionadora" in l for l in linhas)                                     # a fórmula virou texto
 
 
 def test_estrutura_do_produto_validacoes(admin, unidade_id):

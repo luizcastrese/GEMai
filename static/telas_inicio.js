@@ -20,6 +20,6 @@ export async function inicio(el) {
       kpi('Retrabalho (últimos 30 dias)', fmtPct(d?.retrabalho?.pct_do_tempo_de_trabalho)),
       real === null ? null : kpi('Tempo real × previsto', real === 0 ? 'No previsto' : `${real > 0 ? '+' : ''}${real}%`, real > 10 ? 'bad' : '')),
     h('h2', null, 'Atalhos'),
-    h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'), h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/contorno' }, 'Contorno físico'),
+    h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/planos' }, 'Planos de trabalho'), h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'), h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/contorno' }, 'Contorno físico'),
       h('a', { class: 'btn big', href: '#/implantacao' }, 'Configurar com a IA')));
 }

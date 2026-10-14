@@ -8,6 +8,7 @@ import * as prod from './telas_prod.js';
 import * as admin from './telas_admin.js';
 import * as contorno from './telas_contorno.js';
 import * as config from './telas_config.js';
+import * as plano from './telas_plano.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -16,10 +17,14 @@ let limparTela = null; // permite telas encerrarem timers
 const ROTAS = [
   // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
   [/^#\/inicio$/, inicio.inicio, ['Dia a dia', 'Início', '#/inicio']],
+  [/^#\/planos$/, plano.planos, ['Dia a dia', 'Planos de trabalho', '#/planos']],
+  [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
   [/^#\/ordens$/, prod.ordens, ['Dia a dia', 'Ordens de produção', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
   [/^#\/fila$/, prod.fila, ['Dia a dia', 'Minha fila', '#/fila']],
   [/^#\/aprovacoes$/, prod.aprovacoes, ['Dia a dia', 'Conferir registros', '#/aprovacoes']],
+  [/^#\/produtos$/, plano.produtos, ['Configurar', 'Produtos', '#/produtos']],
+  [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
   [/^#\/implantacao$/, gestao.implantacao, ['Configurar', 'Configurar com a IA', '#/implantacao']],
   [/^#\/processos$/, proc.lista, ['Configurar', 'Processos', '#/processos']],
   [/^#\/processos\/(\d+)$/, proc.detalhe],

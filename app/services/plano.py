@@ -21,6 +21,9 @@ from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
 
 BLOCOS_PADRAO = [["08:00", "12:00"], ["13:00", "17:00"]]
+SEM_ELEMENTOS = "Falta informar o equipamento ou os dados deste passo (veja as pendências do plano)"
+ROTULO_TIPO = {"movimentacao": "Transporte", "corte": "Corte", "furacao": "Furação", "bordo": "Borda", "montagem": "Montagem",
+               "inspecao": "Conferência", "outro": "Outros"}
 LIMITE_JORNADA_MIN = 8 * 60  # CLT art. 58 (jornada normal de 8 h/dia). Conferir com o jurídico/SESMT.
 
 
@@ -193,9 +196,10 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                         "fonte": "informada pelo usuário para este local"})
         elementos = [e.model_dump() for e in p.elementos]
         r = modelo_tempo.calcular(elementos, 1.0, c, tol, ritmo)
-        falt = list(r.faltantes)
+        falt = [f.replace("falta a distância entre os espaços de origem e destino", f"falta a distância entre {o.nome} e {d.nome}")
+                if (o and d) else f for f in r.faltantes]
         if not elementos:
-            falt.append("Sem dados suficientes para calcular este passo")
+            falt.append(SEM_ELEMENTOS)
         alertas = []
         if peso_ref:
             for a in ergonomia.alertas_carga(peso_ref / pessoas, perfil, None):
@@ -250,7 +254,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
             fim_prev=fim.replace(tzinfo=tz).astimezone(timezone.utc) if l["total"] is not None else None))
     fim_geral = max((f for (_, f, e) in ag if e is not None), default=None)
     dias = len({f.date() for (_, f, e) in ag if e is not None} | {i.date() for (i, _, e) in ag if e is not None})
-    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]]))
+    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"] if x != SEM_ELEMENTOS]))
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
@@ -286,7 +290,7 @@ def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) 
     for p in plano.passos:
         ok = p.tempo_padrao_min is not None
         ctx.db.add(OrdemOperacao(
-            empresa_id=ctx.empresa_id, ordem_id=o.id, operacao_id=None, sequencia=p.sequencia, etapa_nome=p.grupo or p.tipo, nome=p.nome,
+            empresa_id=ctx.empresa_id, ordem_id=o.id, operacao_id=None, sequencia=p.sequencia, etapa_nome=p.grupo or ROTULO_TIPO.get(p.tipo, "Outros"), nome=p.nome,
             recurso_id=p.recurso_id, qtd_planejada=p.qtd_pecas, formula_tipo="fixo", tempo_prep_est_min=p.tempo_prep_min if ok else None,
             tempo_exec_est_min=p.tempo_exec_min if ok else None, fonte_estimativa="plano" if ok else "sem_base", amostras=0,
             detalhe_estimativa=p.composicao, estimativa_validada=True, status="pendente"))

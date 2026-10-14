@@ -74,6 +74,30 @@ O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Erg
 O provedor local usa referências genéricas (caminhada 75 m/min, carga manual 20 kg/pessoa, manuseio 0,15 min + 0,012 min/kg,
 preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, o modelo é derivado do contexto da empresa.
 
+## Do produto ao plano de trabalho
+
+Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de trabalho → Ordem de produção**.
+
+1. **Produto:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
+   parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,
+   3 prateleiras…"): a IA **propõe** a lista, o usuário confere e só então ela é gravada (`POST /produtos/{id}/interpretar` não grava nada).
+2. **Contorno físico:** locais (com tipo: estoque, montagem…), distâncias, equipamentos (*para que serve* + peças/h) e, se quiser, tempos de montagem da própria
+   oficina e condições do ambiente. O que não for informado vira **pendência**, nunca um valor inventado.
+3. **Plano de trabalho** (`POST /planos`): a IA (ou o provedor local, por regras) **propõe os passos** — transporte do estoque, usinagem (corte, borda, furação),
+   montagem por subconjunto, montagem final e conferência — com elementos de tempo do **vocabulário fechado**. O **sistema calcula** cada tempo e considera:
+   movimentação (distância e carga por viagem; mais pessoas quando a peça passa de 20 kg/pessoa), capacidade dos equipamentos, ligações/fixadores,
+   tolerâncias (pessoal 5 % + fadiga 4 %, OIT, + a folga do ambiente **se o usuário informar**), ritmo do perfil (só no que depende do operador),
+   alertas de carga (CLT), ruído (NR-15) e temperatura extrema, e **agenda os passos na jornada** (blocos de horário, intervalos, só dias úteis), com avisos
+   de jornada/intervalo (CLT arts. 58/59/71 — conferir com jurídico/SESMT). Fadiga acumulada por hora trabalhada só entra se o usuário informar o percentual.
+4. **Saída:** passos com início/fim previstos, tempo de trabalho, pessoas-hora, término e dias; **imprimir** e **planilha CSV** (protegida contra injeção de fórmulas).
+   O plano nasce como **rascunho**; a **confirmação é manual**. Plano confirmado → **ordem de produção** (`POST /planos/{id}/gerar-ordem`), cujos passos
+   ficam com fonte `plano`; passos sem tempo entram como "sem base". Depois os apontamentos reais permitem o planejado × realizado.
+
+Limites assumidos (declarados na tela e nas premissas do plano): sequência única de passos (sem trabalho em paralelo entre passos); tempos de montagem e
+conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
+declare é descartada) porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
+Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
+
 ## Rodando
 
 ```bash
@@ -97,6 +121,7 @@ e ponha um proxy reverso com HTTPS na frente.
 | Tela 2 – Diagnóstico inteligente | Perguntas adaptativas por grupo (11 grupos), respostas gravadas (`/unidades/{id}/diagnostico`) |
 | Tela 3 – Estrutura automática | Proposta da IA (processo › etapas › operações, recursos, materiais, indicadores, etapas possivelmente omitidas), **editável** antes de aprovar; cria **rascunho** |
 | Tela 4 – Recursos | Ficha do recurso (capacidade, espaço onde está); tempo médio e de preparação **calculados do histórico aprovado** |
+| (novo) Produto → plano | Componentes, ligações, plano de trabalho com horários, ordem a partir do plano — ver seção acima |
 | (novo) Gêmeo digital | Espaços, distâncias, modelo de tempo por operação, simulação (what-if), prontidão e acurácia — ver seção acima |
 | Tela 5 – Ordem | Roteiro copiado do processo ativo, estimativa por operação, status planejada → liberada → em produção ⇄ parada → concluída/cancelada |
 | §10 Tempo e cálculo | `app/services/timecalc.py` — fórmulas configuráveis por operação (`linear`, `lote`, `fixo`) |
@@ -134,7 +159,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 86 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 107 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

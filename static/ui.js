@@ -86,10 +86,10 @@ const STATUS = {
   pendente: ['b-warn', 'Pendente'], em_andamento: ['b-pri', 'Em andamento'], pulada: ['', 'Pulada'],
   registrado: ['b-warn', 'A aprovar'], aprovado: ['b-ok', 'Aprovado'], rejeitado: ['b-err', 'Rejeitado'],
   aplicada: ['b-ok', 'Aplicada'], aprovada: ['b-ok', 'Aprovada'], rejeitada: ['b-err', 'Rejeitada'],
-  validado: ['b-ok', 'Validado'],
+  validado: ['b-ok', 'Validado'], confirmado: ['b-ok', 'Confirmado'],
 };
 export const statusBadge = (s) => badge((STATUS[s] || ['', s])[1], (STATUS[s] || [''])[0]);
-const FONTE = { historico: ['b-ok', 'Histórico'], parametro: ['b-pri', 'Parâmetro'], modelo_ia: ['b-ia', 'Modelo IA'], sem_base: ['b-warn', 'Sem base'] };
+const FONTE = { historico: ['b-ok', 'Histórico'], parametro: ['b-pri', 'Parâmetro'], modelo_ia: ['b-ia', 'Modelo IA'], sem_base: ['b-warn', 'Sem base'], plano: ['b-ia', 'Plano de trabalho'] };
 export const fonteBadge = (f) => badge((FONTE[f] || ['', f])[1], (FONTE[f] || [''])[0]);
 const ORIGEM = { informado: ['', 'Informado'], medido: ['b-ok', 'Medido'], calculado: ['b-pri', 'Calculado'], ia_sugerido: ['b-ia', 'Sugestão IA'] };
 export const origemBadge = (o) => badge((ORIGEM[o] || ['', o])[1], (ORIGEM[o] || [''])[0]);

@@ -313,7 +313,7 @@ def exportar_csv(pid: int, ctx: Ctx = Depends(get_ctx)):
 
     def _cel(v):  # evita injeção de fórmulas em planilhas
         v = "" if v is None else str(v)
-        return "'" + v if v[:1] in "=+-@\t\r" else v
+        return "'" + v if v and v[0] in "=+-@\t\r" else v
 
     for s in det.passos or []:
         f = lambda d: d.astimezone(tz).strftime("%d/%m/%Y %H:%M") if d else ""  # noqa: E731

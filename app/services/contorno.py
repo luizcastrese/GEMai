@@ -11,7 +11,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Distancia, Espaco, Etapa, Operacao, Processo, Produto, Recurso
+from ..models import Componente, Distancia, Espaco, Etapa, Operacao, Processo, Produto, Recurso
 from . import modelo_tempo
 
 
@@ -58,6 +58,24 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
                         "nome": op.nome if et.nome == op.nome else f"{et.nome} › {op.nome}",
                         "recurso_padrao_id": op.recurso_padrao_id, "espaco_origem_id": o, "espaco_destino_id": d,
                         "distancia_m": dist, "item_peso_kg": op.item_peso_kg, "pendente": pend})
+    # Produtos com componentes: a peça percorre estoque → equipamentos (corte, borda, furação) → montagem.
+    usa_produtos = bool(db.scalar(select(Componente.id).where(Componente.empresa_id == empresa_id).limit(1)))
+    if usa_produtos:
+        def local_de(tipo=None, funcao=None):
+            if funcao:
+                r = next((r for r in sorted(equip.values(), key=lambda r: r.nome) if r.funcao == funcao and r.espaco_id in nome_local), None)
+                return r.espaco_id if r else None
+            e = next((e for e in locais if e.tipo == tipo), None)
+            return e.id if e else None
+        rota = [local_de("estoque"), local_de(funcao="corte"), local_de(funcao="bordo"), local_de(funcao="furacao"), local_de("montagem")]
+        rota = [x for x in rota if x]
+        for a, b in zip(rota, rota[1:]):
+            if a == b:
+                continue
+            par = tuple(sorted((a, b)))
+            if par not in pares:
+                pares[par] = {"origem_id": par[0], "destino_id": par[1], "origem": nome_local.get(par[0], "?"), "destino": nome_local.get(par[1], "?"),
+                              "metros": modelo_tempo.distancia_entre(db, empresa_id, par[0], par[1])}
     for par in pares.values():
         total += 1
         if par["metros"] is None:
@@ -71,14 +89,15 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
             if cap is None:
                 faltando.append(f"Quantas peças por hora faz '{r.nome}'")
         equipamentos.append({"id": r.id, "nome": r.nome, "capacidade": r.capacidade, "capacidade_unidade": r.capacidade_unidade,
-                             "pecas_por_hora": cap, "espaco_id": r.espaco_id, "usado": usado})
+                             "pecas_por_hora": cap, "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao})
     pendentes = len(faltando)
     return {
-        "locais": [{"id": e.id, "nome": e.nome} for e in locais],
+        "locais": [{"id": e.id, "nome": e.nome, "tipo": e.tipo, "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct,
+                    "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in locais],
         "equipamentos": sorted(equipamentos, key=lambda x: x["nome"]),
         "pecas": [{"id": p.id, "nome": p.nome, "peso_kg": p.peso_kg} for p in pecas],
         "tarefas": tarefas, "distancias": sorted(pares.values(), key=lambda x: (x["origem"], x["destino"])),
         "faltando": faltando, "pendentes": pendentes, "total": max(total, 1),
-        "completo": pendentes == 0 and bool(rows),
-        "progresso_pct": round(100 * (max(total, 1) - pendentes) / max(total, 1)) if rows or locais else 0,
+        "completo": pendentes == 0 and (bool(rows) or usa_produtos),
+        "progresso_pct": round(100 * (max(total, 1) - pendentes) / max(total, 1)) if rows or locais or usa_produtos else 0,
     }
