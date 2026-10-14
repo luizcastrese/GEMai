@@ -71,6 +71,10 @@ class Unidade(Base):
     objetivo: Mapped[str] = mapped_column(Text, default="")
     principais_problemas: Mapped[str] = mapped_column(Text, default="")
     informacoes_disponiveis: Mapped[str] = mapped_column(Text, default="")
+    # Trilha guiada. `None` = ainda não definido (a etapa correspondente fica pendente).
+    atividades: Mapped[list | None] = mapped_column(JSON)  # códigos de services/jornada.py::ATIVIDADES
+    equipe_pessoas: Mapped[int | None] = mapped_column(Integer)  # mão de obra: pessoas na equipe
+    jornada: Mapped[dict | None] = mapped_column(JSON)  # {"blocos": [["08:00","12:00"],…], "so_dias_uteis": bool}
     ativa: Mapped[bool] = mapped_column(Boolean, default=True)
     criada_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
 

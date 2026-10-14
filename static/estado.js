@@ -4,7 +4,7 @@ const KA = 'erp.avancado';
 let avancadoInicial = false;
 try { avancadoInicial = localStorage.getItem(KA) === '1'; } catch { /* ignore */ }
 // `avancado` = "modo especialista": mostra detalhes técnicos que o usuário comum não precisa ver.
-export const estado = { usuario: null, empresa: null, unidades: [], unidadeId: null, avancado: avancadoInicial };
+export const estado = { usuario: null, empresa: null, unidades: [], unidadeId: null, avancado: avancadoInicial, trilha: null };
 export function definirAvancado(v) {
   estado.avancado = !!v;
   try { localStorage.setItem(KA, v ? '1' : '0'); } catch { /* ignore */ }

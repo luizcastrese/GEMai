@@ -16,31 +16,14 @@ export async function ordens(el) {
       { t: 'Ordem', f: (o) => h('a', { href: `#/ordens/${o.id}` }, o.numero) }, { t: 'Cliente / demanda', f: (o) => o.cliente || o.descricao },
       { t: 'Qtd', f: (o) => fmtNum(o.quantidade, 2) }, { t: 'Prazo', f: (o) => h('span', null, fmtDia(o.prazo), o.atrasada ? [' ', badge('Atrasada', 'b-err')] : '') },
       { t: 'Tempo previsto', f: (o) => (o.tempo_estimado_min === null ? h('span', { class: 'muted' }, 'sem previsão') : fmtMin(o.tempo_estimado_min) + (o.estimativa_parcial ? ' (parcial)' : '')) },
-      { t: 'Situação', f: (o) => statusBadge(o.status) }], os, 'Nenhuma ordem ainda. Toque em "+ Nova ordem".')));
+      { t: 'Situação', f: (o) => statusBadge(o.status) }], os, 'Nenhuma ordem ainda. A ordem nasce de um plano de trabalho confirmado.')));
   };
-  montar(el, h('div', { class: 'top' }, h('h1', null, 'Ordens de produção'), h('button', { class: 'pri', onclick: () => novaOrdem(el) }, '+ Nova ordem')),
+  montar(el, h('div', { class: 'top' }, h('h1', null, 'Ordens de produção'), h('a', { class: 'btn pri', href: '#/planos' }, '+ Nova ordem (a partir de um plano)')),
     h('div', { class: 'card row' },
       h('div', null, h('label', null, 'Status'), h('select', { onchange: (e) => { filtro.status = e.target.value; carregar(); } },
         [['', 'Todos'], ['planejada', 'Planejada'], ['liberada,em_producao,parada', 'Abertas'], ['concluida', 'Concluída'], ['cancelada', 'Cancelada']].map(([v, r]) => h('option', { value: v }, r)))),
       h('div', null, h('label', null, 'Buscar'), h('input', { placeholder: 'número, cliente ou descrição', onchange: (e) => { filtro.q = e.target.value; carregar(); } }))), area);
   await carregar();
-}
-
-async function novaOrdem(el) {
-  const [procs, produtos] = await Promise.all([get(`/processos${qs({ unidade_id: estado.unidadeId, status: 'ativo' })}`), get('/produtos?ativo=true')]);
-  if (!procs.length) return toast('Não há processo ativo. Publique um processo antes de criar ordens.', true);
-  const f = formulario([
-    { k: 'processo_id', rotulo: 'Processo (roteiro)', tipo: 'select', num: true, opcoes: procs.map((p) => [p.id, `${p.nome} (v${p.versao})`]) },
-    { k: 'produto_id', rotulo: 'Produto / serviço (opcional)', tipo: 'select', num: true, opcoes: [['', '—'], ...produtos.map((p) => [p.id, p.nome])] },
-    { k: 'descricao', rotulo: 'O que será realizado' }, { k: 'cliente', rotulo: 'Cliente ou demanda' },
-    { k: 'quantidade', rotulo: 'Quantidade', tipo: 'number', padrao: 1, min: 0 }, { k: 'prazo', rotulo: 'Prazo', tipo: 'date', nulo: true },
-    { k: 'observacoes', rotulo: 'Observações', tipo: 'textarea' }]);
-  modal('Nova ordem', f.el, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'), h('button', { class: 'pri', onclick: async () => {
-    const v = f.valores();
-    if (!v.quantidade || v.quantidade <= 0) return toast('Informe uma quantidade maior que zero.', true);
-    const r = await tentar(() => post('/ordens', { unidade_id: estado.unidadeId, ...v, prazo: v.prazo || null }), 'Ordem criada.');
-    if (r) { fechar(); location.hash = `#/ordens/${r.id}`; }
-  } }, 'Criar')] });
 }
 
 // ---------------------------------------------------------------- detalhe

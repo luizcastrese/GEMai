@@ -10,11 +10,11 @@ from sqlalchemy.exc import IntegrityError
 
 from .. import audit
 from ..deps import Ctx, get_ctx
-from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoPasso, PlanoTrabalho, Produto, Recurso, ReferenciaTempo
+from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoPasso, PlanoTrabalho, Produto, Recurso, ReferenciaTempo, Unidade
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
                        PlanoPassoOut, ReferenciaIn, ReferenciaOut)
-from ..services import ia, modelo_tempo, plano as svc
+from ..services import ia, jornada, modelo_tempo, plano as svc
 from ..services.dashboard import tz_empresa
 from .ordens import _numero, ordem_out
 
@@ -224,16 +224,37 @@ def _plano(ctx: Ctx, pid: int) -> PlanoTrabalho:
     return ctx.obter(PlanoTrabalho, pid)
 
 
-def _cfg(dados: PlanoGerarIn) -> dict:
-    return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
-            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
+def _cfg(dados: PlanoGerarIn, unidade: Unidade) -> dict:
+    """Equipe e horário vêm da unidade (etapa "Agentes transformadores"), a menos que o pedido diga outra coisa."""
+    informado = dados.model_fields_set
+    jt = unidade.jornada or {}
+    return {"nome": dados.nome, "inicio": dados.inicio,
+            "blocos": dados.blocos if "blocos" in informado else jt.get("blocos"),
+            "so_dias_uteis": dados.so_dias_uteis if "so_dias_uteis" in informado else jt.get("so_dias_uteis", True),
+            "pessoas": dados.pessoas if "pessoas" in informado else (unidade.equipe_pessoas or 1),
+            "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
+
+
+def _exige_trilha(ctx: Ctx, unidade: Unidade, produto: Produto) -> None:
+    """Unidade que já definiu as atividades segue a trilha: o plano só nasce com as 4 etapas completas
+    e com o produto escolhido sem pendências. (Unidades anteriores à trilha continuam tolerantes.)"""
+    if unidade.atividades is None:
+        return
+    t = jornada.calcular(ctx.db, unidade)
+    aberta = next((p for p in t["passos"] if not p["completo"]), None)
+    if aberta:
+        raise HTTPException(409, f"Complete antes a etapa {aberta['numero']} ({aberta['titulo']}): {' '.join(aberta['pendencias'][:3])}")
+    pend = jornada.pendencias_produto(ctx.db, produto, unidade.atividades)
+    if pend:
+        raise HTTPException(409, f"O produto '{produto.nome}' ainda tem pendências: {' '.join(pend[:3])}")
 
 
 @router.post("/planos", response_model=PlanoOut, status_code=201)
 def gerar_plano(dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
-    ctx.exige_unidade(dados.unidade_id)
+    unidade = ctx.exige_unidade(dados.unidade_id)
     produto = ctx.obter(Produto, dados.produto_id)
-    plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(dados))
+    _exige_trilha(ctx, unidade, produto)
+    plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(dados, unidade))
     ctx.auditar("plano.gerar", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "quantidade": dados.quantidade, "provedor": plano.provedor})
     ctx.db.commit()
     return _plano_out(ctx, plano)
@@ -263,7 +284,9 @@ def recalcular(pid: int, dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
         raise HTTPException(409, "Só planos em rascunho podem ser recalculados.")
     if dados.produto_id != p.produto_id or dados.unidade_id != p.unidade_id:
         raise HTTPException(422, "Produto e unidade não podem mudar ao recalcular.")
-    svc.gerar(ctx, ctx.obter(Produto, p.produto_id), dados.quantidade, p.unidade_id, _cfg(dados), plano=p)
+    unidade, produto = ctx.exige_unidade(p.unidade_id), ctx.obter(Produto, p.produto_id)
+    _exige_trilha(ctx, unidade, produto)
+    svc.gerar(ctx, produto, dados.quantidade, p.unidade_id, _cfg(dados, unidade), plano=p)
     ctx.auditar("plano.recalcular", "plano_trabalho", p.id, None, {"quantidade": dados.quantidade, "provedor": p.provedor})
     ctx.db.commit()
     return _plano_out(ctx, p)

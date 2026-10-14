@@ -65,16 +65,6 @@ def test_contorno_pode_ser_corrigido_em_processo_publicado_mas_a_estrutura_nao(g
     assert tarefa["item_peso_kg"] == 12 and tarefa["status"] == "ativo"
 
 
-def test_inicio_avisa_do_contorno_e_some_quando_completo(gestor, unidade_id):
-    est = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "A"}).json()
-    _, eid = _processo(gestor, unidade_id)
-    op = gestor.post(f"/etapas/{eid}/operacoes", {"nome": "Mover"}).json()["id"]
-    por = {a["codigo"]: a for a in gestor.get("/inicio").json()["acoes"]}
-    assert por["contorno"]["link"] == "#/contorno" and "contorno físico" in por["contorno"]["titulo"]
-    gestor.patch(f"/operacoes/{op}", {"item_peso_kg": 2})
-    assert "contorno" not in [a["codigo"] for a in gestor.get("/inicio").json()["acoes"]]
-
-
 def test_contorno_isolado_por_empresa(client, gestor, unidade_id):
     _processo(gestor, unidade_id)
     outra = registrar(client, "Outra Ltda")

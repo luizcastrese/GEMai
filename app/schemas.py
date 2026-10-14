@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 def _utc(v: datetime) -> datetime:
@@ -106,12 +106,35 @@ class UnidadeIn(In):
     informacoes_disponiveis: Texto = ""
 
 
+AtividadeCodigo = Literal["movimentacao", "corte", "bordo", "furacao", "montagem", "inspecao"]
+_HHMM = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+
+
+class JornadaTrabalho(BaseModel):
+    """Horário de trabalho da equipe: blocos [início, fim] sem sobreposição."""
+    model_config = ConfigDict(extra="forbid")
+    blocos: list[Annotated[list[_HHMM], Field(min_length=2, max_length=2)]] = Field(min_length=1, max_length=6)
+    so_dias_uteis: bool = True
+
+    @model_validator(mode="after")
+    def _blocos_validos(self):
+        ordenados = sorted(self.blocos)
+        if any(fim <= ini for ini, fim in ordenados):
+            raise ValueError("Cada bloco da jornada deve terminar depois de começar.")
+        if any(f1 > i2 for (_, f1), (i2, _) in zip(ordenados, ordenados[1:])):
+            raise ValueError("Os blocos da jornada não podem se sobrepor.")
+        return self
+
+
 class UnidadeUpdate(In):
     nome: Nome | None = None
     descricao_operacao: Texto | None = None
     objetivo: Texto | None = None
     principais_problemas: Texto | None = None
     informacoes_disponiveis: Texto | None = None
+    atividades: list[AtividadeCodigo] | None = Field(None, min_length=1, max_length=6)
+    equipe_pessoas: int | None = Field(None, ge=1, le=50)
+    jornada: JornadaTrabalho | None = None
     ativa: bool | None = None
 
 
@@ -122,6 +145,9 @@ class UnidadeOut(Out):
     objetivo: str
     principais_problemas: str
     informacoes_disponiveis: str
+    atividades: list[str] | None = None
+    equipe_pessoas: int | None = None
+    jornada: dict | None = None
     ativa: bool
 
 

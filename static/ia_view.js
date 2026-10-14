@@ -24,8 +24,7 @@ export function corpoAnalise(rec) {
 
 export function verRecomendacao(rec, aoMudar) {
   const corpo = rec.tipo === 'estrutura_processo'
-    ? h('div', null, avisoIA(), h('p', null, 'Revise e aprove esta estrutura na tela de Implantação.'),
-        h('a', { href: '#/implantacao' }, 'Abrir Implantação'))
+    ? h('div', null, avisoIA(), h('p', null, 'Esta sugestão pertence ao fluxo de implantação antigo, que não faz mais parte da plataforma. Ela não altera nenhum dado.'))
     : corpoAnalise(rec);
   modal(`${rotuloTipo(rec.tipo)} — ${rec.titulo}`, corpo, { larga: true, acoes: (fechar) => [
     rec.status === 'pendente' && rec.tipo !== 'estrutura_processo' ? [

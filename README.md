@@ -13,12 +13,18 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-- **Início:** "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, contorno físico incompleto), atalhos e poucos números.
-- **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
-- **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
-  1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **peças por hora** de cada equipamento; 4. por tarefa: equipamento, de onde sai, para onde vai e **peso da peça**.
-  A IA já pergunta isso no diagnóstico e cria os locais citados. Dados opcionais (dimensões, ruído, temperatura…) ficam fora do mínimo. O contorno pode ser corrigido a qualquer momento, inclusive em processo publicado.
-- **Processo:** checklist "Está tudo pronto?" em português comum e um **único Publicar** (a IA prevê o tempo das tarefas na publicação). **A confirmação das previsões é manual**: botão "Confirmar previsões". "Já sei o tempo" substitui a estimativa da IA por um tempo informado.
+- **Trilha guiada ("Preparar a operação"):** a plataforma conduz a pessoa por quatro etapas, sempre na mesma ordem. Cada etapa só abre quando a anterior não tem
+  pendências (as etapas seguintes aparecem trancadas no menu e a URL direta volta para a etapa que falta). Nada de escolher "o que fazer agora":
+  1. **Atividades** — o que a operação faz (transporte interno, corte, colagem de borda, furação, montagem, conferência). Cada atividade diz o que vai pedir
+     de entradas, agentes e ambiente;
+  2. **Entradas** — o produto: componentes (material, medidas, peso, furos, borda) e como se ligam. Pode ser descrito em texto livre; a IA propõe e a pessoa confere;
+  3. **Agentes transformadores** — mão de obra (nº de pessoas e horário de trabalho) e a máquina de cada atividade que usa equipamento, com as peças por hora;
+  4. **Ambiente** — locais (estoque e montagem obrigatórios), em que local fica cada máquina e a distância entre os locais que o transporte usa.
+  O que cada etapa cobra depende das atividades escolhidas (sem furação, não pede furadeira). Voltar e mudar uma etapa trava de novo as seguintes se surgir pendência.
+- **Início:** o primeiro item é sempre o **próximo passo** (a etapa da trilha que falta; depois conferir o plano, gerar a ordem, liberá-la), seguido de alertas
+  (ordens atrasadas, paradas, registros para aprovar) e poucos números.
+- **Plano de trabalho:** só pode ser gerado com a trilha completa e para um produto sem pendências. A equipe e o horário vêm da etapa 3; a pessoa informa só a quantidade e
+  quando começa. **A confirmação é manual.** Plano confirmado → **ordem de produção** (as ordens nascem de planos, não há criação avulsa).
 - **Minha fila:** ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar".
 - **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
 
@@ -76,13 +82,13 @@ preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**
 
 ## Do produto ao plano de trabalho
 
-Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de trabalho → Ordem de produção**.
+Fluxo único da plataforma: **Atividades → Entradas (produto) → Agentes transformadores → Ambiente → Plano de trabalho → Ordem de produção** (ver "Trilha guiada" acima).
 
-1. **Produto:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
+1. **Entradas (produto):** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
    parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,
    3 prateleiras…"): a IA **propõe** a lista, o usuário confere e só então ela é gravada (`POST /produtos/{id}/interpretar` não grava nada).
-2. **Contorno físico:** locais (com tipo: estoque, montagem…), distâncias, equipamentos (*para que serve* + peças/h) e, se quiser, tempos de montagem da própria
-   oficina e condições do ambiente. O que não for informado vira **pendência**, nunca um valor inventado.
+2. **Agentes e ambiente:** equipe e horário, equipamentos (*para que serve* + peças/h), locais (com tipo: estoque, montagem…), distâncias e, se quiser, tempos de montagem
+   da própria oficina e condições do ambiente. O que não for informado vira **pendência**, nunca um valor inventado.
 3. **Plano de trabalho** (`POST /planos`): a IA (ou o provedor local, por regras) **propõe os passos** — transporte do estoque, usinagem (corte, borda, furação),
    montagem por subconjunto, montagem final e conferência — com elementos de tempo do **vocabulário fechado**. O **sistema calcula** cada tempo e considera:
    movimentação (distância e carga por viagem; mais pessoas quando a peça passa de 20 kg/pessoa), capacidade dos equipamentos, ligações/fixadores,
@@ -97,6 +103,10 @@ Limites assumidos (declarados na tela e nas premissas do plano): sequência úni
 conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
 declare é descartada) porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
 Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
+
+> **API do fluxo antigo.** Os endpoints de implantação genérica (diagnóstico/estrutura por IA, processos e operações, gêmeo digital por operação, ordem a partir de processo)
+> continuam na API e nos testes, mas **não têm mais tela**: a interface só oferece a trilha acima. A API segue tolerante para unidades anteriores à trilha
+> (`atividades` nulo); numa unidade que já definiu as atividades, `POST /planos` responde 409 com o que falta.
 
 ## Rodando
 
@@ -159,7 +169,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 107 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 116 testes automatizados (SQLite) + percurso completo no navegador (trilha guiada → plano → ordem liberada). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

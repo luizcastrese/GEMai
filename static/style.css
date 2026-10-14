@@ -78,3 +78,24 @@ tr.semtempo td{background:#fffaf0}
 .ref{align-items:center}.ref .l{flex:2 1 260px}.ref input{flex:0 1 130px}
 .nw{flex-wrap:nowrap}.tw input.n{width:76px;min-width:0}.tw td.pk input{width:104px}
 .kpi.peq .v{font-size:1.1rem}
+/* trilha guiada */
+.trilha{list-style:none;display:flex;gap:.4rem;padding:0;margin:0 0 1rem;flex-wrap:wrap}
+.trilha li{flex:1 1 150px;border:1px solid var(--bd);border-radius:var(--rad);background:var(--card);overflow:hidden}
+.trilha li>a,.trilha li>span{display:flex;gap:.55rem;align-items:center;padding:.55rem .7rem;text-decoration:none;color:var(--tx);height:100%}
+.trilha .n{display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:#e8edf3;font-weight:700;font-size:.85rem;flex:0 0 auto}
+.trilha .t{font-weight:600;font-size:.9rem}
+.trilha .concluido .n{background:#dcf5e5;color:var(--ok)}
+.trilha .atual{border-color:var(--pri)}.trilha .atual .n{background:var(--pri);color:#fff}
+.trilha .aqui{box-shadow:0 0 0 2px var(--pri) inset}
+.trilha .bloqueado{opacity:.55;background:#f4f6f9}.trilha .bloqueado>span{cursor:not-allowed}
+nav.side .bloq{display:block;padding:.5rem .7rem;margin:2px 0;color:#7f90aa;cursor:not-allowed}
+.pergunta{font-size:1.05rem;color:var(--mut);margin:.1rem 0 1rem}
+.aviso-box{border-left:5px solid var(--warn);background:#fff6e5}.aviso-box ul{margin:.4rem 0 .8rem}
+a.btn{display:inline-block;text-decoration:none}a.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.atividades{display:grid;gap:.6rem;margin:.6rem 0 1rem}
+.atividade{display:flex;gap:.7rem;align-items:flex-start;border:1px solid var(--bd);border-radius:var(--rad);padding:.7rem .8rem;margin:0;color:var(--tx);cursor:pointer}
+.atividade:hover{border-color:var(--pri)}.atividade input{margin-top:.25rem}
+.atividade .precisa{display:flex;gap:1rem;flex-wrap:wrap;color:var(--mut);margin-top:.3rem}
+.linha-prod{display:flex;justify-content:space-between;gap:1rem;align-items:center;border:1px solid var(--bd);border-radius:var(--rad);padding:.7rem .9rem;margin-bottom:.6rem}
+.maquina{border-top:1px solid var(--bd);padding-top:.4rem;margin-top:.6rem}.maquina:first-of-type{border-top:0}
+.row .l{display:flex;align-items:center;min-height:2rem}

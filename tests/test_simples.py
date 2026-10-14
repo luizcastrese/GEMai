@@ -17,18 +17,14 @@ def _cenario(gestor, uid):
     return p["id"], ops
 
 
-def test_inicio_vazio_orienta_a_configurar(gestor, operador):
-    acoes = [a["codigo"] for a in gestor.get("/inicio").json()["acoes"]]
-    assert acoes == ["configurar"]
-    assert [a["codigo"] for a in operador.get("/inicio").json()["acoes"]] == ["configurar"]  # mesma tela para todos
+def test_inicio_vazio_orienta_a_trilha(gestor, operador):
+    acoes = gestor.get("/inicio").json()["acoes"]
+    assert [a["codigo"] for a in acoes] == ["proximo"] and acoes[0]["link"] == "#/preparar/atividades"
+    assert [a["codigo"] for a in operador.get("/inicio").json()["acoes"]] == ["proximo"]  # mesma tela para todos
 
 
 def test_inicio_lista_pendencias_em_linguagem_comum(gestor, unidade_id):
     pid, ops = _cenario(gestor, unidade_id)
-    gestor.post(f"/processos/{pid}/modelar-tempos")
-    r = gestor.get("/inicio").json()
-    por = {a["codigo"]: a for a in r["acoes"]}
-    assert por["previsoes"]["titulo"] == "2 previsões de tempo da IA para confirmar" and por["rascunhos"]["titulo"].startswith("1 processo")
     gestor.post(f"/processos/{pid}/publicar")
     o = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 5,
                                 "prazo": (date.today() - timedelta(days=2)).isoformat()}).json()
@@ -45,7 +41,6 @@ def test_confirmar_previsoes_em_um_clique(admin, gestor, operador, unidade_id):
     assert gestor.post(f"/processos/{pid}/confirmar-previsoes").json() == {"confirmadas": 0}  # idempotente
     for op in ops:
         assert gestor.get(f"/operacoes/{op}/estimativa?quantidade=10").json()["validada"] is True
-    assert "previsoes" not in [a["codigo"] for a in gestor.get("/inicio").json()["acoes"]]
     eventos = [e["acao"] for e in admin.get("/auditoria?entidade=modelo_tempo&acao=modelo_tempo.validado").json()]
     assert eventos == ["modelo_tempo.validado"] * 2  # a confirmação em lote continua auditada, uma a uma
 
@@ -75,4 +70,4 @@ def test_inicio_isolado_por_empresa(client, gestor, unidade_id):
     _cenario(gestor, unidade_id)
     b = registrar(client, "Empresa B")
     assert b.get(f"/inicio?unidade_id={unidade_id}").status_code == 404
-    assert [a["codigo"] for a in b.get("/inicio").json()["acoes"]] == ["configurar"]
+    assert [a["codigo"] for a in b.get("/inicio").json()["acoes"]] == ["proximo"]

@@ -6,8 +6,8 @@ from sqlalchemy import func, select
 
 from ..constants import ORDEM_ABERTA
 from ..deps import Ctx, get_ctx
-from ..models import Apontamento, ModeloTempo, Ocorrencia, Operacao, Ordem, Processo, Etapa
-from ..services import contorno
+from ..models import Apontamento, Ocorrencia, Ordem
+from ..services import jornada
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["inicio"])
@@ -48,33 +48,9 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     if a_aprovar:
         acoes.append({"codigo": "aprovar", "nivel": "acao", "link": "#/aprovacoes",
                       "titulo": _plural(a_aprovar, "registro de produção para aprovar", "registros de produção para aprovar")})
-    cont = contorno.resumo(ctx.db, ctx.empresa_id, unidades)
-    if cont["tarefas"] and cont["pendentes"]:
-        acoes.append({"codigo": "contorno", "nivel": "acao", "link": "#/contorno",
-                      "titulo": _plural(cont["pendentes"], "informação do contorno físico falta", "informações do contorno físico faltam")
-                                + " para a IA prever os tempos"})
-    # previsões da IA aguardando confirmação (versão ativa de cada operação)
-    pend = ctx.db.scalars(select(ModeloTempo).where(
-        ModeloTempo.empresa_id == ctx.empresa_id, ModeloTempo.unidade_id.in_(unidades),
-        ModeloTempo.status_validacao != "rejeitado").order_by(ModeloTempo.operacao_id, ModeloTempo.versao.desc())).all()
-    ativos: dict[int, ModeloTempo] = {}
-    for m in pend:
-        ativos.setdefault(m.operacao_id, m)
-    n_prev = sum(1 for m in ativos.values() if m.status_validacao == "pendente")
-    if n_prev:
-        acoes.append({"codigo": "previsoes", "nivel": "acao", "link": "#/processos",
-                      "titulo": _plural(n_prev, "previsão de tempo da IA para confirmar", "previsões de tempo da IA para confirmar")})
-    rascunhos = ctx.db.scalar(select(func.count(Processo.id)).where(
-        Processo.empresa_id == ctx.empresa_id, Processo.unidade_id.in_(unidades), Processo.status == "rascunho")) or 0
-    if rascunhos:
-        acoes.append({"codigo": "rascunhos", "nivel": "acao", "link": "#/processos",
-                      "titulo": _plural(rascunhos, "processo ainda não publicado", "processos ainda não publicados")})
-    ativos_n = ctx.db.scalar(select(func.count(Processo.id)).where(
-        Processo.empresa_id == ctx.empresa_id, Processo.unidade_id.in_(unidades), Processo.status == "ativo")) or 0
-    if not rascunhos and not ativos_n:
-        acoes.append({"codigo": "configurar", "nivel": "acao", "link": "#/implantacao",
-                      "titulo": "Conte à IA como funciona sua operação para montar o primeiro processo"})
-    elif ativos_n and not abertas:
-        acoes.append({"codigo": "criar_ordem", "nivel": "info", "link": "#/ordens",
-                      "titulo": "Nenhuma ordem em andamento. Crie uma para começar a produzir"})
+    # O próximo passo da trilha (etapas da preparação, depois plano → ordem). Uma unidade por vez.
+    if unidade_id is not None or len(unidades) == 1:
+        proximo = jornada.calcular(ctx.db, ctx.exige_unidade(unidades[0]))["proximo"]
+        if proximo:
+            acoes.append({"codigo": "proximo", "nivel": "acao", "link": proximo["link"], "titulo": proximo["titulo"], "botao": proximo["botao"]})
     return {"acoes": acoes, "numeros": numeros}

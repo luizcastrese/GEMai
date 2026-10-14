@@ -1,4 +1,4 @@
-import { get, post, quandoExpirar, setToken, temToken } from './api.js';
+import { post, quandoExpirar, setToken, temToken } from './api.js';
 import { estado, carregarBase, escolherUnidade } from './estado.js';
 import { h, montar, tentar, toast } from './ui.js';
 import * as gestao from './telas_gestao.js';
@@ -6,30 +6,32 @@ import * as inicio from './telas_inicio.js';
 import * as proc from './telas_proc.js';
 import * as prod from './telas_prod.js';
 import * as admin from './telas_admin.js';
-import * as contorno from './telas_contorno.js';
 import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
+import * as jornada from './telas_jornada.js';
+import { carregarTrilha } from './telas_jornada.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
 
 // Um único tipo de usuário: todos veem as mesmas telas.
 const ROTAS = [
-  // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
-  [/^#\/inicio$/, inicio.inicio, ['Dia a dia', 'Início', '#/inicio']],
+  // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?, código da etapa da trilha?]]
+  [/^#\/inicio$/, inicio.inicio, ['', 'Início', '#/inicio']],
+  // Trilha guiada: Atividades → Entradas → Agentes transformadores → Ambiente
+  [/^#\/preparar$/, jornada.preparar],
+  [/^#\/preparar\/atividades$/, jornada.atividades, ['Preparar a operação', 'Atividades', '#/preparar/atividades', false, 'atividades']],
+  [/^#\/preparar\/entradas$/, jornada.entradas, ['Preparar a operação', 'Entradas', '#/preparar/entradas', false, 'entradas']],
+  [/^#\/preparar\/entradas\/(\d+)$/, plano.produtoDetalhe],
+  [/^#\/preparar\/agentes$/, jornada.agentes, ['Preparar a operação', 'Agentes transformadores', '#/preparar/agentes', false, 'agentes']],
+  [/^#\/preparar\/ambiente$/, jornada.ambiente, ['Preparar a operação', 'Ambiente', '#/preparar/ambiente', false, 'ambiente']],
   [/^#\/planos$/, plano.planos, ['Dia a dia', 'Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
   [/^#\/ordens$/, prod.ordens, ['Dia a dia', 'Ordens de produção', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
   [/^#\/fila$/, prod.fila, ['Dia a dia', 'Minha fila', '#/fila']],
   [/^#\/aprovacoes$/, prod.aprovacoes, ['Dia a dia', 'Conferir registros', '#/aprovacoes']],
-  [/^#\/produtos$/, plano.produtos, ['Configurar', 'Produtos', '#/produtos']],
-  [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
-  [/^#\/implantacao$/, gestao.implantacao, ['Configurar', 'Configurar com a IA', '#/implantacao']],
-  [/^#\/processos$/, proc.lista, ['Configurar', 'Processos', '#/processos']],
-  [/^#\/processos\/(\d+)$/, proc.detalhe],
-  [/^#\/contorno$/, contorno.contorno, ['Configurar', 'Contorno físico', '#/contorno']],
-  [/^#\/configuracoes$/, config.configuracoes, ['Configurar', 'Configurações', '#/configuracoes']],
+  [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/cadastros$/, proc.cadastros],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
   [/^#\/painel$/, gestao.painel],
@@ -46,6 +48,7 @@ async function rotear() {
   for (const [re, fn] of ROTAS) {
     const m = hash.match(re);
     if (!m) continue;
+    try { estado.trilha = await carregarTrilha(); } catch { /* sem unidade ou sem rede: o menu cai no estado anterior */ }
     const conteudo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     montar(raiz, casca(conteudo, hash));
     try { limparTela = (await fn(conteudo, ...m.slice(1))) || null; } catch (e) { montar(conteudo, h('div', { class: 'aviso' }, e.message)); }
@@ -59,10 +62,12 @@ function casca(conteudo, hash) {
   ROTAS.filter((r) => r[2] && (!r[2][3] || estado.avancado)).forEach((r) => {
     const [grupo, rotulo, href] = r[2];
     const ativo = hash === href || (hash.startsWith(`${href}/`));
-    (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
+    const passo = r[2][4] && estado.trilha?.passos.find((p) => p.codigo === r[2][4]);
+    if (passo?.estado === 'bloqueado') return (grupos[grupo] ||= []).push(h('span', { class: 'bloq', title: 'Complete a etapa anterior' }, `🔒 ${rotulo}`));
+    (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, passo ? `${passo.estado === 'concluido' ? '✓' : '●'} ${rotulo}` : rotulo));
   });
   const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'ERP de Produção'),
-    Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
+    Object.entries(grupos).map(([g, links]) => [g ? h('div', { class: 'grp' }, g) : null, ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
   const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, 'Unidade:', sel),

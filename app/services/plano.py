@@ -15,7 +15,7 @@ from sqlalchemy import select
 from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
-                      PlanoTrabalho, Produto, Recurso, ReferenciaTempo)
+                      PlanoTrabalho, Produto, Recurso, ReferenciaTempo, Unidade)
 from . import ergonomia, ia, modelo_tempo
 from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
@@ -160,6 +160,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                   for d in dist_rows if d.origem_id in esp_id and d.destino_id in esp_id]
     contexto = {
         "segmento": ctx.empresa.segmento,
+        "atividades": (db.get(Unidade, unidade_id).atividades),  # None = todas (unidades anteriores à trilha guiada)
         "produto": {"nome": produto.nome, "quantidade": quantidade},
         "componentes": [{"nome": c.nome, "qtd": c.quantidade, "material": c.material, "grupo": c.grupo, "comp": c.comprimento_m,
                          "larg": c.largura_m, "esp": c.espessura_m, "peso_kg": pesos[c.nome][0], "peso_origem": pesos[c.nome][1],

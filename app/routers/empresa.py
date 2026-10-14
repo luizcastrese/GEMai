@@ -72,6 +72,8 @@ def atualizar_unidade(uid: int, dados: UnidadeUpdate, ctx: Ctx = Depends(get_ctx
     if campos.get("nome") and campos["nome"] != u.nome and ctx.db.scalar(
             select(Unidade.id).where(Unidade.empresa_id == ctx.empresa_id, Unidade.nome == campos["nome"])):
         raise HTTPException(409, "Já existe uma unidade com este nome.")
+    if campos.get("atividades"):
+        campos["atividades"] = list(dict.fromkeys(campos["atividades"]))
     antes = audit.snap(u)
     for k, v in campos.items():
         if v is not None:
