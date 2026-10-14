@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import DiagnosticoPergunta, RecomendacaoIA
 from ..ratelimit import limite_ia
 from ..schemas import PerguntaOut, RecomendacaoOut, RespostaIn
@@ -41,7 +41,7 @@ def listar(uid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/unidades/{uid}/diagnostico/perguntas/gerar", response_model=PerguntasGeradas)
-def gerar(uid: int, request: Request, ctx: Ctx = Depends(requer_gestor)):
+def gerar(uid: int, request: Request, ctx: Ctx = Depends(get_ctx)):
     """Gera perguntas adaptativas a partir da descrição e das respostas já dadas."""
     uni = ctx.exige_unidade(uid)
     if not (uni.descricao_operacao or "").strip():
@@ -69,7 +69,7 @@ def gerar(uid: int, request: Request, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.patch("/diagnostico/perguntas/{qid}", response_model=PerguntaOut)
-def responder(qid: int, dados: RespostaIn, ctx: Ctx = Depends(requer_gestor)):
+def responder(qid: int, dados: RespostaIn, ctx: Ctx = Depends(get_ctx)):
     q = ctx.obter(DiagnosticoPergunta, qid)
     antes = {"resposta": q.resposta}
     q.resposta = dados.resposta.strip() or None
@@ -81,7 +81,7 @@ def responder(qid: int, dados: RespostaIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/unidades/{uid}/diagnostico/estruturar", response_model=RecomendacaoOut, status_code=201)
-def estruturar(uid: int, ctx: Ctx = Depends(requer_gestor)):
+def estruturar(uid: int, ctx: Ctx = Depends(get_ctx)):
     """Gera a proposta de estrutura (Tela 3). Fica PENDENTE até revisão e aprovação humana."""
     uni = ctx.exige_unidade(uid)
     if not (uni.descricao_operacao or "").strip():

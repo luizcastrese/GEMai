@@ -85,12 +85,11 @@ def test_perfil_crud_validacoes_e_isolamento(client, gestor, operador, unidade_i
     assert gestor.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": "Perfil A"}).status_code == 409
     assert gestor.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": "X", "ritmo_pct": 300}).status_code == 422
     assert gestor.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": "Y", "sexo": "outro"}).status_code == 422
-    assert operador.post("/perfis-mao-de-obra", {"unidade_id": unidade_id, "nome": "Z"}).status_code == 403
     assert gestor.delete(f"/perfis-mao-de-obra/{p['id']}").status_code == 405  # só desativa
     b = registrar(client, "Empresa B")
     assert b.get(f"/perfis-mao-de-obra/{p['id']}").status_code == 404
-    gb = criar_usuario(b, "gestor", "g@b.com", b.usuario["unidade_ids"])
-    pid, _ = _op(gb, b.usuario["unidade_ids"][0])
+    gb = criar_usuario(b, "g@b.com", [b.unidade_id])
+    pid, _ = _op(gb, b.unidade_id)
     et = gb.get(f"/processos/{pid}").json()["etapas"][0]["id"]
     assert gb.post(f"/etapas/{et}/operacoes", {"nome": "X", "perfil_id": p["id"]}).status_code == 422  # perfil alheio
 

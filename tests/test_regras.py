@@ -191,7 +191,6 @@ def test_ia_externa_exige_consentimento_e_cai_para_local(admin, gestor, unidade_
     gestor.post(f"/unidades/{unidade_id}/diagnostico/perguntas/gerar")
     rec = gestor.post(f"/unidades/{unidade_id}/diagnostico/estruturar").json()
     assert chamadas and rec["provedor"] == "heuristica" and "falhou" in rec["justificativa"]
-    assert gestor.patch("/empresa", {"permite_ia_externa": False}).status_code == 403  # só admin
 
 
 def test_saida_da_ia_e_saneada(gestor, unidade_id):
@@ -251,7 +250,7 @@ def test_auditoria_registra_mudancas_de_parametro(admin, gestor, unidade_id):
     ev = admin.get("/auditoria?entidade=parametro").json()
     ult = ev[0]
     assert ult["acao"] == "parametro.criar" and ult["depois"]["valor_num"] == 5 and ult["usuario_id"] == gestor.usuario["id"]
-    assert gestor.get("/auditoria").status_code == 403
+    assert gestor.get("/auditoria").status_code == 200  # todos da equipe consultam o histórico
 
 
 def test_recursos_sem_delete_e_nome_unico(gestor, unidade_id):

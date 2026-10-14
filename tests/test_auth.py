@@ -4,7 +4,8 @@ from tests.conftest import SENHA, criar_usuario, registrar
 
 def test_registrar_e_login(client):
     s = registrar(client)
-    assert s.get("/auth/eu").json()["perfil"] == "admin"
+    eu = s.get("/auth/eu").json()
+    assert "perfil" not in eu and eu["unidade_ids"] == []  # um só tipo de usuário; sem restrição = todas as unidades
     r = client.post("/api/v1/auth/login", json={"email": "ADMIN@empresaa.com", "senha": SENHA})
     assert r.status_code == 200 and r.json()["usuario"]["empresa_id"] == s.usuario["empresa_id"]
 
@@ -50,21 +51,27 @@ def test_troca_de_senha_invalida_tokens_antigos(client, admin):
 
 
 def test_desativar_usuario_derruba_sessao(admin, unidade_id):
-    op = criar_usuario(admin, "operador", "o@a.com", [unidade_id])
+    op = criar_usuario(admin, "o@a.com", [unidade_id])
     assert op.get("/unidades").status_code == 200
     assert admin.patch(f"/usuarios/{op.usuario['id']}", {"ativo": False}).status_code == 200
     assert op.get("/unidades").status_code == 401
 
 
-def test_nao_remove_ultimo_admin(admin):
-    r = admin.patch(f"/usuarios/{admin.usuario['id']}", {"perfil": "gestor"})
-    assert r.status_code == 409
-    assert admin.patch(f"/usuarios/{admin.usuario['id']}", {"ativo": False}).status_code == 409
+def test_equipe_mantem_ao_menos_um_usuario_ativo(admin, unidade_id):
+    outro = criar_usuario(admin, "colega@a.com")
+    assert admin.patch(f"/usuarios/{admin.usuario['id']}", {"ativo": False}).status_code == 409  # não desativa a si mesmo
+    assert outro.patch(f"/usuarios/{admin.usuario['id']}", {"ativo": False}).status_code == 200
+    # agora só resta o "outro": ninguém pode desativá-lo
+    assert outro.patch(f"/usuarios/{outro.usuario['id']}", {"ativo": False}).status_code == 409
 
 
-def test_apenas_admin_gerencia_usuarios(gestor, operador):
-    assert gestor.get("/usuarios").status_code == 403
-    assert operador.post("/usuarios", {"nome": "x", "email": "x@x.com", "senha": SENHA, "perfil": "admin"}).status_code == 403
+def test_todos_os_usuarios_tem_o_mesmo_acesso(gestor, operador, unidade_id):
+    for u in (gestor, operador):
+        assert u.get("/usuarios").status_code == 200
+        assert u.get("/auditoria").status_code == 200
+        assert u.post("/processos", {"unidade_id": unidade_id, "nome": f"P-{u.usuario['id']}"}).status_code == 201
+    novo = gestor.post("/usuarios", {"nome": "Novo", "email": "novo@a.com", "senha": SENHA})
+    assert novo.status_code == 201 and "perfil" not in novo.json()
 
 
 def test_cabecalhos_de_seguranca(client):

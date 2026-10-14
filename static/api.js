@@ -40,3 +40,14 @@ export const qs = (o) => {
   const s = p.toString();
   return s ? `?${s}` : '';
 };
+export const del = (c) => api('DELETE', c);
+// Baixa um arquivo protegido (precisa do token): busca como blob e dispara o download.
+export async function baixar(caminho, nome) {
+  let r;
+  try { r = await fetch(BASE + caminho, { headers: token ? { Authorization: `Bearer ${token}` } : {} }); } catch { throw new Error('Sem conexão com o servidor.'); }
+  if (!r.ok) throw new Error('Não foi possível baixar o arquivo.');
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement('a');
+  a.href = url; a.download = nome; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}

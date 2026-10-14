@@ -1,10 +1,9 @@
 import { get, qs } from './api.js';
-import { estado, ehGestor } from './estado.js';
+import { estado } from './estado.js';
 import { fmtPct, h, kpi, montar, tentar } from './ui.js';
 
 // Tela inicial: o que precisa de atenção agora, em linguagem comum.
 export async function inicio(el) {
-  if (!ehGestor()) { location.hash = '#/fila'; return; }
   const [r, d] = await Promise.all([get(`/inicio${qs({ unidade_id: estado.unidadeId })}`), tentar(() => get(`/dashboard${qs({ unidade_id: estado.unidadeId })}`))]);
   const n = r.numeros || {};
   const eff = d?.planejado_x_realizado?.eficiencia_pct;
@@ -21,6 +20,6 @@ export async function inicio(el) {
       kpi('Retrabalho (últimos 30 dias)', fmtPct(d?.retrabalho?.pct_do_tempo_de_trabalho)),
       real === null ? null : kpi('Tempo real × previsto', real === 0 ? 'No previsto' : `${real > 0 ? '+' : ''}${real}%`, real > 10 ? 'bad' : '')),
     h('h2', null, 'Atalhos'),
-    h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'), h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'),
+    h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/planos' }, 'Planos de trabalho'), h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'), h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/contorno' }, 'Contorno físico'),
       h('a', { class: 'btn big', href: '#/implantacao' }, 'Configurar com a IA')));
 }

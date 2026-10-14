@@ -29,10 +29,9 @@ export async function usuarios(el) {
   const us = await get('/usuarios');
   const abrir = (u) => {
     const f = formulario([{ k: 'nome', rotulo: 'Nome' }, ...(u ? [] : [{ k: 'email', rotulo: 'E-mail', tipo: 'email' }, { k: 'senha', rotulo: 'Senha inicial (mín. 10, maiúscula, minúscula e número)', tipo: 'password' }]),
-      { k: 'perfil', rotulo: 'Perfil', tipo: 'select', opcoes: [['operador', 'Operador (interface simplificada)'], ['gestor', 'Gestor (edita processos, aprova)'], ['admin', 'Administrador (tudo)']] },
-      ...(u ? [{ k: 'ativo', rotulo: 'Ativo', tipo: 'bool' }] : [])], u || { perfil: 'operador' });
+      ...(u ? [{ k: 'ativo', rotulo: 'Ativo', tipo: 'bool' }] : [])], u || {});
     const marcas = estado.unidades.map((x) => ({ x, c: h('input', { type: 'checkbox', checked: u ? u.unidade_ids.includes(x.id) : false }) }));
-    modal(u ? `Editar — ${u.nome}` : 'Novo usuário', h('div', null, f.el, h('label', null, 'Unidades com acesso (administradores veem todas)'),
+    modal(u ? `Editar — ${u.nome}` : 'Novo usuário', h('div', null, f.el, h('label', null, 'Unidades com acesso (deixe todas desmarcadas para acesso a todas)'),
       marcas.map(({ x, c }) => h('label', { class: 'inline' }, c, x.nome))), { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'), h('button', { class: 'pri', onclick: async () => {
         const v = f.valores(); v.unidade_ids = marcas.filter((m) => m.c.checked).map((m) => m.x.id);
         if (await tentar(() => (u ? patch(`/usuarios/${u.id}`, v) : post('/usuarios', v)), 'Salvo.')) { fechar(); usuarios(el); }
@@ -43,9 +42,9 @@ export async function usuarios(el) {
     modal(`Redefinir senha — ${u.nome}`, h('div', null, f.el, h('p', { class: 'muted small' }, 'As sessões abertas do usuário são encerradas.')), { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
       h('button', { class: 'pri', onclick: async () => { if (await tentar(() => post(`/usuarios/${u.id}/redefinir-senha`, f.valores()), 'Senha redefinida.')) fechar(); } }, 'Redefinir')] });
   };
-  montar(el, h('div', { class: 'top' }, h('h1', null, 'Usuários'), h('button', { class: 'pri', onclick: () => abrir() }, '+ Novo usuário')),
-    h('div', { class: 'card' }, tabela([{ t: 'Nome', f: (u) => u.nome }, { t: 'E-mail', f: (u) => u.email }, { t: 'Perfil', f: (u) => u.perfil },
-      { t: 'Unidades', f: (u) => u.unidade_ids.map((i) => estado.unidades.find((x) => x.id === i)?.nome || i).join(', ') }, { t: 'Situação', f: (u) => (u.ativo ? badge('Ativo', 'b-ok') : badge('Inativo', 'b-err')) },
+  montar(el, h('div', { class: 'top' }, h('h2', null, 'Equipe'), h('button', { class: 'pri', onclick: () => abrir() }, '+ Adicionar pessoa')),
+    h('div', { class: 'card' }, tabela([{ t: 'Nome', f: (u) => u.nome }, { t: 'E-mail', f: (u) => u.email },
+      { t: 'Unidades', f: (u) => (u.unidade_ids.length ? u.unidade_ids.map((i) => estado.unidades.find((x) => x.id === i)?.nome || i).join(', ') : 'Todas') }, { t: 'Situação', f: (u) => (u.ativo ? badge('Ativo', 'b-ok') : badge('Inativo', 'b-err')) },
       { t: '', f: (u) => h('div', { class: 'inline' }, h('button', { class: 'sm', onclick: () => abrir(u) }, 'Editar'), h('button', { class: 'sm', onclick: () => senha(u) }, 'Senha')) }], us)));
 }
 
@@ -57,7 +56,7 @@ export async function empresa(el) {
       ajuda: e.ia_disponivel ? 'Se desmarcado, a IA usa apenas regras locais e nenhum dado sai do sistema. Dados enviados: descrição da operação, respostas do diagnóstico e indicadores agregados (nunca senhas, e-mails ou documentos).' : 'Este servidor não tem chave de IA externa configurada; a IA usa regras locais.' }], e);
   const uni = await get('/unidades');
   const fu = formulario([{ k: 'nome', rotulo: 'Nome da nova unidade' }]);
-  montar(el, h('h1', null, 'Empresa e unidades'),
+  montar(el, h('h2', null, 'Empresa e unidades'),
     h('div', { class: 'card' }, f.el, h('p', { class: 'small muted' }, `Provedor de IA ativo: ${e.ia_provedor_ativo}`), h('p', null, h('button', { class: 'pri', onclick: async () => {
       if (await tentar(() => patch('/empresa', f.valores()), 'Empresa atualizada.')) { await carregarBase(); empresa(el); }
     } }, 'Salvar'))),
@@ -76,7 +75,7 @@ export async function auditoria(el) {
       { t: 'Entidade', f: (x) => `${x.entidade} #${x.entidade_id ?? ''}` }, { t: 'IP', f: (x) => x.ip },
       { t: 'Detalhe', f: (x) => h('details', null, h('summary', { class: 'small' }, 'ver'), h('pre', { class: 'small' }, JSON.stringify({ antes: x.antes, depois: x.depois }, null, 1).slice(0, 2500))) }], ev)));
   };
-  montar(el, h('h1', null, 'Auditoria'), h('p', { class: 'muted' }, 'Trilha imutável de alterações, aprovações e origem dos dados.'),
+  montar(el, h('h2', null, 'Histórico de alterações'), h('p', { class: 'muted' }, 'Registro imutável de quem alterou, aprovou ou criou cada coisa.'),
     h('div', { class: 'card row' }, h('div', null, h('label', null, 'Entidade'), h('input', { placeholder: 'ordem, parametro, apontamento…', onchange: (e) => { filtro.entidade = e.target.value; carregar(); } })),
       h('div', null, h('label', null, 'Ação (prefixo)'), h('input', { placeholder: 'parametro., auth., ia.', onchange: (e) => { filtro.acao = e.target.value; carregar(); } }))), area);
   await carregar();

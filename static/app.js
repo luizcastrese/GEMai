@@ -1,46 +1,51 @@
 import { get, post, quandoExpirar, setToken, temToken } from './api.js';
-import { estado, carregarBase, definirAvancado, escolherUnidade, ehAdmin, ehGestor } from './estado.js';
+import { estado, carregarBase, escolherUnidade } from './estado.js';
 import { h, montar, tentar, toast } from './ui.js';
 import * as gestao from './telas_gestao.js';
 import * as inicio from './telas_inicio.js';
 import * as proc from './telas_proc.js';
 import * as prod from './telas_prod.js';
 import * as admin from './telas_admin.js';
+import * as contorno from './telas_contorno.js';
+import * as config from './telas_config.js';
+import * as plano from './telas_plano.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
 
+// Um único tipo de usuário: todos veem as mesmas telas.
 const ROTAS = [
-  // [padrão, função, perfis (a=todos, g=gestor, admin), menu: [grupo, rótulo, href, soEspecialista?]]
-  [/^#\/inicio$/, inicio.inicio, 'g', ['Dia a dia', 'Início', '#/inicio']],
-  [/^#\/ordens$/, prod.ordens, 'g', ['Dia a dia', 'Ordens de produção', '#/ordens']],
-  [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe, 'a'],
-  [/^#\/fila$/, prod.fila, 'a', ['Dia a dia', 'Minha fila', '#/fila']],
-  [/^#\/aprovacoes$/, prod.aprovacoes, 'g', ['Dia a dia', 'Aprovar registros', '#/aprovacoes']],
-  [/^#\/implantacao$/, gestao.implantacao, 'g', ['Configurar', 'Configurar com a IA', '#/implantacao']],
-  [/^#\/processos$/, proc.lista, 'g', ['Configurar', 'Processos', '#/processos']],
-  [/^#\/processos\/(\d+)$/, proc.detalhe, 'g'],
-  [/^#\/cadastros$/, proc.cadastros, 'g', ['Configurar', 'Equipamentos e locais', '#/cadastros']],
-  [/^#\/usuarios$/, admin.usuarios, 'admin', ['Administração', 'Equipe e acessos', '#/usuarios']],
-  [/^#\/empresa$/, admin.empresa, 'admin', ['Administração', 'Empresa e unidades', '#/empresa']],
-  [/^#\/analises$/, gestao.painel, 'g', ['Especialista', 'Análises completas', '#/analises', true]],
-  [/^#\/painel$/, gestao.painel, 'g'],
-  [/^#\/ia$/, admin.recomendacoes, 'g', ['Especialista', 'Sugestões da IA', '#/ia', true]],
-  [/^#\/auditoria$/, admin.auditoria, 'admin', ['Especialista', 'Auditoria', '#/auditoria', true]],
+  // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
+  [/^#\/inicio$/, inicio.inicio, ['Dia a dia', 'Início', '#/inicio']],
+  [/^#\/planos$/, plano.planos, ['Dia a dia', 'Planos de trabalho', '#/planos']],
+  [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
+  [/^#\/ordens$/, prod.ordens, ['Dia a dia', 'Ordens de produção', '#/ordens']],
+  [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
+  [/^#\/fila$/, prod.fila, ['Dia a dia', 'Minha fila', '#/fila']],
+  [/^#\/aprovacoes$/, prod.aprovacoes, ['Dia a dia', 'Conferir registros', '#/aprovacoes']],
+  [/^#\/produtos$/, plano.produtos, ['Configurar', 'Produtos', '#/produtos']],
+  [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
+  [/^#\/implantacao$/, gestao.implantacao, ['Configurar', 'Configurar com a IA', '#/implantacao']],
+  [/^#\/processos$/, proc.lista, ['Configurar', 'Processos', '#/processos']],
+  [/^#\/processos\/(\d+)$/, proc.detalhe],
+  [/^#\/contorno$/, contorno.contorno, ['Configurar', 'Contorno físico', '#/contorno']],
+  [/^#\/configuracoes$/, config.configuracoes, ['Configurar', 'Configurações', '#/configuracoes']],
+  [/^#\/cadastros$/, proc.cadastros],
+  [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
+  [/^#\/painel$/, gestao.painel],
+  [/^#\/ia$/, admin.recomendacoes, ['Detalhes técnicos', 'Sugestões da IA', '#/ia', true]],
 ];
-const permitido = (p) => p === 'a' || (p === 'g' && ehGestor()) || (p === 'admin' && ehAdmin());
 
-function inicial() { return ehGestor() ? '#/inicio' : '#/fila'; }
+const inicial = () => '#/inicio';
 
 async function rotear() {
   if (!temToken()) return telaAuth();
   if (!estado.usuario) { const ok = await tentar(carregarBase); if (!ok && !estado.usuario) return telaAuth(); }
   if (limparTela) { limparTela(); limparTela = null; }
   const hash = location.hash || inicial();
-  for (const [re, fn, perfil] of ROTAS) {
+  for (const [re, fn] of ROTAS) {
     const m = hash.match(re);
     if (!m) continue;
-    if (!permitido(perfil)) { location.hash = inicial(); return; }
     const conteudo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     montar(raiz, casca(conteudo, hash));
     try { limparTela = (await fn(conteudo, ...m.slice(1))) || null; } catch (e) { montar(conteudo, h('div', { class: 'aviso' }, e.message)); }
@@ -51,8 +56,8 @@ async function rotear() {
 
 function casca(conteudo, hash) {
   const grupos = {};
-  ROTAS.filter((r) => r[3] && permitido(r[2]) && (!r[3][3] || estado.avancado)).forEach((r) => {
-    const [grupo, rotulo, href] = r[3];
+  ROTAS.filter((r) => r[2] && (!r[2][3] || estado.avancado)).forEach((r) => {
+    const [grupo, rotulo, href] = r[2];
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
   });
@@ -60,10 +65,8 @@ function casca(conteudo, hash) {
     Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
-  const modo = h('label', { class: 'modo', title: 'Mostra detalhes técnicos (fórmulas, tolerâncias, normas, auditoria).' },
-    h('input', { type: 'checkbox', checked: estado.avancado, onchange: (e) => { definirAvancado(e.target.checked); rotear(); } }), 'Modo especialista');
   const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, 'Unidade:', sel),
-    h('div', { class: 'who' }, ehGestor() ? modo : null, `${estado.usuario.nome}`, h('button', { class: 'sm', onclick: sair }, 'Sair')));
+    h('div', { class: 'who' }, estado.usuario.nome, h('button', { class: 'sm', onclick: sair }, 'Sair')));
   return h('div', { class: 'shell' }, nav, h('main', null, topo, conteudo));
 }
 

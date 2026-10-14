@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from ..deps import Ctx, get_ctx, requer_gestor
+from ..deps import Ctx, get_ctx
 from ..models import Etapa, Operacao, Ordem, Processo, RecomendacaoIA
 from ..ratelimit import limite_ia
 from ..schemas import AnaliseIn, DecisaoIn, RecomendacaoEditIn, RecomendacaoOut
@@ -45,7 +45,7 @@ def obter(rid: int, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.patch("/recomendacoes/{rid}", response_model=RecomendacaoOut)
-def editar(rid: int, dados: RecomendacaoEditIn, ctx: Ctx = Depends(requer_gestor)):
+def editar(rid: int, dados: RecomendacaoEditIn, ctx: Ctx = Depends(get_ctx)):
     """Permite corrigir a estrutura sugerida antes de aprová-la."""
     rec = ctx.obter(RecomendacaoIA, rid)
     if rec.status != "pendente":
@@ -71,7 +71,7 @@ def _decidir(ctx: Ctx, rec: RecomendacaoIA, status: str, obs: str) -> None:
 
 
 @router.post("/recomendacoes/{rid}/aprovar", response_model=RecomendacaoOut)
-def aprovar(rid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def aprovar(rid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     rec = ctx.obter(RecomendacaoIA, rid)
     if rec.status != "pendente":
         raise HTTPException(409, "Esta sugestão já foi decidida.")
@@ -90,7 +90,7 @@ def aprovar(rid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/recomendacoes/{rid}/rejeitar", response_model=RecomendacaoOut)
-def rejeitar(rid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def rejeitar(rid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     rec = ctx.obter(RecomendacaoIA, rid)
     _decidir(ctx, rec, "rejeitada", dados.observacao)
     ctx.auditar("ia.rejeitar", "recomendacao", rec.id, None, {"status": rec.status})
@@ -116,7 +116,7 @@ def _pares_semelhantes(ctx: Ctx, unidade_id: int) -> list[dict]:
 
 
 @router.post("/ia/analises", response_model=RecomendacaoOut, status_code=201)
-def analisar(dados: AnaliseIn, ctx: Ctx = Depends(requer_gestor)):
+def analisar(dados: AnaliseIn, ctx: Ctx = Depends(get_ctx)):
     uni = ctx.exige_unidade(dados.unidade_id)
     limite_ia.checar(f"{ctx.empresa_id}")
     alvo_tipo = alvo_id = None

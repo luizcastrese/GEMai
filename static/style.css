@@ -61,3 +61,20 @@ svg.chart text{font-size:10px;fill:#637083}
 .pronto li{margin:.2rem 0}.pronto .seg{color:var(--err);font-weight:600}
 .modo{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--mut)}.modo input{width:auto}
 .prev{font-size:.9rem;color:var(--mut)}
+.card>.bar{margin-top:.7rem}
+
+.dia td{background:#eef3fa;font-weight:600;color:var(--pri-d)}
+tr.semtempo td{background:#fffaf0}
+.warn-l{color:var(--warn)}.seg-l{color:var(--err)}
+.kpi .v.sm{font-size:1.15rem}
+.lig{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;margin:.25rem 0}
+.tw input{min-width:64px}.tw td input.n{width:84px}
+@media print{
+  nav.side,.top,.noprint,#toasts{display:none!important}
+  .shell{display:block}main{padding:0;max-width:none}
+  .card{border:0;padding:.3rem 0;break-inside:avoid}body{background:#fff}
+  details>summary{display:none}details>*{display:block}
+}
+.ref{align-items:center}.ref .l{flex:2 1 260px}.ref input{flex:0 1 130px}
+.nw{flex-wrap:nowrap}.tw input.n{width:76px;min-width:0}.tw td.pk input{width:104px}
+.kpi.peq .v{font-size:1.1rem}

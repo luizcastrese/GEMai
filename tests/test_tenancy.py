@@ -16,7 +16,7 @@ def test_empresa_b_nao_acessa_nada_da_empresa_a(client, admin, gestor, unidade_i
     oo = ordem["operacoes"][0]["id"]
     ap = gestor.post("/apontamentos/iniciar", {"ordem_operacao_id": oo}).json()
     b = registrar(client, "Empresa B")
-    ub = b.usuario["unidade_ids"][0]
+    ub = b.unidade_id
 
     # leitura
     for url in (f"/unidades/{unidade_id}", f"/processos/{pid}", f"/ordens/{ordem['id']}",
@@ -48,15 +48,15 @@ def test_numeracao_de_ordens_por_empresa(client, admin, gestor, unidade_id):
     o2 = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 1}).json()
     assert (o1["numero"], o2["numero"]) == ("OP-000001", "OP-000002")
     b = registrar(client, "Empresa B")
-    gb = criar_usuario(b, "gestor", "g@b.com", b.usuario["unidade_ids"])
-    pb, _ = montar_processo(gb, b.usuario["unidade_ids"][0])
-    ob = gb.post("/ordens", {"unidade_id": b.usuario["unidade_ids"][0], "processo_id": pb, "quantidade": 1}).json()
+    gb = criar_usuario(b, "g@b.com", [b.unidade_id])
+    pb, _ = montar_processo(gb, b.unidade_id)
+    ob = gb.post("/ordens", {"unidade_id": b.unidade_id, "processo_id": pb, "quantidade": 1}).json()
     assert ob["numero"] == "OP-000001"
 
 
 def test_restricao_por_unidade(client, admin, gestor, unidade_id):
     u2 = admin.post("/unidades", {"nome": "Filial"}).json()["id"]
-    g_filial = criar_usuario(admin, "gestor", "gf@a.com", [u2])
+    g_filial = criar_usuario(admin, "gf@a.com", [u2])
     pid, _ = montar_processo(gestor, unidade_id)
     ordem = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 1}).json()
     assert g_filial.get(f"/ordens/{ordem['id']}").status_code == 404
@@ -82,24 +82,27 @@ def test_nao_cruza_unidades_dentro_da_empresa(admin, gestor, unidade_id):
     assert admin.post("/ordens", {"unidade_id": u2, "processo_id": pid, "quantidade": 1}).status_code == 422
 
 
-def test_operador_so_ve_seus_apontamentos_e_nao_decide(admin, gestor, operador, unidade_id):
+def test_aprovacao_exige_outra_pessoa_da_equipe(admin, gestor, operador, unidade_id):
+    """Regra dos "dois olhos": quem registrou não aprova o próprio registro (se houver mais gente na equipe)."""
     pid, _ = montar_processo(gestor, unidade_id)
     o = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 2}).json()
     gestor.post(f"/ordens/{o['id']}/liberar")
     oo = o["operacoes"][0]["id"]
-    a_op = operador.post("/apontamentos/iniciar", {"ordem_operacao_id": oo}).json()
-    operador.post(f"/apontamentos/{a_op['id']}/finalizar", {"quantidade_boa": 2})
-    a_g = gestor.post("/apontamentos/iniciar", {"ordem_operacao_id": o["operacoes"][1]["id"]}).json()
-    assert [a["id"] for a in operador.get("/apontamentos").json()] == [a_op["id"]]
-    assert operador.post(f"/apontamentos/{a_g['id']}/finalizar", {}).status_code == 404
-    assert operador.post(f"/apontamentos/{a_op['id']}/aprovar").status_code == 403
-    assert operador.post(f"/apontamentos/{a_op['id']}/anular", {"motivo": "tentativa indevida"}).status_code == 403
-    assert operador.get("/dashboard").status_code == 403
-    assert operador.get("/auditoria").status_code == 403
+    a = operador.post("/apontamentos/iniciar", {"ordem_operacao_id": oo}).json()
+    operador.post(f"/apontamentos/{a['id']}/finalizar", {"quantidade_boa": 2})
+    assert operador.post(f"/apontamentos/{a['id']}/aprovar").status_code == 409  # o próprio autor
+    assert gestor.post(f"/apontamentos/{a['id']}/aprovar").status_code == 200  # outra pessoa
+    # todos enxergam os registros da empresa (não só os próprios)
+    assert [x["id"] for x in operador.get("/apontamentos").json()] == [a["id"]]
+    assert [x["id"] for x in gestor.get("/apontamentos").json()] == [a["id"]]
 
 
-def test_operador_nao_edita_estrutura(operador, unidade_id):
-    assert operador.post("/processos", {"unidade_id": unidade_id, "nome": "X"}).status_code == 403
-    assert operador.post("/recursos", {"unidade_id": unidade_id, "nome": "X"}).status_code == 403
-    assert operador.post("/ordens", {"unidade_id": unidade_id, "processo_id": 1, "quantidade": 1}).status_code == 403
-    assert operador.post("/ia/analises", {"tipo": "relatorio_gestor", "unidade_id": unidade_id}).status_code == 403
+def test_empresa_de_uma_pessoa_pode_aprovar_o_proprio_registro(client, unidade_id):
+    solo = registrar(client, "Solo Ltda")
+    uid = solo.unidade_id
+    pid, _ = montar_processo(solo, uid)
+    o = solo.post("/ordens", {"unidade_id": uid, "processo_id": pid, "quantidade": 1}).json()
+    solo.post(f"/ordens/{o['id']}/liberar")
+    a = solo.post("/apontamentos/iniciar", {"ordem_operacao_id": o["operacoes"][0]["id"]}).json()
+    solo.post(f"/apontamentos/{a['id']}/finalizar", {"quantidade_boa": 1})
+    assert solo.post(f"/apontamentos/{a['id']}/aprovar").status_code == 200  # não há outra pessoa para conferir

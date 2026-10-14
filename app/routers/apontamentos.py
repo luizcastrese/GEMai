@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from .. import audit
-from ..deps import Ctx, get_ctx, requer_gestor
-from ..models import Apontamento, Ocorrencia, Operacao, Ordem, OrdemOperacao, Pessoa, Recurso
+from ..deps import Ctx, get_ctx
+from ..models import Apontamento, Ocorrencia, Operacao, Ordem, OrdemOperacao, Pessoa, Recurso, Usuario
 from ..schemas import (AnularIn, ApontamentoManualIn, ApontamentoOut, DecisaoIn, FecharOcorrenciaIn,
                        FinalizarApontamentoIn, IniciarApontamentoIn, OcorrenciaIn, OcorrenciaOut)
 from ..services import timecalc
@@ -61,11 +61,9 @@ def _pessoa_do_usuario(ctx: Ctx, unidade_id: int) -> Pessoa | None:
 
 
 def _resolver_pessoa(ctx: Ctx, unidade_id: int, pessoa_id: int | None) -> int | None:
-    if not ctx.eh_gestor:  # operador só registra por si mesmo
+    if pessoa_id is None:  # sem indicação: a pessoa vinculada ao próprio usuário, se houver
         p = _pessoa_do_usuario(ctx, unidade_id)
         return p.id if p else None
-    if pessoa_id is None:
-        return None
     p = ctx.db.get(Pessoa, pessoa_id)
     if not p or p.empresa_id != ctx.empresa_id or p.unidade_id != unidade_id:
         raise HTTPException(422, "Pessoa inválida para esta unidade.")
@@ -180,15 +178,9 @@ def iniciar(dados: IniciarApontamentoIn, ctx: Ctx = Depends(get_ctx)):
     return apt_out(a, _avisos_habilitacao(ctx, pessoa_id, rec))
 
 
-def _meu_ou_gestor(ctx: Ctx, a: Apontamento) -> None:
-    if not ctx.eh_gestor and a.registrado_por != ctx.usuario.id:
-        raise HTTPException(404, "Registro não encontrado.")
-
-
 @router.post("/apontamentos/{aid}/finalizar", response_model=ApontamentoOut)
 def finalizar(aid: int, dados: FinalizarApontamentoIn, ctx: Ctx = Depends(get_ctx)):
     a = ctx.obter(Apontamento, aid)
-    _meu_ou_gestor(ctx, a)
     if a.fim is not None or a.anulado:
         raise HTTPException(409, "Este apontamento já foi finalizado ou anulado.")
     fim = dados.fim or _agora()
@@ -206,7 +198,7 @@ def finalizar(aid: int, dados: FinalizarApontamentoIn, ctx: Ctx = Depends(get_ct
 
 
 @router.post("/apontamentos", response_model=ApontamentoOut, status_code=201)
-def registrar_manual(dados: ApontamentoManualIn, ctx: Ctx = Depends(requer_gestor)):
+def registrar_manual(dados: ApontamentoManualIn, ctx: Ctx = Depends(get_ctx)):
     """Lançamento retroativo (ex.: dado de papel). Exige gestor."""
     oo, o = _contexto_operacao(ctx, dados.ordem_operacao_id)
     _exigir_operacao_ativa(oo, o, manual=True)
@@ -233,8 +225,6 @@ def listar(ctx: Ctx = Depends(get_ctx), ordem_id: int | None = None, ordem_opera
            status: str | None = None, abertos: bool | None = None, incluir_anulados: bool = False,
            limite: int = Query(100, ge=1, le=200), deslocamento: int = Query(0, ge=0)):
     q = ctx.query(Apontamento)
-    if not ctx.eh_gestor:
-        q = q.where(Apontamento.registrado_por == ctx.usuario.id)
     if ordem_id is not None:
         q = q.where(Apontamento.ordem_id == ordem_id)
     if ordem_operacao_id is not None:
@@ -256,11 +246,19 @@ def meus_abertos(ctx: Ctx = Depends(get_ctx)):
     return apts_out(ctx, list(ctx.db.scalars(q)))
 
 
+def _equipe_ativa(ctx: Ctx) -> int:
+    return ctx.db.scalar(select(func.count(Usuario.id)).where(
+        Usuario.empresa_id == ctx.empresa_id, Usuario.ativo.is_(True))) or 0
+
+
 def _decidir(ctx: Ctx, a: Apontamento, status: str, obs: str) -> None:
     if a.anulado or a.fim is None:
         raise HTTPException(409, "Só apontamentos finalizados e não anulados podem ser decididos.")
     if a.status != "registrado":
         raise HTTPException(409, "Este apontamento já foi decidido.")
+    if status == "aprovado" and a.registrado_por == ctx.usuario.id and _equipe_ativa(ctx) > 1:
+        # Regra dos "dois olhos": só o histórico conferido por outra pessoa melhora as estimativas.
+        raise HTTPException(409, "Outra pessoa da equipe precisa aprovar este registro.")
     antes = audit.snap(a)
     a.status, a.decidido_por, a.decidido_em = status, ctx.usuario.id, _agora()
     if obs:
@@ -269,7 +267,7 @@ def _decidir(ctx: Ctx, a: Apontamento, status: str, obs: str) -> None:
 
 
 @router.post("/apontamentos/{aid}/aprovar", response_model=ApontamentoOut)
-def aprovar(aid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def aprovar(aid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     a = ctx.obter(Apontamento, aid)
     _decidir(ctx, a, "aprovado", dados.observacao)
     ctx.db.commit()
@@ -277,7 +275,7 @@ def aprovar(aid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/apontamentos/{aid}/rejeitar", response_model=ApontamentoOut)
-def rejeitar(aid: int, dados: DecisaoIn, ctx: Ctx = Depends(requer_gestor)):
+def rejeitar(aid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     a = ctx.obter(Apontamento, aid)
     _decidir(ctx, a, "rejeitado", dados.observacao)
     ctx.db.commit()
@@ -289,7 +287,7 @@ class LoteIn(BaseModel):
 
 
 @router.post("/apontamentos/aprovar-lote", response_model=list[ApontamentoOut])
-def aprovar_lote(dados: LoteIn, ctx: Ctx = Depends(requer_gestor)):
+def aprovar_lote(dados: LoteIn, ctx: Ctx = Depends(get_ctx)):
     saida = []
     for i in dict.fromkeys(dados.ids):
         a = ctx.obter(Apontamento, i)
@@ -300,7 +298,7 @@ def aprovar_lote(dados: LoteIn, ctx: Ctx = Depends(requer_gestor)):
 
 
 @router.post("/apontamentos/{aid}/anular", response_model=ApontamentoOut)
-def anular(aid: int, dados: AnularIn, ctx: Ctx = Depends(requer_gestor)):
+def anular(aid: int, dados: AnularIn, ctx: Ctx = Depends(get_ctx)):
     a = ctx.obter(Apontamento, aid)
     if a.anulado:
         raise HTTPException(409, "Apontamento já anulado.")
@@ -401,7 +399,7 @@ def fechar_ocorrencia(cid: int, dados: FecharOcorrenciaIn, ctx: Ctx = Depends(ge
 
 
 @router.post("/ocorrencias/{cid}/anular", response_model=OcorrenciaOut)
-def anular_ocorrencia(cid: int, dados: AnularIn, ctx: Ctx = Depends(requer_gestor)):
+def anular_ocorrencia(cid: int, dados: AnularIn, ctx: Ctx = Depends(get_ctx)):
     c = ctx.obter(Ocorrencia, cid)
     if c.anulada:
         raise HTTPException(409, "Ocorrência já anulada.")

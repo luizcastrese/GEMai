@@ -13,7 +13,7 @@ import anthropic
 
 from ...config import get_settings
 from ..modelo_tempo import ModeloTempoIA
-from .esquemas import AnaliseTexto, EstruturaProposta, ListaPerguntas
+from .esquemas import AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, ListaPerguntas, PlanoProposta
 
 NOME = "claude"
 
@@ -90,6 +90,27 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         "caminhada), declare-o em 'premissas'. NÃO crie elemento para algo cujo dado falte: liste em 'dados_faltantes'. "
         "Defina também os marcos de início e fim do apontamento e a unidade de contagem, para que o tempo medido seja "
         "comparável ao modelo. Informe a confiança (baixa/media/alta) com honestidade e justifique em português.", ctx, ModeloTempoIA)
+
+
+def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
+    return _chamar(
+        "Liste os COMPONENTES do produto descrito (nome, quantidade por unidade do produto, material, grupo/subconjunto, medidas em metros, "
+        "furos e metros de borda quando informados) e como se LIGAM (componente, ligado a, método entre parafuso/cavilha/minifix/dobradica/"
+        "corredica/cola/prego/encaixe/puxador/outro e nº de fixadores). Use SOMENTE o que o texto informar: medidas, pesos e fixadores que "
+        "faltarem ficam vazios e entram em 'dados_faltantes'.", ctx, EstruturaProdutoIA)
+
+
+def planejar(ctx: dict) -> PlanoProposta:
+    return _chamar(
+        "Monte o PLANO DE TRABALHO para produzir a quantidade pedida do produto, em passos sequenciais: movimentação de materiais, "
+        "usinagem (corte, borda, furação) nos equipamentos cadastrados, montagem por subconjunto, montagem final e conferência. "
+        "Cada passo traz componentes, quantidade (peças nos passos de usinagem/movimentação; unidades do produto nos de montagem), "
+        "equipamento, locais de origem/destino (use os nomes cadastrados), pessoas e ELEMENTOS DE TEMPO com os métodos fechados: 'fixo' "
+        "(a_min), 'linear_driver', 'deslocamento' (distância vem dos locais; informe velocidade_m_min, itens_por_viagem), "
+        "'capacidade_recurso' (capacidade do equipamento; depende_operador=false) e 'indices_most' (índices só em 0,1,3,6,10,16). "
+        "Considere carga (peso por pessoa), distâncias e a tabela de referências recebida. NÃO invente medidas, pesos, capacidades nem "
+        "distâncias ausentes: liste em 'dados_faltantes'. Declare premissas e a confiança. Sexo/estatura/peso corporal NÃO alteram tempo. "
+        "O sistema aplica tolerâncias, ritmo, ambiente e jornada e faz as contas.", ctx, PlanoProposta)
 
 
 def analisar(tipo: str, fatos: dict) -> AnaliseTexto:

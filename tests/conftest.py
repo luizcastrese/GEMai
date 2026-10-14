@@ -51,6 +51,10 @@ class Sessao:
     def __init__(self, client, token, usuario):
         self.c, self.usuario, self.h = client, usuario, {"Authorization": f"Bearer {token}"}
 
+    @property
+    def unidade_id(self) -> int:
+        return self.get("/unidades").json()[0]["id"]
+
     def get(self, url, **kw):
         return self.c.get(f"/api/v1{url}", headers=self.h, **kw)
 
@@ -74,9 +78,10 @@ def registrar(client, nome="Empresa A", email=None):
     return Sessao(client, d["access_token"], d["usuario"])
 
 
-def criar_usuario(admin: Sessao, perfil, email, unidades):
-    r = admin.post("/usuarios", {"nome": perfil.title(), "email": email, "senha": SENHA,
-                                 "perfil": perfil, "unidade_ids": unidades})
+def criar_usuario(admin: Sessao, email, unidades=()):
+    """Cria outro usuário da mesma empresa (todos têm o mesmo acesso; `unidades` opcionalmente restringe)."""
+    r = admin.post("/usuarios", {"nome": email.split("@")[0].title(), "email": email, "senha": SENHA,
+                                 "unidade_ids": list(unidades)})
     assert r.status_code == 201, r.text
     login = admin.c.post("/api/v1/auth/login", json={"email": email, "senha": SENHA})
     assert login.status_code == 200, login.text
@@ -91,17 +96,17 @@ def admin(client):
 
 @pytest.fixture()
 def unidade_id(admin):
-    return admin.usuario["unidade_ids"][0]
+    return admin.unidade_id
 
 
 @pytest.fixture()
 def gestor(admin, unidade_id):
-    return criar_usuario(admin, "gestor", "gestor@a.com", [unidade_id])
+    return criar_usuario(admin, "gestor@a.com", [unidade_id])
 
 
 @pytest.fixture()
 def operador(admin, unidade_id):
-    return criar_usuario(admin, "operador", "op@a.com", [unidade_id])
+    return criar_usuario(admin, "op@a.com", [unidade_id])
 
 
 def montar_processo(gestor: Sessao, unidade_id: int, *, tempo_unit=2.0, tempo_prep=10.0, publicar=True):

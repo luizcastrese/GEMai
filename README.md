@@ -9,17 +9,24 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 - Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
 - **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
 
-## Experiência do usuário: simples por padrão, técnica sob demanda
+## Experiência do usuário: um só tipo de usuário, simples por padrão
 
-O usuário comum **não precisa saber o que há por trás**. A interface fala a língua da operação e esconde a engenharia:
+Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-| Quem | O que vê |
-|---|---|
-| **Gestor** | **Início** com "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar), atalhos e 4 números. Um assistente para **configurar com a IA**. Em cada processo, um checklist "**Está tudo pronto?**" em português comum e **um único botão Publicar** (a IA prevê o tempo das tarefas na publicação). Quem já sabe o tempo usa **"Já sei o tempo"** e ele passa a valer no lugar da IA |
-| **Operador** | **Minha fila**: ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar". Nada de tipos, fórmulas ou parâmetros |
-| **Especialista** (opção "Modo especialista" no topo) | Tolerâncias, composição do tempo por elemento, NIOSH/MOST, perfis de mão de obra, parâmetros versionados, sugestões da IA, análises completas e auditoria |
+- **Início:** "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, contorno físico incompleto), atalhos e poucos números.
+- **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
+- **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
+  1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **peças por hora** de cada equipamento; 4. por tarefa: equipamento, de onde sai, para onde vai e **peso da peça**.
+  A IA já pergunta isso no diagnóstico e cria os locais citados. Dados opcionais (dimensões, ruído, temperatura…) ficam fora do mínimo. O contorno pode ser corrigido a qualquer momento, inclusive em processo publicado.
+- **Processo:** checklist "Está tudo pronto?" em português comum e um **único Publicar** (a IA prevê o tempo das tarefas na publicação). **A confirmação das previsões é manual**: botão "Confirmar previsões". "Já sei o tempo" substitui a estimativa da IA por um tempo informado.
+- **Minha fila:** ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar".
+- **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
 
-Regras dessa camada: o **alerta de segurança** (carga acima do limite, ruído, esforço) aparece para todos, **em linguagem simples**; o resto do técnico fica só no modo especialista. Os textos das pendências vêm do backend já separados por categoria (`simples`, `seguranca`, `tecnico`).
+Regras que substituem os papéis:
+- **Dois olhos nos registros de produção:** quem registrou um apontamento não o aprova sozinho, a menos que a equipe tenha uma só pessoa. Só histórico conferido por outra pessoa melhora as estimativas.
+- **A equipe precisa de ao menos uma pessoa ativa;** ninguém desativa a si mesmo.
+- **Unidades:** por padrão todos acessam todas as unidades; opcionalmente uma pessoa pode ser restrita a algumas (redes com várias unidades).
+- Alertas de segurança (carga, ruído, esforço) aparecem para todos, em linguagem simples; a referência normativa fica nos detalhes técnicos.
 
 ## Gêmeo digital: como o tempo planejado nasce
 
@@ -67,6 +74,30 @@ O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Erg
 O provedor local usa referências genéricas (caminhada 75 m/min, carga manual 20 kg/pessoa, manuseio 0,15 min + 0,012 min/kg,
 preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, o modelo é derivado do contexto da empresa.
 
+## Do produto ao plano de trabalho
+
+Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de trabalho → Ordem de produção**.
+
+1. **Produto:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
+   parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,
+   3 prateleiras…"): a IA **propõe** a lista, o usuário confere e só então ela é gravada (`POST /produtos/{id}/interpretar` não grava nada).
+2. **Contorno físico:** locais (com tipo: estoque, montagem…), distâncias, equipamentos (*para que serve* + peças/h) e, se quiser, tempos de montagem da própria
+   oficina e condições do ambiente. O que não for informado vira **pendência**, nunca um valor inventado.
+3. **Plano de trabalho** (`POST /planos`): a IA (ou o provedor local, por regras) **propõe os passos** — transporte do estoque, usinagem (corte, borda, furação),
+   montagem por subconjunto, montagem final e conferência — com elementos de tempo do **vocabulário fechado**. O **sistema calcula** cada tempo e considera:
+   movimentação (distância e carga por viagem; mais pessoas quando a peça passa de 20 kg/pessoa), capacidade dos equipamentos, ligações/fixadores,
+   tolerâncias (pessoal 5 % + fadiga 4 %, OIT, + a folga do ambiente **se o usuário informar**), ritmo do perfil (só no que depende do operador),
+   alertas de carga (CLT), ruído (NR-15) e temperatura extrema, e **agenda os passos na jornada** (blocos de horário, intervalos, só dias úteis), com avisos
+   de jornada/intervalo (CLT arts. 58/59/71 — conferir com jurídico/SESMT). Fadiga acumulada por hora trabalhada só entra se o usuário informar o percentual.
+4. **Saída:** passos com início/fim previstos, tempo de trabalho, pessoas-hora, término e dias; **imprimir** e **planilha CSV** (protegida contra injeção de fórmulas).
+   O plano nasce como **rascunho**; a **confirmação é manual**. Plano confirmado → **ordem de produção** (`POST /planos/{id}/gerar-ordem`), cujos passos
+   ficam com fonte `plano`; passos sem tempo entram como "sem base". Depois os apontamentos reais permitem o planejado × realizado.
+
+Limites assumidos (declarados na tela e nas premissas do plano): sequência única de passos (sem trabalho em paralelo entre passos); tempos de montagem e
+conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
+declare é descartada) porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
+Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
+
 ## Rodando
 
 ```bash
@@ -90,6 +121,7 @@ e ponha um proxy reverso com HTTPS na frente.
 | Tela 2 – Diagnóstico inteligente | Perguntas adaptativas por grupo (11 grupos), respostas gravadas (`/unidades/{id}/diagnostico`) |
 | Tela 3 – Estrutura automática | Proposta da IA (processo › etapas › operações, recursos, materiais, indicadores, etapas possivelmente omitidas), **editável** antes de aprovar; cria **rascunho** |
 | Tela 4 – Recursos | Ficha do recurso (capacidade, espaço onde está); tempo médio e de preparação **calculados do histórico aprovado** |
+| (novo) Produto → plano | Componentes, ligações, plano de trabalho com horários, ordem a partir do plano — ver seção acima |
 | (novo) Gêmeo digital | Espaços, distâncias, modelo de tempo por operação, simulação (what-if), prontidão e acurácia — ver seção acima |
 | Tela 5 – Ordem | Roteiro copiado do processo ativo, estimativa por operação, status planejada → liberada → em produção ⇄ parada → concluída/cancelada |
 | §10 Tempo e cálculo | `app/services/timecalc.py` — fórmulas configuráveis por operação (`linear`, `lote`, `fixo`) |
@@ -113,20 +145,21 @@ e ponha um proxy reverso com HTTPS na frente.
 ## Segurança (uso por terceiros)
 
 - **Isolamento multiempresa:** toda tabela de negócio tem `empresa_id`; todo acesso passa por `Ctx` (`app/deps.py`) que filtra por empresa e, para gestor/operador, pelas **unidades atribuídas**. Recurso de outro tenant responde 404. Há testes dedicados (`tests/test_tenancy.py`).
-- Perfis: **admin** (tudo da empresa), **gestor** (edita/aprova nas suas unidades), **operador** (fila e apontamentos próprios).
+- **Um único tipo de usuário** por empresa (sem papéis). O isolamento entre empresas continua rígido; veja a regra dos "dois olhos" e a restrição opcional por unidade acima. Qualquer pessoa da equipe gerencia usuários e vê o histórico — trate o acesso como de confiança dentro da empresa.
 - Senhas com Argon2id; política mínima; bloqueio temporário após falhas; mensagens/tempos iguais para usuário inexistente; JWT curto com `token_versao` (trocar senha, desativar ou mudar perfil derruba sessões).
 - Entradas validadas (`extra="forbid"` impede injetar `empresa_id`), limite de corpo de 1 MB, CSP estrita, `X-Frame-Options`, HSTS em produção, `/docs` desligado em produção, e a UI nunca usa `innerHTML`.
 - Em produção a aplicação **não inicia** sem `ERP_SECRET_KEY` forte.
-- **IA externa só com consentimento:** o admin precisa habilitar "IA externa" na empresa **e** o servidor precisa ter `ERP_ANTHROPIC_API_KEY`. Textos da empresa vão ao modelo como *dados* (não instruções), a saída é validada por schema e saneada, e falha do provedor cai para o provedor local.
-- Auditoria append-only (`/auditoria`, admin) com antes/depois, usuário e IP.
+- **IA externa só com consentimento:** a empresa precisa habilitar "IA externa" na empresa **e** o servidor precisa ter `ERP_ANTHROPIC_API_KEY`. Textos da empresa vão ao modelo como *dados* (não instruções), a saída é validada por schema e saneada, e falha do provedor cai para o provedor local.
+- Auditoria append-only (`/auditoria`, visível a toda a equipe) com antes/depois, usuário e IP.
 
 ### Limitações conhecidas / antes de abrir a terceiros em produção
 
 - O limitador de tentativas é **em memória** (por processo). Com várias instâncias, use também o limitador do proxy/WAF ou troque por Redis.
-- Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: o admin define/redefine senhas. Se for relevante, são os próximos passos naturais.
+- Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: qualquer pessoa da equipe define/redefine senhas. Se for relevante, são os próximos passos naturais.
+- Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 79 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital e fatores humanos). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 107 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

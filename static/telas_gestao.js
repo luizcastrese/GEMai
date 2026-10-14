@@ -167,10 +167,8 @@ async function telaEstrutura(area, u, ir) {
     if (!await tentar(() => patch(`/recomendacoes/${rec.id}`, { conteudo: c }))) return;
     const r = await tentar(() => post(`/recomendacoes/${rec.id}/aprovar`, { observacao: 'Revisada no assistente de implantação.' }));
     if (r) {
-      toast('Processo montado. Confira e publique: a IA prevê o tempo de cada tarefa na publicação.');
-      const ps = await get(`/processos${qs({ unidade_id: u.id, status: 'rascunho' })}`);
-      const novo = ps.filter((x) => x.origem === 'ia').sort((a, b) => b.id - a.id)[0];
-      location.hash = novo ? `#/processos/${novo.id}` : '#/processos';
+      toast('Processo montado. Agora informe o contorno físico mínimo para a IA prever os tempos.');
+      location.hash = '#/contorno';
     }
   };
   montar(area, geradora, avisoIA(rec.justificativa), h('p', { class: 'muted small' }, `Fonte: ${rec.provedor}. ${c.observacoes || ''}`), editor,
