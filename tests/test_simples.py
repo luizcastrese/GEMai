@@ -19,7 +19,7 @@ def _cenario(gestor, uid):
 
 def test_inicio_vazio_orienta_a_trilha(gestor, operador):
     acoes = gestor.get("/inicio").json()["acoes"]
-    assert [a["codigo"] for a in acoes] == ["proximo"] and acoes[0]["link"] == "#/preparar/atividades"
+    assert [a["codigo"] for a in acoes] == ["proximo"] and acoes[0]["link"] == "#/itens"
     assert [a["codigo"] for a in operador.get("/inicio").json()["acoes"]] == ["proximo"]  # mesma tela para todos
 
 

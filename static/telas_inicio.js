@@ -1,17 +1,14 @@
 import { get, qs } from './api.js';
 import { estado } from './estado.js';
-import { faixaTrilha } from './telas_jornada.js';
 import { fmtPct, h, kpi, montar, tentar } from './ui.js';
 
-// Tela inicial: o que precisa de atenção agora, em linguagem comum. O primeiro item é sempre o próximo passo da trilha.
+// Tela inicial: o que precisa de atenção agora, em linguagem comum. O primeiro item é sempre o próximo passo.
 export async function inicio(el) {
-  const [r, d, j] = await Promise.all([get(`/inicio${qs({ unidade_id: estado.unidadeId })}`), tentar(() => get(`/dashboard${qs({ unidade_id: estado.unidadeId })}`)),
-    tentar(() => get(`/jornada${qs({ unidade_id: estado.unidadeId })}`))]);
+  const [r, d] = await Promise.all([get(`/inicio${qs({ unidade_id: estado.unidadeId })}`), tentar(() => get(`/dashboard${qs({ unidade_id: estado.unidadeId })}`))]);
   const n = r.numeros || {};
   const eff = d?.planejado_x_realizado?.eficiencia_pct;
   const real = eff ? Math.round((100 / eff - 1) * 100) : null;
   montar(el, h('h1', null, `Olá, ${estado.usuario.nome.split(' ')[0]}`),
-    j && !j.completo ? [h('h2', null, 'Preparação da operação'), faixaTrilha(j, null)] : null,
     h('h2', null, 'O que precisa da sua atenção'),
     r.acoes.length ? r.acoes.map((a) => h('div', { class: `card acao ${a.nivel}` }, h('div', { class: 't' }, a.titulo),
       h('a', { class: `btn${a.codigo === 'proximo' ? ' pri big' : ''}`, href: a.link }, a.botao || 'Ver')))
@@ -24,5 +21,5 @@ export async function inicio(el) {
       real === null ? null : kpi('Tempo real × previsto', real === 0 ? 'No previsto' : `${real > 0 ? '+' : ''}${real}%`, real > 10 ? 'bad' : '')),
     h('h2', null, 'Atalhos'),
     h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/planos' }, 'Planos de trabalho'), h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'),
-      h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/preparar' }, 'Preparar a operação')));
+      h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/itens' }, 'Itens e peças')));
 }

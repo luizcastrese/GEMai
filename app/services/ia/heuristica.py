@@ -406,8 +406,6 @@ def planejar(ctx: dict) -> PlanoProposta:
     refs = ctx["referencias"]
     pessoas_eq = max(int(ctx.get("pessoas") or 1), 1)
     espacos, recursos = ctx.get("espacos", []), ctx.get("recursos", [])
-    ativ = ctx.get("atividades")  # atividades da operação; None = todas
-    faz = lambda codigo: ativ is None or codigo in ativ  # noqa: E731
     prem: list[str] = []
     faltam: list[str] = []
     passos: list[PassoIA] = []
@@ -430,7 +428,7 @@ def planejar(ctx: dict) -> PlanoProposta:
         return max(pessoas_eq, math.ceil(peso / REFERENCIAS["carga_manual_max_kg"])) if peso else pessoas_eq
 
     def mover(origem, destino, nomes, pecas, peso, titulo):
-        if not faz("movimentacao") or not origem or not destino or origem == destino:
+        if not origem or not destino or origem == destino:
             return
         pes = pessoas_para(peso)
         itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pes // peso), 1) if peso else 1
@@ -459,13 +457,9 @@ def planejar(ctx: dict) -> PlanoProposta:
             continue
         pecas = sum(c["qtd"] for c in alvo) * N
         nomes = [c["nome"] for c in alvo]
-        if not faz(funcao):
-            if funcao != "corte":  # o produto pede a atividade, mas ela não está na operação: o tempo ficaria subestimado
-                faltam.append(f"O produto pede '{verbo.lower()}', que não está entre as atividades da operação")
-            continue
         eq = equip(funcao)
         if eq is None:
-            faltam.append(f"Equipamento para '{verbo.lower()}' (etapa Agentes transformadores)")
+            faltam.append(f"Equipamento para '{verbo.lower()}' (informe a máquina na seção Agentes do item)")
             passos.append(PassoIA(nome=f"{verbo} {pecas:g} peças", tipo=funcao, componentes=nomes, qtd_pecas=pecas))
             continue
         mover(local_atual, eq.get("espaco"), nomes, pecas, peso_medio, f"Levar peças até {eq.get('espaco')} ({verbo.lower()})")
@@ -502,7 +496,7 @@ def planejar(ctx: dict) -> PlanoProposta:
                                      a_min=round(n * refs[chave], 4), justificativa=f"{refs[chave]:g} min por {metodo} ({origem})."))
         return els
 
-    for g in (grupos if faz("montagem") else []):
+    for g in grupos:
         membros = [c for c in comps if (c.get("grupo") or "Corpo") == g]
         nomes = [c["nome"] for c in membros]
         l_g = [l for l in ligs if grupo_de.get(l["componente"]) == g and (not l.get("ligado_a") or grupo_de.get(l["ligado_a"]) == g)]
@@ -515,17 +509,16 @@ def planejar(ctx: dict) -> PlanoProposta:
         passos.append(PassoIA(nome=f"Montar {g}", tipo="montagem", grupo=g, componentes=nomes, qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem,
                               pessoas=pessoas_para(max(pesos_g) if pesos_g else None), elementos=elementos_montagem(l_g, pecas_g, g)))
     l_final = [l for l in ligs if l.get("ligado_a") and grupo_de.get(l["componente"]) != grupo_de.get(l["ligado_a"])]
-    if faz("montagem") and (l_final or len(grupos) > 1):
+    if l_final or len(grupos) > 1:
         if not l_final:
             faltam.append("Como os subconjuntos se ligam na montagem final (método e nº de fixadores)")
         peso_conj = sum((c.get("peso_kg") or 0) * c["qtd"] for c in comps)
         passos.append(PassoIA(nome="Montagem final", tipo="montagem", grupo="Final", componentes=[g for g in grupos], qtd_pecas=N,
                               espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_para(peso_conj or None),
                               elementos=elementos_montagem(l_final, max(len(grupos) - 1, 1), "final")))
-    if faz("inspecao"):
-        passos.append(PassoIA(nome="Conferência final", tipo="inspecao", qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem, pessoas=1,
-                              elementos=[ElementoTempo(nome="Conferir acabamento, folgas e funcionamento", tipo="inspecao", metodo="fixo", por_unidade=True,
-                                                       a_min=refs["conferencia_final"], justificativa="Referência genérica; ajuste ao seu padrão de qualidade.")]))
+    passos.append(PassoIA(nome="Conferência final", tipo="inspecao", qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem, pessoas=1,
+                          elementos=[ElementoTempo(nome="Conferir acabamento, folgas e funcionamento", tipo="inspecao", metodo="fixo", por_unidade=True,
+                                                   a_min=refs["conferencia_final"], justificativa="Referência genérica; ajuste ao seu padrão de qualidade.")]))
     prem.append("Pressupõe uma equipe executando os passos em sequência (sem trabalho em paralelo entre passos).")
     prem.append("Tempos de montagem e conferência partem de referências genéricas (ou da sua tabela); movimentação usa caminhada a "
                 f"{REFERENCIAS['velocidade_caminhada_m_min']:g} m/min. Substitua por medições assim que existirem.")

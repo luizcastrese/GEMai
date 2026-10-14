@@ -13,18 +13,16 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-- **Trilha guiada ("Preparar a operação"):** a plataforma conduz a pessoa por quatro etapas, sempre na mesma ordem. Cada etapa só abre quando a anterior não tem
-  pendências (as etapas seguintes aparecem trancadas no menu e a URL direta volta para a etapa que falta). Nada de escolher "o que fazer agora":
-  1. **Atividades** — o que a operação faz (transporte interno, corte, colagem de borda, furação, montagem, conferência). Cada atividade diz o que vai pedir
-     de entradas, agentes e ambiente;
-  2. **Entradas** — o produto: componentes (material, medidas, peso, furos, borda) e como se ligam. Pode ser descrito em texto livre; a IA propõe e a pessoa confere;
-  3. **Agentes transformadores** — mão de obra (nº de pessoas e horário de trabalho) e a máquina de cada atividade que usa equipamento, com as peças por hora;
-  4. **Ambiente** — locais (estoque e montagem obrigatórios), em que local fica cada máquina e a distância entre os locais que o transporte usa.
-  O que cada etapa cobra depende das atividades escolhidas (sem furação, não pede furadeira). Voltar e mudar uma etapa trava de novo as seguintes se surgir pendência.
-- **Início:** o primeiro item é sempre o **próximo passo** (a etapa da trilha que falta; depois conferir o plano, gerar a ordem, liberá-la), seguido de alertas
+- **Item e peças (tela única):** a pessoa informa o **item final** (ex.: armário) e as **peças** que o compõem (material, medidas, peso, furos, borda, como se ligam) —
+  ou descreve em texto e a IA propõe a lista. Na mesma página informa os **agentes** (quantas pessoas, horário, a máquina de cada atividade e quantas peças por hora faz)
+  e o **ambiente** (locais, onde fica cada máquina, distâncias; calor e ruído são opcionais).
+- **As atividades não são perguntadas:** saem das peças (furos → furação; borda → colagem de borda; várias peças → montagem…). No topo da página a plataforma mostra as
+  atividades deduzidas e, em cada seção, o que falta (ex.: "Cadastre a máquina que faz furação"), cobrando só o que as atividades deduzidas exigem.
+- **Plano de trabalho:** botão na própria página do item. O sistema monta os passos e **calcula o tempo de cada um** com as peças, máquinas, pessoas e distâncias; o que
+  ainda não tem dado aparece como "sem tempo", nunca como valor inventado. A equipe e o horário vêm da seção Agentes. **A confirmação é manual.**
+  Plano confirmado → **ordem de produção** (as ordens nascem de planos; não há criação avulsa).
+- **Início:** o primeiro item é sempre o **próximo passo** (informar o item; gerar o plano; conferir o plano; gerar a ordem; liberá-la), seguido de alertas
   (ordens atrasadas, paradas, registros para aprovar) e poucos números.
-- **Plano de trabalho:** só pode ser gerado com a trilha completa e para um produto sem pendências. A equipe e o horário vêm da etapa 3; a pessoa informa só a quantidade e
-  quando começa. **A confirmação é manual.** Plano confirmado → **ordem de produção** (as ordens nascem de planos, não há criação avulsa).
 - **Minha fila:** ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar".
 - **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
 
@@ -82,9 +80,9 @@ preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**
 
 ## Do produto ao plano de trabalho
 
-Fluxo único da plataforma: **Atividades → Entradas (produto) → Agentes transformadores → Ambiente → Plano de trabalho → Ordem de produção** (ver "Trilha guiada" acima).
+Fluxo único da plataforma: **Item e peças + Agentes + Ambiente → (atividades deduzidas) → Plano de trabalho com tempos → Ordem de produção**.
 
-1. **Entradas (produto):** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
+1. **Item e peças:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
    parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,
    3 prateleiras…"): a IA **propõe** a lista, o usuário confere e só então ela é gravada (`POST /produtos/{id}/interpretar` não grava nada).
 2. **Agentes e ambiente:** equipe e horário, equipamentos (*para que serve* + peças/h), locais (com tipo: estoque, montagem…), distâncias e, se quiser, tempos de montagem
@@ -105,8 +103,8 @@ declare é descartada) porque ainda não há histórico medido de passos de plan
 Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
 
 > **API do fluxo antigo.** Os endpoints de implantação genérica (diagnóstico/estrutura por IA, processos e operações, gêmeo digital por operação, ordem a partir de processo)
-> continuam na API e nos testes, mas **não têm mais tela**: a interface só oferece a trilha acima. A API segue tolerante para unidades anteriores à trilha
-> (`atividades` nulo); numa unidade que já definiu as atividades, `POST /planos` responde 409 com o que falta.
+> continuam na API e nos testes, mas **não têm mais tela**: a interface só oferece o fluxo acima. `GET /produtos/{id}/preparo?unidade_id=` devolve as atividades
+> deduzidas e o que falta em cada seção; `POST /planos` nunca bloqueia, ele lista as pendências no próprio plano.
 
 ## Rodando
 
@@ -169,7 +167,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 116 testes automatizados (SQLite) + percurso completo no navegador (trilha guiada → plano → ordem liberada). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 116 testes automatizados (SQLite) + percurso completo no navegador (armário → peças → agentes → ambiente → plano com tempo). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

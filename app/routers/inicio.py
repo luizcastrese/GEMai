@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from ..constants import ORDEM_ABERTA
 from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Ocorrencia, Ordem
-from ..services import jornada
+from ..services import preparo
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["inicio"])
@@ -48,9 +48,9 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     if a_aprovar:
         acoes.append({"codigo": "aprovar", "nivel": "acao", "link": "#/aprovacoes",
                       "titulo": _plural(a_aprovar, "registro de produção para aprovar", "registros de produção para aprovar")})
-    # O próximo passo da trilha (etapas da preparação, depois plano → ordem). Uma unidade por vez.
+    # O próximo passo: item e peças → plano → ordem → liberar. Uma unidade por vez.
     if unidade_id is not None or len(unidades) == 1:
-        proximo = jornada.calcular(ctx.db, ctx.exige_unidade(unidades[0]))["proximo"]
+        proximo = preparo.proximo(ctx.db, ctx.exige_unidade(unidades[0]))
         if proximo:
             acoes.append({"codigo": "proximo", "nivel": "acao", "link": proximo["link"], "titulo": proximo["titulo"], "botao": proximo["botao"]})
     return {"acoes": acoes, "numeros": numeros}

@@ -8,29 +8,23 @@ import * as prod from './telas_prod.js';
 import * as admin from './telas_admin.js';
 import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
-import * as jornada from './telas_jornada.js';
-import { carregarTrilha } from './telas_jornada.js';
+import * as item from './telas_item.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
 
 // Um único tipo de usuário: todos veem as mesmas telas.
 const ROTAS = [
-  // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?, código da etapa da trilha?]]
+  // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
   [/^#\/inicio$/, inicio.inicio, ['', 'Início', '#/inicio']],
-  // Trilha guiada: Atividades → Entradas → Agentes transformadores → Ambiente
-  [/^#\/preparar$/, jornada.preparar],
-  [/^#\/preparar\/atividades$/, jornada.atividades, ['Preparar a operação', 'Atividades', '#/preparar/atividades', false, 'atividades']],
-  [/^#\/preparar\/entradas$/, jornada.entradas, ['Preparar a operação', 'Entradas', '#/preparar/entradas', false, 'entradas']],
-  [/^#\/preparar\/entradas\/(\d+)$/, plano.produtoDetalhe],
-  [/^#\/preparar\/agentes$/, jornada.agentes, ['Preparar a operação', 'Agentes transformadores', '#/preparar/agentes', false, 'agentes']],
-  [/^#\/preparar\/ambiente$/, jornada.ambiente, ['Preparar a operação', 'Ambiente', '#/preparar/ambiente', false, 'ambiente']],
-  [/^#\/planos$/, plano.planos, ['Dia a dia', 'Planos de trabalho', '#/planos']],
+  [/^#\/itens$/, item.itens, ['Planejar', 'Itens e peças', '#/itens']],
+  [/^#\/itens\/(\d+)$/, item.item],
+  [/^#\/planos$/, plano.planos, ['Planejar', 'Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
-  [/^#\/ordens$/, prod.ordens, ['Dia a dia', 'Ordens de produção', '#/ordens']],
+  [/^#\/ordens$/, prod.ordens, ['Produzir', 'Ordens de produção', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
-  [/^#\/fila$/, prod.fila, ['Dia a dia', 'Minha fila', '#/fila']],
-  [/^#\/aprovacoes$/, prod.aprovacoes, ['Dia a dia', 'Conferir registros', '#/aprovacoes']],
+  [/^#\/fila$/, prod.fila, ['Produzir', 'Minha fila', '#/fila']],
+  [/^#\/aprovacoes$/, prod.aprovacoes, ['Produzir', 'Conferir registros', '#/aprovacoes']],
   [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/cadastros$/, proc.cadastros],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
@@ -48,7 +42,6 @@ async function rotear() {
   for (const [re, fn] of ROTAS) {
     const m = hash.match(re);
     if (!m) continue;
-    try { estado.trilha = await carregarTrilha(); } catch { /* sem unidade ou sem rede: o menu cai no estado anterior */ }
     const conteudo = h('div', null, h('p', { class: 'muted' }, 'Carregando…'));
     montar(raiz, casca(conteudo, hash));
     try { limparTela = (await fn(conteudo, ...m.slice(1))) || null; } catch (e) { montar(conteudo, h('div', { class: 'aviso' }, e.message)); }
@@ -62,9 +55,7 @@ function casca(conteudo, hash) {
   ROTAS.filter((r) => r[2] && (!r[2][3] || estado.avancado)).forEach((r) => {
     const [grupo, rotulo, href] = r[2];
     const ativo = hash === href || (hash.startsWith(`${href}/`));
-    const passo = r[2][4] && estado.trilha?.passos.find((p) => p.codigo === r[2][4]);
-    if (passo?.estado === 'bloqueado') return (grupos[grupo] ||= []).push(h('span', { class: 'bloq', title: 'Complete a etapa anterior' }, `🔒 ${rotulo}`));
-    (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, passo ? `${passo.estado === 'concluido' ? '✓' : '●'} ${rotulo}` : rotulo));
+    (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
   });
   const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'ERP de Produção'),
     Object.entries(grupos).map(([g, links]) => [g ? h('div', { class: 'grp' }, g) : null, ...links]));

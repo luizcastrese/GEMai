@@ -14,7 +14,7 @@ from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoP
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
                        PlanoPassoOut, ReferenciaIn, ReferenciaOut)
-from ..services import ia, jornada, modelo_tempo, plano as svc
+from ..services import ia, modelo_tempo, plano as svc, preparo
 from ..services.dashboard import tz_empresa
 from .ordens import _numero, ordem_out
 
@@ -118,6 +118,12 @@ def remover_ligacao(pid: int, lid: int, ctx: Ctx = Depends(get_ctx)):
     ctx.auditar("ligacao.remover", "ligacao", l.id, audit.snap(l), None)
     ctx.db.delete(l)
     ctx.db.commit()
+
+
+@router.get("/produtos/{pid}/preparo")
+def preparo_do_item(pid: int, unidade_id: int, ctx: Ctx = Depends(get_ctx)):
+    """O que a plataforma deduziu do item (atividades) e o que falta em cada seção para o tempo ser calculado."""
+    return preparo.calcular(ctx.db, ctx.exige_unidade(unidade_id), ctx.obter(Produto, pid))
 
 
 @router.post("/produtos/{pid}/interpretar", response_model=InterpretarProdutoOut)
@@ -225,7 +231,7 @@ def _plano(ctx: Ctx, pid: int) -> PlanoTrabalho:
 
 
 def _cfg(dados: PlanoGerarIn, unidade: Unidade) -> dict:
-    """Equipe e horário vêm da unidade (etapa "Agentes transformadores"), a menos que o pedido diga outra coisa."""
+    """Equipe e horário vêm da unidade (seção Agentes do item), a menos que o pedido diga outra coisa."""
     informado = dados.model_fields_set
     jt = unidade.jornada or {}
     return {"nome": dados.nome, "inicio": dados.inicio,
@@ -235,25 +241,10 @@ def _cfg(dados: PlanoGerarIn, unidade: Unidade) -> dict:
             "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
 
 
-def _exige_trilha(ctx: Ctx, unidade: Unidade, produto: Produto) -> None:
-    """Unidade que já definiu as atividades segue a trilha: o plano só nasce com as 4 etapas completas
-    e com o produto escolhido sem pendências. (Unidades anteriores à trilha continuam tolerantes.)"""
-    if unidade.atividades is None:
-        return
-    t = jornada.calcular(ctx.db, unidade)
-    aberta = next((p for p in t["passos"] if not p["completo"]), None)
-    if aberta:
-        raise HTTPException(409, f"Complete antes a etapa {aberta['numero']} ({aberta['titulo']}): {' '.join(aberta['pendencias'][:3])}")
-    pend = jornada.pendencias_produto(ctx.db, produto, unidade.atividades)
-    if pend:
-        raise HTTPException(409, f"O produto '{produto.nome}' ainda tem pendências: {' '.join(pend[:3])}")
-
-
 @router.post("/planos", response_model=PlanoOut, status_code=201)
 def gerar_plano(dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
     unidade = ctx.exige_unidade(dados.unidade_id)
     produto = ctx.obter(Produto, dados.produto_id)
-    _exige_trilha(ctx, unidade, produto)
     plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(dados, unidade))
     ctx.auditar("plano.gerar", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "quantidade": dados.quantidade, "provedor": plano.provedor})
     ctx.db.commit()
@@ -285,7 +276,6 @@ def recalcular(pid: int, dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
     if dados.produto_id != p.produto_id or dados.unidade_id != p.unidade_id:
         raise HTTPException(422, "Produto e unidade não podem mudar ao recalcular.")
     unidade, produto = ctx.exige_unidade(p.unidade_id), ctx.obter(Produto, p.produto_id)
-    _exige_trilha(ctx, unidade, produto)
     svc.gerar(ctx, produto, dados.quantidade, p.unidade_id, _cfg(dados, unidade), plano=p)
     ctx.auditar("plano.recalcular", "plano_trabalho", p.id, None, {"quantidade": dados.quantidade, "provedor": p.provedor})
     ctx.db.commit()

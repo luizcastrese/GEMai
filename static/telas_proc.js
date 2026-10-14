@@ -3,7 +3,7 @@ import { estado } from './estado.js';
 import { formulario, h, modal, montar, tabela, tentar, toast, badge, fmtNum } from './ui.js';
 
 // Cadastros avançados (modo especialista): perfis de mão de obra, equipe, materiais e produtos em tabelas.
-// O caminho normal do dia a dia é a trilha "Preparar a operação"; aqui ficam só os ajustes finos.
+// O caminho normal é a tela do item (peças, agentes e ambiente); aqui ficam só os ajustes finos.
 const ENT = {
   recursos: { rot: 'Recursos', un: true, campos: [
     { k: 'nome', rotulo: 'Nome (ex.: Máquina 01)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['maquina', 'Máquina'], ['posto', 'Posto'], ['ferramenta', 'Ferramenta'], ['instalacao', 'Instalação']] },

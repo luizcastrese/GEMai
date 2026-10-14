@@ -106,7 +106,6 @@ class UnidadeIn(In):
     informacoes_disponiveis: Texto = ""
 
 
-AtividadeCodigo = Literal["movimentacao", "corte", "bordo", "furacao", "montagem", "inspecao"]
 _HHMM = Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
 
 
@@ -132,7 +131,6 @@ class UnidadeUpdate(In):
     objetivo: Texto | None = None
     principais_problemas: Texto | None = None
     informacoes_disponiveis: Texto | None = None
-    atividades: list[AtividadeCodigo] | None = Field(None, min_length=1, max_length=6)
     equipe_pessoas: int | None = Field(None, ge=1, le=50)
     jornada: JornadaTrabalho | None = None
     ativa: bool | None = None
@@ -145,7 +143,6 @@ class UnidadeOut(Out):
     objetivo: str
     principais_problemas: str
     informacoes_disponiveis: str
-    atividades: list[str] | None = None
     equipe_pessoas: int | None = None
     jornada: dict | None = None
     ativa: bool
