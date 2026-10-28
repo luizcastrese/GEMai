@@ -233,6 +233,13 @@ class Pessoa(Base):
     habilitacoes: Mapped[list] = mapped_column(JSON, default=list)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Ritmo individual: dado de DESEMPENHO pessoal (LGPD: finalidade, minimização). Serve só para normalizar o
+    # histórico de tempos (services/ritmo.py); não é ranking nem critério de avaliação. 100 = ritmo da equipe/normal.
+    perfil_id: Mapped[int | None] = mapped_column(ForeignKey("perfis_mao_de_obra.id", name="fk_pessoas_perfil"))
+    ritmo_pct: Mapped[float | None] = mapped_column(Float)
+    ritmo_origem: Mapped[str] = mapped_column(String(20), default="")  # "" | informado | calibrado
+    ritmo_amostras: Mapped[int] = mapped_column(Integer, default=0)
+    ritmo_calibrado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class Material(Base):
