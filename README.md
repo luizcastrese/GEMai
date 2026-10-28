@@ -42,7 +42,7 @@ item físico (peso, dimensões)    ┘     + dados faltantes)          FECHADO, 
 2. **Operação = composição de blocos:** função e nº de pessoas, equipamento, espaço de origem e destino, item e **marcos de início/fim do apontamento** (para o tempo medido ser comparável ao planejado).
 3. **Modelo de tempo (IA propõe):** decompõe a operação em elementos (`preparacao`, `deslocamento`, `manuseio`, `processamento`…) usando 4 métodos fechados — `fixo`, `linear_driver` (peso, área, comprimento, volume, distância), `deslocamento` e `capacidade_recurso`. Traz **premissas**, **confiança** e **dados faltantes**. Nada que a IA escreva é executado: o sistema calcula.
 4. **Sem dado, sem chute:** se falta distância, peso ou capacidade, o elemento **não vira zero**; o modelo fica incompleto e o sistema lista o que falta.
-5. **Prioridade do tempo planejado:** `histórico aprovado` > `parâmetro validado por pessoa` > `modelo da IA` (rotulado *validado* ou *não validado*) > `sem base`.
+5. **Prioridade do tempo planejado:** `histórico aprovado` (normalizado pelo ritmo e com as tolerâncias do modelo) > `parâmetro validado por pessoa` > `modelo da IA` (rotulado *validado* ou *não validado*) > `sem base`.
 6. **Prontidão do processo:** checagem determinística (e revisão narrativa por IA) apontando como o processo deve ser descrito e medido para os parâmetros ficarem consistentes.
 7. **Contraste e acurácia:** o painel mostra, por fonte (modelo IA, parâmetro, histórico), o desvio médio e o erro médio do planejado contra o real.
 
@@ -56,7 +56,7 @@ O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo norma
 | **Peso / tamanho do item** | Peso e dimensões do item típico (o do produto da ordem prevalece); alimentam manuseio, deslocamento (itens por viagem) e NIOSH | — |
 | **Carga manual** | Triagem **NIOSH** (RWL, índice de levantamento) com os multiplicadores HM/VM/DM/AM/FM/CM; LI > 1 gera alerta e uma tolerância de fadiga | NIOSH Pub. 94-110; tabelas FM/CM conferidas em fontes secundárias |
 | **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
-| **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
+| **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda. No modelo, o ritmo gera a previsão *para aquele ritmo* (padrão 100). No histórico, o ritmo **da pessoa** normaliza o que ela executou (ver abaixo) | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
 | **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %. Padrão: necessidades pessoais 5 % + fadiga básica 4 % + em pé 2 % | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
 | **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** |
 | **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
@@ -66,7 +66,33 @@ O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo norma
 Eles **não alteram o tempo nem medem produtividade** (há teste automatizado garantindo isso). O ritmo é calibrado por medição. Não use esses dados
 para decisões de contratação ou alocação de pessoas; se vincular perfis a pessoas reais, trate como dado pessoal (LGPD: finalidade, minimização e consentimento).
 
-**Ainda não coberto** (próximos passos): curva de aprendizagem/experiência como multiplicador, tabelas MTM-1 completas, RULA/REBA/OWAS, Snook & Ciriello
+#### Histórico normalizado pelo ritmo da pessoa
+
+O histórico **calibra** o modelo de tempo; não o substitui. Para cada operação com amostras suficientes, por apontamento aprovado e não anulado:
+
+```
+tempo observado ─► × (f·ritmo/100 + 1 − f) ─► tempo normal ─► mediana das amostras ─► × FT (tolerâncias do modelo) ─► tempo padrão
+```
+
+- `f` é a fração do tempo que depende do operador (minutos dos elementos com `depende_operador` ÷ total do modelo ativo, calculado com o contexto da operação). Sem modelo utilizável, `f = 1` e o sistema **avisa** ("assumido 100% dependente do operador").
+- A normalização é **por apontamento** (várias pessoas podem apontar a mesma ordem_operacao); só depois soma-se por ordem e obtém-se a amostra por unidade/lote.
+- **Ritmo efetivo** (função única `services/ritmo.ritmo_efetivo`): `pessoa.ritmo_pct` > `ritmo_pct` do perfil da pessoa > 100. Apontamento sem pessoa, ou de pessoa sem ritmo nem perfil, entra com 100 e é **contado num aviso** ("N de M apontamentos sem pessoa/ritmo, não normalizados").
+- **Tolerâncias:** com modelo ativo (validado, ou não validado se `ERP_USAR_MODELO_IA_NAO_VALIDADO=true`), aplica-se `FT = 1/(1 − Σp)` ao tempo normal (execução e preparação vindas do histórico). Sem modelo, **não se inventa tolerância**: o resultado é tempo normal, avisado como "não padrão". Uma preparação que vem do parâmetro validado (histórico de preparação insuficiente) entra como está, sem FT.
+- `fonte` continua `historico`. Se o modelo (a ritmo 100) e o histórico normalizado divergem mais de 30 %, vem um aviso de premissa possivelmente errada.
+
+**Ritmo por pessoa** (cadastro de pessoas: perfil e `ritmo_pct`, 50–150): informado à mão (`origem = informado`) ou **calibrado pela equipe** (`origem = calibrado`).
+`POST /pessoas/calibrar-ritmo` mostra a **prévia** sem gravar; com `"aplicar": true` grava (com auditoria). O sistema sugere, uma pessoa confirma; ritmo `informado` nunca é sobrescrito.
+Método: por operação com ≥ `ERP_MIN_AMOSTRAS_HISTORICO` amostras e 2+ pessoas, referência = mediana dos tempos por unidade; por pessoa e operação com ≥ `ERP_MIN_AMOSTRAS_RITMO` amostras (padrão 5),
+razão = referência ÷ mediana da pessoa; ritmo = mediana das razões × 100, limitado a 50–150, exigindo ≥ `ERP_MIN_OPERACOES_RITMO` operações distintas (padrão 1; **2 ou mais é mais robusto**).
+
+> **Esse ritmo é RELATIVO À EQUIPE** (a mediana da equipe vale 100). **Não é avaliação de ritmo no sentido OIT** (comparação com o ritmo normal de um operador qualificado, por observação cronometrada): uma equipe toda lenta ainda resulta em ritmos próximos de 100.
+> Serve só para normalizar o histórico.
+
+**Privacidade (LGPD):** o ritmo por pessoa é **dado de desempenho individual**. Não é usado nem exibido no dashboard nem em `gestao.py`, e a tela não ordena nem ranqueia pessoas por ritmo
+(fica sob "Mostrar detalhes técnicos"). Já `GET /analise/comparacao`, anterior a esta mudança, mostra o tempo mediano por pessoa: é dado de desempenho individual da mesma natureza; avalie se deve ficar disponível. Não use para contratação, alocação, remuneração ou avaliação; trate com finalidade, minimização e consentimento (mesma linha do aviso sobre sexo/porte acima).
+Experiência, sexo, estatura e peso continuam **sem** entrar como multiplicador de tempo.
+
+**Ainda não coberto** (próximos passos): curva de aprendizagem/experiência como multiplicador (não há coeficiente com fonte; a normalização usa só o ritmo medido), tabelas MTM-1 completas, RULA/REBA/OWAS, Snook & Ciriello
 (empurrar/puxar), exposição a calor (IBUTG), iluminação por tarefa, fadiga cumulativa por turno e calibração automática dos coeficientes por bloco.
 O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
 
@@ -136,9 +162,9 @@ e ponha um proxy reverso com HTTPS na frente.
 
 - **Origem do dado.** Todo parâmetro tem origem (`informado`, `medido`, `calculado`, `ia_sugerido`), status de validação e versão. Só parâmetro **vigente e validado** entra nas estimativas; sugestão da IA nunca entra sozinha.
 - **Tempo da IA é rotulado, nunca disfarçado.** A estimativa da IA vem do modelo de tempo, com fonte `modelo_ia`, flag de validação e composição por elemento. Sem modelo, parâmetro nem histórico (ou com dado físico faltando), a operação fica `sem_base`.
-- **Estimativa.** Histórico (mediana de apontamentos **aprovados**, mín. `ERP_MIN_AMOSTRAS_HISTORICO`) > parâmetro validado > modelo da IA > sem base. A fonte é exibida em cada operação. "Atualizar pelo histórico" grava nova versão do parâmetro, rastreável.
-- **Referências genéricas do provedor local** (velocidade de caminhada, carga manual, manuseio) são aproximações e não substituem estudo de tempos; valide ou substitua por medições. Para um modelo calibrado à sua empresa, use o provedor Claude e/ou um modelo manual.
-- **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. Fila entre operações é calculada (fim da anterior → início da próxima). Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
+- **Estimativa.** Histórico (apontamentos **aprovados** e não anulados, mín. `ERP_MIN_AMOSTRAS_HISTORICO`) > parâmetro validado > modelo da IA > sem base. A fonte é exibida em cada operação. O histórico é **normalizado pelo ritmo de quem executou** e recebe as **tolerâncias do modelo** (vira tempo padrão); sem modelo, é tempo normal e isso é avisado. "Atualizar pelo histórico" continua gravando a mediana **bruta** como nova versão do parâmetro, rastreável (não normaliza nem aplica tolerâncias).
+- **Referências genéricas do provedor local**- **Referências genéricas do provedor local** (velocidade de caminhada, carga manual, manuseio) são aproximações e não substituem estudo de tempos; valide ou substitua por medições. Para um modelo calibrado à sua empresa, use o provedor Claude e/ou um modelo manual.
+- **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. **Atenção:** o "realizado" segue sendo a soma BRUTA dos apontamentos, mas o planejado vindo do histórico agora é **tempo padrão** (normalizado pelo ritmo e acrescido das tolerâncias). O desvio deixa de ser só "erro de estimativa": trabalhar exatamente no tempo normal aparece como desvio negativo (realizado < padrão), e a eficiência passa de 100 %. Ordens e dados já gravados antes dessa mudança continuam com o planejado antigo; compare períodos com cuidado. Fila entre operações é calculada (fim da anterior → início da próxima). Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
 - **Versionamento de processo.** Cada versão é uma linha; só rascunho edita estrutura; ordens ficam presas à versão em que nasceram.
 - **Apontamentos nunca são apagados**, só anulados com motivo; operador só vê os próprios.
 
@@ -159,7 +185,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 107 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 127 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

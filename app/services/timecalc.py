@@ -4,7 +4,9 @@ Convenções (seção 10 do documento):
 - tempo apontado de uma operação = soma das durações dos apontamentos válidos;
 - tempo_realizado = preparação + execução + retrabalho (tempo de trabalho);
 - tempo_total     = tempo_realizado + espera;
-- desvio          = realizado - estimado (positivo = demorou mais que o previsto);
+- desvio          = realizado - estimado (positivo = demorou mais que o previsto). O realizado é a soma BRUTA dos
+                    apontamentos; o estimado vindo do histórico é tempo padrão (inclui tolerâncias), logo o desvio
+                    não mede só erro de estimativa;
 - eficiência (%)  = estimado / realizado * 100 (acima de 100 = mais rápido que o previsto).
 """
 from __future__ import annotations
