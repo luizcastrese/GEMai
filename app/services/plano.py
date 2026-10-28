@@ -1,9 +1,10 @@
 """Plano de trabalho: do produto (componentes + ligações) a passos com tempos e horários.
 
-Fluxo: componentes/ligações + contorno físico → IA propõe os PASSOS (ou o provedor local, por regras) →
-o SISTEMA calcula o tempo de cada passo (motor de vocabulário fechado, tolerâncias, ritmo, ambiente) →
-agenda na jornada (intervalos, dias úteis) e verifica limites. Nada é inventado em silêncio: o que faltar
-vira "dados faltantes" e o passo fica sem tempo.
+Fluxo: componentes/ligações + contorno físico → a IA (ou o provedor local) ESCOLHE MÓDULOS do catálogo e mapeia
+componentes, equipamentos e locais → o SISTEMA deriva as condições (medidas, pesos, distâncias, ficha técnica dos meios)
+e calcula o tempo de cada passo (módulos de vocabulário fechado, ritmo, tolerâncias) → agenda na jornada (intervalos,
+dias úteis) e verifica limites. Ninguém digita tempo e a IA não escreve tempos: o que faltar vira "dados faltantes"
+e o passo fica sem tempo.
 """
 from __future__ import annotations
 
@@ -17,11 +18,11 @@ from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
                       PlanoTrabalho, Produto, Recurso, ReferenciaTempo)
 from . import ergonomia, ia, modelo_tempo
+from .modulos import catalogo, entradas, motor
 from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
 
 BLOCOS_PADRAO = [["08:00", "12:00"], ["13:00", "17:00"]]
-SEM_ELEMENTOS = "Falta informar o equipamento ou os dados deste passo (veja as pendências do plano)"
 ROTULO_TIPO = {"movimentacao": "Transporte", "corte": "Corte", "furacao": "Furação", "bordo": "Borda", "montagem": "Montagem",
                "inspecao": "Conferência", "outro": "Outros"}
 LIMITE_JORNADA_MIN = 8 * 60  # CLT art. 58 (jornada normal de 8 h/dia). Conferir com o jurídico/SESMT.
@@ -147,7 +148,6 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     esp_id = {e.id: e for e in espacos}
     esp_nome = {e.nome.lower(): e for e in espacos}
     rec_nome = {r.nome.lower(): r for r in recursos}
-    refs, informadas = referencias(db, ctx.empresa_id)
     perfil = db.get(PerfilMaoDeObra, cfg["perfil_id"]) if cfg.get("perfil_id") else None
     if perfil is not None and (perfil.empresa_id != ctx.empresa_id or perfil.unidade_id != unidade_id):
         raise HTTPException(422, "Perfil de mão de obra inválido para esta unidade.")
@@ -155,56 +155,59 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     pessoas_cfg = max(int(cfg.get("pessoas") or 1), 1)
 
     pesos = {c.nome: estimar_peso(c) for c in comps}
+    comps_d = [entradas.componente_dict(c, pesos[c.nome][0]) for c in comps]
+    ligs_d = [{"componente": por_id[l.componente_id].nome, "ligado_a": por_id[l.ligado_a_id].nome if l.ligado_a_id in por_id else None,
+               "metodo": l.metodo, "fixadores": l.fixadores} for l in ligs if l.componente_id in por_id]
     dist_rows = db.scalars(select(Distancia).where(Distancia.empresa_id == ctx.empresa_id, Distancia.unidade_id == unidade_id))
     distancias = [{"a": esp_id[d.origem_id].nome, "b": esp_id[d.destino_id].nome, "metros": d.metros}
                   for d in dist_rows if d.origem_id in esp_id and d.destino_id in esp_id]
+    fichas = {r.id: entradas.ficha_do_meio(db, ctx.empresa_id, r.id) for r in recursos}
+    # Contexto enviado à IA: nomes, medidas e pesos do produto. Nenhum tempo, taxa ou coeficiente.
     contexto = {
         "segmento": ctx.empresa.segmento,
         "produto": {"nome": produto.nome, "quantidade": quantidade},
-        "componentes": [{"nome": c.nome, "qtd": c.quantidade, "material": c.material, "grupo": c.grupo, "comp": c.comprimento_m,
-                         "larg": c.largura_m, "esp": c.espessura_m, "peso_kg": pesos[c.nome][0], "peso_origem": pesos[c.nome][1],
-                         "furos": c.furos, "bordas_m": c.bordas_m} for c in comps],
-        "ligacoes": [{"componente": por_id[l.componente_id].nome, "ligado_a": por_id[l.ligado_a_id].nome if l.ligado_a_id in por_id else None,
-                      "metodo": l.metodo, "fixadores": l.fixadores} for l in ligs if l.componente_id in por_id],
-        "recursos": [{"nome": r.nome, "funcao": r.funcao, "capacidade_un_h": modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade),
+        "componentes": [{"nome": c["nome"], "qtd": c["qtd"], "material": c["material"], "grupo": c["grupo"], "comp": c["comp"],
+                         "larg": c["larg"], "esp": c["esp"], "peso_kg": c["peso_kg"], "peso_origem": pesos[c["nome"]][1],
+                         "furos": c["furos"], "bordas_m": c["bordas_m"]} for c in comps_d],
+        "ligacoes": ligs_d,
+        "recursos": [{"nome": r.nome, "funcao": r.funcao, "tipo": r.tipo, "ficha_tecnica": sorted(fichas[r.id]),
                       "espaco": esp_id[r.espaco_id].nome if r.espaco_id in esp_id else None} for r in recursos],
-        "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db,
-                     "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct} for e in espacos],
-        "distancias": distancias, "referencias": refs, "referencias_informadas": informadas, "pessoas": pessoas_cfg,
+        "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in espacos],
+        "distancias": distancias, "pessoas": pessoas_cfg, "modulos": catalogo.resumo_para_ia(),
     }
     proposta, provedor, aviso = ia.planejar(ctx.empresa, contexto)
 
     ritmo = perfil.ritmo_pct if perfil else 100.0
-    base_tol = [{"categoria": "necessidades pessoais", "percentual": modelo_tempo.REFERENCIAS["tolerancia_pessoal_pct"], "fonte": "OIT (Estudo do Trabalho)"},
-                {"categoria": "fadiga básica", "percentual": modelo_tempo.REFERENCIAS["fadiga_basica_pct"], "fonte": "OIT (Estudo do Trabalho)"}]
     linhas = []
     for i, p in enumerate(proposta.passos, 1):
+        modulo = catalogo.obter(p.modulo)
         rec = rec_nome.get((p.recurso or "").lower())
         o, d = esp_nome.get((p.espaco_origem or "").lower()), esp_nome.get((p.espaco_destino or "").lower())
-        pesos_passo = [pesos[n][0] for n in p.componentes if n in pesos and pesos[n][0]]
-        peso_ref = max(pesos_passo) if pesos_passo else None
-        pessoas = max(p.pessoas, pessoas_cfg)
         distancia = None
         if o and d:
             distancia = 0.0 if o.id == d.id else modelo_tempo.distancia_entre(db, ctx.empresa_id, o.id, d.id)
-        cap = modelo_tempo.capacidade_por_hora(rec.capacidade, rec.capacidade_unidade) if rec else None
-        c = modelo_tempo.Contexto(quantidade=p.qtd_pecas, num_pessoas=pessoas, peso_kg=peso_ref, distancia_m=distancia, capacidade_un_h=cap)
+        pessoas = max(p.pessoas, pessoas_cfg)
+        ent = entradas.entrada_do_passo(modulo, p, comps=comps_d, ligs=ligs_d, unidades_produto=quantidade, pessoas=pessoas,
+                                        distancia_m=distancia, rec=rec, ficha=fichas.get(rec.id, {}) if rec else {},
+                                        origem=o.nome if o else None, destino=d.nome if d else None)
         local = (esp_id.get(rec.espaco_id) if rec else None) or d or o
-        tol = list(base_tol)
-        if local is not None and (local.tolerancia_ambiente_pct or 0) > 0:
+        tol = motor.tolerancias_padrao()
+        if local is not None and (local.tolerancia_ambiente_pct or 0) > 0:  # DEPRECATED (Fase 5): informada pelo usuário
             tol.append({"categoria": f"ambiente ({local.nome})", "percentual": local.tolerancia_ambiente_pct,
                         "fonte": "informada pelo usuário para este local"})
-        elementos = [e.model_dump() for e in p.elementos]
-        r = modelo_tempo.calcular(elementos, 1.0, c, tol, ritmo)
-        falt = [f.replace("falta a distância entre os espaços de origem e destino", f"falta a distância entre {o.nome} e {d.nome}")
-                if (o and d) else f for f in r.faltantes]
-        if not elementos:
-            falt.append(SEM_ELEMENTOS)
+        r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=ritmo)
+        pessoas = r.pessoas
+        falt = list(r.faltantes)
+        if modulo.precisa_recurso and rec is None and not any("equipamento" in f for f in falt):
+            falt.append("falta o equipamento deste passo (cadastre e escolha um meio)")
         alertas = []
+        peso_ref = ent.peso_max_kg
         if peso_ref:
             for a in ergonomia.alertas_carga(peso_ref / pessoas, perfil, None):
                 txt, cat = _alerta_simples(a)
                 alertas.append({"msg": txt, "detalhe": a, "categoria": cat})
+        for a in r.alertas:
+            alertas.append({"msg": a, "detalhe": a, "categoria": "seguranca"})
         if local is not None:
             if local.ruido_db and local.ruido_db > ergonomia.LIMITE_RUIDO_NR15_DBA:
                 txt, cat = _alerta_simples(f"Ruído de {local.ruido_db:g} dB(A) em '{local.nome}' acima de {ergonomia.LIMITE_RUIDO_NR15_DBA:g} dB(A) (NR-15, 8 h)")
@@ -213,9 +216,9 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                 alertas.append({"msg": f"A temperatura em '{local.nome}' ({local.temperatura_c:g} °C) é extrema: avalie o conforto térmico e informe a tolerância do local, se couber.",
                                 "detalhe": "NR-15/NHO-06 e NR-17: avaliação de calor/frio.", "categoria": "seguranca"})
         completo = not falt
-        linhas.append({"p": p, "rec": rec, "o": o, "d": d, "pessoas": pessoas, "tol": tol, "r": r, "falt": falt, "alertas": alertas,
-                       "total": round(r.prep + r.exec, 3) if completo else None, "prep": r.prep if completo else None,
-                       "exec": r.exec if completo else None})
+        linhas.append({"p": p, "modulo": modulo, "ent": ent, "rec": rec, "o": o, "d": d, "pessoas": pessoas, "tol": tol, "r": r, "falt": falt,
+                       "alertas": alertas, "total": r.total if completo else None, "prep": r.prep if completo else None,
+                       "exec": r.exec if completo else None, "normal": r.normal if completo else None})
 
     # agenda
     tz = tz_empresa(ctx.empresa)
@@ -244,21 +247,25 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
             hh += l["total"] * l["pessoas"] / 60
         else:
             incompletos += 1
+        mod, r = l["modulo"], l["r"]
         db.add(PlanoPasso(
-            empresa_id=ctx.empresa_id, plano_id=plano.id, sequencia=i, nome=p.nome, tipo=p.tipo, grupo=p.grupo, componentes=p.componentes,
-            qtd_pecas=p.qtd_pecas, recurso_id=l["rec"].id if l["rec"] else None, espaco_origem_id=l["o"].id if l["o"] else None,
-            espaco_destino_id=l["d"].id if l["d"] else None, pessoas=l["pessoas"], elementos=[e.model_dump() for e in p.elementos],
-            tolerancias=l["tol"], ritmo_pct=ritmo, composicao=l["r"].elementos, tempo_prep_min=l["prep"], tempo_exec_min=l["exec"],
-            tempo_padrao_min=l["total"], tempo_agendado_min=round(efetiva, 3) if efetiva is not None else None, faltantes=l["falt"], alertas=l["alertas"], observacao=p.observacao,
+            empresa_id=ctx.empresa_id, plano_id=plano.id, sequencia=i, nome=p.nome, tipo=mod.tipo_passo, grupo=p.grupo, componentes=p.componentes,
+            qtd_pecas=l["ent"].quantidade, recurso_id=l["rec"].id if l["rec"] else None, espaco_origem_id=l["o"].id if l["o"] else None,
+            espaco_destino_id=l["d"].id if l["d"] else None, pessoas=l["pessoas"], elementos=r.elementos,
+            tolerancias=l["tol"], ritmo_pct=ritmo, composicao=r.composicao, tempo_prep_min=l["prep"], tempo_exec_min=l["exec"],
+            tempo_padrao_min=l["total"], tempo_normal_min=l["normal"], tempo_agendado_min=round(efetiva, 3) if efetiva is not None else None,
+            faltantes=l["falt"], alertas=l["alertas"], observacao=p.observacao, modulo=mod.chave, modulo_versao=mod.versao,
+            parametros_modulo=r.parametros, coeficientes=r.coeficientes,
             inicio_prev=ini.replace(tzinfo=tz).astimezone(timezone.utc) if l["total"] is not None else None,
             fim_prev=fim.replace(tzinfo=tz).astimezone(timezone.utc) if l["total"] is not None else None))
     fim_geral = max((f for (_, f, e) in ag if e is not None), default=None)
     dias = len({f.date() for (_, f, e) in ag if e is not None} | {i.date() for (i, _, e) in ag if e is not None})
-    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"] if x != SEM_ELEMENTOS]))
+    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]]))
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
-    plano.premissas = proposta.premissas + ([aviso] if aviso else [])
+    plano.premissas = list(dict.fromkeys(proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
+                                         + ([aviso] if aviso else [])))
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),
@@ -270,6 +277,29 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     plano.confirmado_por = plano.confirmado_em = None
     db.flush()
     return plano
+
+
+def premissas_coeficientes(linhas: list[dict]) -> list[str]:
+    """Declara os coeficientes de referência usados (valor, fonte e status), sem repetir."""
+    vistos: dict[str, dict] = {}
+    for l in linhas:
+        for c in l["r"].coeficientes:
+            vistos.setdefault(c["chave"], c)
+    gen = [c for c in vistos.values() if c["status"] == "referencia_generica"]
+    out = []
+    if gen:
+        out.append("Coeficientes de referência genéricos do catálogo (confiança baixa, a calibrar com o seu histórico): " +
+                   "; ".join(f"{c['chave']} = {c['valor']:g} {c['unidade']}" for c in sorted(gen, key=lambda c: c["chave"])) + ".")
+    return out
+
+
+def hierarquia_do_plano(produto_nome: str, plano: PlanoTrabalho) -> dict:
+    """produto → grupo → módulo → elementos, com tempo normal, tolerâncias, padrão e preparação separada."""
+    passos = [{"grupo": p.grupo or ROTULO_TIPO.get(p.tipo, "Outros"), "modulo": p.modulo, "titulo": (catalogo.obter(p.modulo).titulo if catalogo.obter(p.modulo) else p.tipo),
+               "nome": p.nome, "pessoas": p.pessoas, "composicao": p.composicao, "tempo_normal_min": p.tempo_normal_min,
+               "tempo_prep_min": p.tempo_prep_min, "tempo_exec_min": p.tempo_exec_min, "tempo_padrao_min": p.tempo_padrao_min,
+               "faltantes": p.faltantes} for p in plano.passos]
+    return motor.hierarquia(produto_nome, plano.quantidade, passos)
 
 
 # ------------------------------------------------------------------ plano → ordem de produção

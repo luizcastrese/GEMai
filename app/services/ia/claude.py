@@ -102,15 +102,14 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
 
 def planejar(ctx: dict) -> PlanoProposta:
     return _chamar(
-        "Monte o PLANO DE TRABALHO para produzir a quantidade pedida do produto, em passos sequenciais: movimentação de materiais, "
-        "usinagem (corte, borda, furação) nos equipamentos cadastrados, montagem por subconjunto, montagem final e conferência. "
-        "Cada passo traz componentes, quantidade (peças nos passos de usinagem/movimentação; unidades do produto nos de montagem), "
-        "equipamento, locais de origem/destino (use os nomes cadastrados), pessoas e ELEMENTOS DE TEMPO com os métodos fechados: 'fixo' "
-        "(a_min), 'linear_driver', 'deslocamento' (distância vem dos locais; informe velocidade_m_min, itens_por_viagem), "
-        "'capacidade_recurso' (capacidade do equipamento; depende_operador=false) e 'indices_most' (índices só em 0,1,3,6,10,16). "
-        "Considere carga (peso por pessoa), distâncias e a tabela de referências recebida. NÃO invente medidas, pesos, capacidades nem "
-        "distâncias ausentes: liste em 'dados_faltantes'. Declare premissas e a confiança. Sexo/estatura/peso corporal NÃO alteram tempo. "
-        "O sistema aplica tolerâncias, ritmo, ambiente e jornada e faz as contas.", ctx, PlanoProposta)
+        "Monte o PLANO DE TRABALHO para produzir a quantidade pedida do produto, em passos. Cada passo é UM MÓDULO do catálogo "
+        "fechado recebido em 'modulos' (movimentacao, corte, bordo, furacao, montagem, conferencia): escolha o módulo e aponte, pelos "
+        "NOMES cadastrados, quais componentes entram, o equipamento ou meio de movimentação, os locais de origem/destino e o grupo "
+        "(subconjunto); marque 'final' na montagem final. Use apenas componentes, equipamentos e locais que existem nos dados. "
+        "VOCÊ NÃO INFORMA TEMPOS, taxas, velocidades, percentuais nem elementos de tempo: não existe campo para isso. O sistema deriva as "
+        "medidas, pesos, distâncias e a ficha técnica dos meios e faz todas as contas (ritmo, tolerâncias, ambiente, jornada). Se faltar "
+        "equipamento, local, medida ou ligação para algum passo, liste em 'dados_faltantes' em vez de inventar. Declare premissas e a "
+        "confiança. Sexo/estatura/peso corporal NÃO alteram tempo.", ctx, PlanoProposta)
 
 
 def analisar(tipo: str, fatos: dict) -> AnaliseTexto:

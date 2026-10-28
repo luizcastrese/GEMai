@@ -145,7 +145,7 @@ def test_sem_modelo_assume_tudo_dependente_do_operador_com_aviso(admin, gestor, 
     _historico(db_factory, admin.usuario, op, unidade_id, [[_n(veloz["id"], 8)] for _ in range(3)])
     e = _estimar(db_factory, admin.usuario, op)
     assert e.tempo_normal == pytest.approx(12.0)  # f = 1: 0,8 × 1,5
-    assert any("Sem modelo: assumido 100% do tempo dependente do operador" in a for a in e.avisos)
+    assert any("Sem módulo nem modelo: assumido 100% do tempo dependente do operador" in a for a in e.avisos)
 
 
 # ------------------------------------------------------------------ c) tolerâncias
@@ -179,7 +179,7 @@ def test_avisa_quando_modelo_e_historico_divergem_mais_de_30_pct(admin, gestor, 
     _modelo(gestor, op, [{"nome": "Montar", "tipo": "manuseio", "metodo": "fixo", "por_unidade": True, "a_min": 1}], TOL)
     p = _pessoa(gestor, unidade_id, "Normal", ritmo_pct=100)
     _historico(db_factory, admin.usuario, op, unidade_id, [[_n(p["id"], 20)] for _ in range(3)])  # 2 min/un contra 1 do modelo
-    assert any("revise as premissas do modelo" in a for a in _estimar(db_factory, admin.usuario, op).avisos)
+    assert any("revise as premissas" in a for a in _estimar(db_factory, admin.usuario, op).avisos)
 
 
 # ------------------------------------------------------------------ d) precedência do ritmo

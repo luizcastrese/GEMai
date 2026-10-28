@@ -26,8 +26,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Apontamento, Ordem, OrdemOperacao, Parametro
+from ..models import Apontamento, Ordem, OrdemOperacao, Parametro, PerfilMaoDeObra
 from . import modelo_tempo, ritmo, timecalc
+from .modulos import catalogo, entradas, motor
 
 NAO_NORMALIZADOS_ALERTA = 0.30  # acima disso, o aviso de apontamentos sem pessoa/ritmo é reforçado
 DIVERGENCIA_MODELO_HISTORICO = 0.30  # acima disso, avisa que a premissa do modelo provavelmente está errada
@@ -150,6 +151,48 @@ def _tolerancias_em_linhas(tolerancias: list[dict], base: float, ft: float) -> l
             for t in tolerancias if float(t.get("percentual", 0)) > 0]
 
 
+@dataclass
+class BaseDeTempo:
+    """O que o histórico CALIBRA: os elementos do módulo da operação (ou, na falta dele, do modelo de tempo)."""
+
+    elementos: list[dict]
+    fator_ambiente: float
+    tolerancias: list[dict]
+    validada: bool
+    ctx: modelo_tempo.Contexto
+    rotulo: str  # "módulo" | "modelo de tempo"
+    origem_validada: bool = True
+
+
+def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso):
+    """(ResultadoModulo, EntradaModulo) da operação que escolheu um módulo; None se não escolheu/inexistente."""
+    modulo = catalogo.obter(operacao.modulo) if getattr(operacao, "modulo", None) else None
+    if modulo is None:
+        return None
+    ent, _ = entradas.entrada_da_operacao(db, empresa_id, operacao, quantidade, produto, recurso)
+    perfil = db.get(PerfilMaoDeObra, operacao.perfil_id) if operacao.perfil_id else None
+    ritmo_pct = perfil.ritmo_pct if perfil is not None and perfil.empresa_id == empresa_id else 100.0
+    return motor.calcular_modulo(modulo, ent, ritmo_pct=ritmo_pct), ent
+
+
+def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, avisos: list[str]) -> BaseDeTempo | None:
+    s = get_settings()
+    modulo = catalogo.obter(operacao.modulo) if getattr(operacao, "modulo", None) else None
+    if modulo is not None:
+        ent, _ = entradas.entrada_da_operacao(db, empresa_id, operacao, quantidade, produto, recurso)
+        mo = modulo.montar(ent)
+        if mo.elementos and not mo.faltantes:
+            ctx = modelo_tempo.Contexto(quantidade=ent.quantidade, num_pessoas=max(ent.pessoas, mo.pessoas_minimas or 1),
+                                        peso_kg=ent.peso_max_kg, distancia_m=ent.distancia_m)
+            return BaseDeTempo(mo.elementos, 1.0, motor.tolerancias_padrao(), True, ctx, f"módulo '{modulo.titulo}'")
+        avisos.append(f"Módulo '{modulo.titulo}' incompleto: " + "; ".join(mo.faltantes or ["sem elementos"]) + ".")
+    m = modelo_tempo.modelo_ativo(db, empresa_id, operacao.id)
+    if m and (m.status_validacao == "validado" or s.usar_modelo_ia_nao_validado):
+        ctx = modelo_tempo.montar_contexto(db, empresa_id, operacao, quantidade, produto, recurso)
+        return BaseDeTempo(m.elementos, m.fator_ambiente, list(m.tolerancias or []), m.status_validacao == "validado", ctx, "modelo de tempo")
+    return None
+
+
 def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, h: Historico,
                     lote: float | None, prep_param: float | None) -> Estimativa:
     """Histórico aprovado → tempo normal (ritmo) → tempo padrão (tolerâncias do modelo).
@@ -161,20 +204,19 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
     """
     s = get_settings()
     avisos: list[str] = []
-    m = modelo_tempo.modelo_ativo(db, empresa_id, operacao.id)
-    modelo = m if m and (m.status_validacao == "validado" or s.usar_modelo_ia_nao_validado) else None
+    base = _base_de_tempo(db, empresa_id, operacao, quantidade, produto, recurso, avisos)
 
     # 1) fração do tempo que depende do operador
     f_exec = f_prep = 1.0
     ctx = None
-    if modelo is None:
-        avisos.append("Sem modelo: assumido 100% do tempo dependente do operador.")
+    if base is None:
+        avisos.append("Sem módulo nem modelo: assumido 100% do tempo dependente do operador.")
     else:
-        ctx = modelo_tempo.montar_contexto(db, empresa_id, operacao, quantidade, produto, recurso)
-        fr = modelo_tempo.fracao_operador(modelo.elementos, ctx)
+        ctx = base.ctx
+        fr = modelo_tempo.fracao_operador(base.elementos, ctx)
         if fr.geral is None:
-            motivo = "; ".join(fr.faltantes) or "modelo sem elementos"
-            avisos.append(f"Modelo de tempo incompleto ({motivo}): assumido 100% do tempo dependente do operador.")
+            motivo = "; ".join(fr.faltantes) or "sem elementos"
+            avisos.append(f"{base.rotulo.capitalize()} incompleto ({motivo}): assumido 100% do tempo dependente do operador.")
         else:
             f_exec = fr.execucao if fr.execucao is not None else fr.geral
             f_prep = fr.preparacao if fr.preparacao is not None else fr.geral
@@ -206,11 +248,11 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
         avisos.append("Preparação sem amostras suficientes no histórico: " + (
             "usado o parâmetro validado, sem tolerâncias." if prep_param is not None else "não incluída no tempo."))
 
-    # 4) tolerâncias do modelo → tempo padrão
-    tolerancias = list(modelo.tolerancias or []) if modelo else []
-    if modelo is not None:
+    # 4) tolerâncias do módulo/modelo → tempo padrão
+    tolerancias = list(base.tolerancias or []) if base else []
+    if base is not None:
         ft, p = modelo_tempo.fator_tolerancia(tolerancias)
-        if modelo.status_validacao != "validado":
+        if not base.validada:
             avisos.append("Tolerâncias de um modelo ainda não validado por um gestor.")
     else:
         ft, p = 1.0, None
@@ -225,22 +267,22 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
                 "minutos": round(exec_n, 3)}]
     if prep_n:
         detalhe.append({"nome": "Tempo normal — preparação", "tipo": "normal", "minutos": round(prep_n, 3)})
-    if modelo is not None:
+    if base is not None:
         base_tol = exec_n + (prep_n if prep_do_historico else 0.0)
         detalhe += _tolerancias_em_linhas(tolerancias, base_tol, ft)
         detalhe.append({"nome": f"Tempo padrão (normal × FT {ft:.4f})", "tipo": "padrao",
                         "minutos": round((prep_p or 0.0) + exec_p, 3)})
 
     # 6) sinal de premissa errada: modelo (ritmo 100) × histórico normalizado
-    if modelo is not None and ctx is not None and exec_p:
-        previsto = modelo_tempo.calcular(modelo.elementos, modelo.fator_ambiente, ctx, tolerancias, 100.0)
+    if base is not None and ctx is not None and exec_p:
+        previsto = modelo_tempo.calcular(base.elementos, base.fator_ambiente, ctx, tolerancias, 100.0)
         if previsto.completo and previsto.exec > 0 and abs(previsto.exec - exec_p) / exec_p > DIVERGENCIA_MODELO_HISTORICO:
-            avisos.append(f"O modelo de tempo prevê {previsto.exec:.1f} min de execução (ritmo 100) e o histórico "
-                          f"normalizado indica {exec_p:.1f} min: revise as premissas do modelo.")
+            avisos.append(f"O {base.rotulo} prevê {previsto.exec:.1f} min de execução (ritmo 100) e o histórico "
+                          f"normalizado indica {exec_p:.1f} min: revise as premissas (e calibre o módulo).")
 
     return Estimativa(
         prep=prep_p, exec=exec_p, fonte="historico", amostras=len(amostras), avisos=avisos, detalhe=detalhe,
-        validada=modelo is None or modelo.status_validacao == "validado",
+        validada=base is None or base.validada,
         tempo_normal=round(prep_n + exec_n, 3), tolerancia_pct=None if p is None else round(p * 100.0, 3),
         ritmo_normalizado=len(usados) > nao_norm, amostras_nao_normalizadas=nao_norm)
 
@@ -258,6 +300,20 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
     if amostras and len(amostras) >= s.min_amostras_historico:
         return _pelo_historico(db, empresa_id, operacao, quantidade, produto, recurso, h, lote,
                                val("tempo_preparacao_min"))
+    res_mod = _resultado_do_modulo(db, empresa_id, operacao, quantidade, produto, recurso)
+    if res_mod is not None:
+        r, _ = res_mod
+        if r.completo:
+            # Módulo do catálogo: o tempo sai de CONDIÇÕES (medidas, distância, ficha técnica do meio); ninguém o digita.
+            if amostras:
+                aviso.append(f"Histórico insuficiente ({len(amostras)}/{s.min_amostras_historico} amostras aprovadas).")
+            gen = [c for c in r.coeficientes if c["status"] == "referencia_generica"]
+            if gen:
+                aviso.append("Coeficientes de referência genéricos do catálogo (a calibrar com o histórico): " +
+                             ", ".join(sorted(c["chave"] for c in gen)) + ".")
+            return Estimativa(prep=r.prep, exec=r.exec, fonte="modulo", amostras=len(amostras), avisos=aviso + r.alertas,
+                              detalhe=r.composicao, tempo_normal=r.normal, tolerancia_pct=r.tolerancia_pct)
+        aviso.append(f"Módulo '{r.titulo}' incompleto: " + "; ".join(r.faltantes) + ".")
     if val("tempo_unitario_min") is not None:
         # Parâmetro validado por pessoa: comportamento inalterado (tempo informado, sem tolerâncias do modelo).
         if amostras:

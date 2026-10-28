@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 
+from .services.modulos.catalogo import ChaveModulo
+
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -212,6 +214,20 @@ class EtapaUpdate(In):
     condicao: Curto | None = None
 
 
+class LigacaoModuloIn(In):
+    metodo: Literal["parafuso", "cavilha", "minifix", "dobradica", "corredica", "cola", "prego", "encaixe", "puxador", "outro"]
+    fixadores: int = Field(0, ge=0, le=5000)
+
+
+class ModuloParametros(In):
+    """CONDIÇÕES do módulo de tempo de uma operação (nunca tempos): o sistema calcula a partir delas."""
+
+    furos_por_peca: int | None = Field(None, ge=0, le=2000)
+    bordas_m_por_peca: float | None = Field(None, ge=0, le=200)
+    pecas_por_unidade: float | None = Field(None, ge=0, le=10000)
+    ligacoes: list[LigacaoModuloIn] = Field(default_factory=list, max_length=50)
+
+
 class OperacaoIn(In):
     nome: Nome
     descricao: Texto = ""
@@ -240,6 +256,8 @@ class OperacaoIn(In):
     altura_trabalho_m: float | None = Field(None, ge=0, le=3)
     gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
     levantamento: Levantamento | None = None
+    modulo: ChaveModulo | None = None
+    modulo_parametros: ModuloParametros = Field(default_factory=ModuloParametros)
 
 
 class OperacaoUpdate(In):
@@ -269,6 +287,8 @@ class OperacaoUpdate(In):
     altura_trabalho_m: float | None = Field(None, ge=0, le=3)
     gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
     levantamento: Levantamento | None = None
+    modulo: ChaveModulo | None = None
+    modulo_parametros: ModuloParametros | None = None
 
 
 class OperacaoOut(Out):
@@ -301,6 +321,8 @@ class OperacaoOut(Out):
     altura_trabalho_m: float | None = None
     gasto_energetico_kcal_min: float | None = None
     levantamento: dict | None = None
+    modulo: str | None = None
+    modulo_parametros: dict = {}
 
 
 class EtapaOut(Out):
@@ -1060,6 +1082,11 @@ class PlanoPassoOut(Out):
     observacao: str
     inicio_prev: datetime | None
     fim_prev: datetime | None
+    modulo: str = ""
+    modulo_versao: int = 0
+    parametros_modulo: dict = {}
+    coeficientes: list = []
+    tempo_normal_min: float | None = None
     recurso_nome: str | None = None
     origem_nome: str | None = None
     destino_nome: str | None = None
@@ -1084,6 +1111,7 @@ class PlanoOut(Out):
     criado_em: datetime
     confirmado_em: datetime | None
     passos: list[PlanoPassoOut] | None = None
+    hierarquia: dict | None = None  # produto → grupo → módulo → elementos (normal, tolerâncias, padrão, preparação)
 
 
 class PlanoOrdemIn(In):

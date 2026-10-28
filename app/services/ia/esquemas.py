@@ -4,7 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..modelo_tempo import METODOS_LIGACAO, ElementoTempo, ModeloTempoIA, sanear_modelo
+from ..modelo_tempo import METODOS_LIGACAO
+from ..modulos.catalogo import CHAVES as CHAVES_MODULOS
+from ..modulos.catalogo import ChaveModulo
 
 GRUPOS = ["Processos", "Recursos", "Pessoas", "Materiais", "Tempo", "Quantidade",
           "Qualidade", "Manutenção", "Ergonomia", "Ambiente", "Informação"]
@@ -195,16 +197,22 @@ class EstruturaProdutoIA(BaseModel):
 
 
 class PassoIA(BaseModel):
+    """Um passo do plano = um MÓDULO do catálogo fechado + o mapeamento das condições do produto.
+
+    A IA escolhe o módulo e aponta quais componentes, equipamento e locais entram. NÃO há campo de tempo, taxa,
+    percentual ou elemento: o sistema deriva as condições (medidas, pesos, distâncias, ficha técnica) e calcula.
+    Campos desconhecidos (ex.: `a_min`, `elementos`, `tempo_min`) são ignorados na validação.
+    """
+
     nome: str
-    tipo: Literal["movimentacao", "corte", "furacao", "bordo", "montagem", "inspecao", "outro"] = "outro"
+    modulo: ChaveModulo
     grupo: str = ""
+    final: bool = False  # montagem final (liga os subconjuntos entre si)
     componentes: list[str] = Field(default_factory=list)
-    qtd_pecas: float = 1.0
-    recurso: str | None = None
+    recurso: str | None = None  # equipamento ou meio de movimentação cadastrado
     espaco_origem: str | None = None
     espaco_destino: str | None = None
     pessoas: int = 1
-    elementos: list[ElementoTempo] = Field(default_factory=list)
     observacao: str = ""
 
 
@@ -244,12 +252,13 @@ def sanear_plano(p: PlanoProposta) -> PlanoProposta:
     for ps in p.passos[:120]:
         if not _t(ps.nome, 300):
             continue
-        els = sanear_modelo(ModeloTempoIA(elementos=ps.elementos)).elementos
+        if ps.modulo not in CHAVES_MODULOS:  # o catálogo é fechado
+            continue
         passos.append(PassoIA(
-            nome=_t(ps.nome, 300), tipo=ps.tipo, grupo=_t(ps.grupo, 80), componentes=[_t(x, 200) for x in ps.componentes[:60] if _t(x, 200)],
-            qtd_pecas=min(max(float(ps.qtd_pecas or 1), 0.01), 1e7), recurso=_t(ps.recurso, 200) or None,
+            nome=_t(ps.nome, 300), modulo=ps.modulo, grupo=_t(ps.grupo, 80), final=bool(ps.final),
+            componentes=[_t(x, 200) for x in ps.componentes[:60] if _t(x, 200)], recurso=_t(ps.recurso, 200) or None,
             espaco_origem=_t(ps.espaco_origem, 200) or None, espaco_destino=_t(ps.espaco_destino, 200) or None,
-            pessoas=min(max(int(ps.pessoas or 1), 1), 20), elementos=els, observacao=_t(ps.observacao, 1000)))
+            pessoas=min(max(int(ps.pessoas or 1), 1), 20), observacao=_t(ps.observacao, 1000)))
     return PlanoProposta(passos=passos, premissas=[_t(x, 400) for x in p.premissas[:30] if _t(x, 400)],
                          dados_faltantes=[_t(x, 300) for x in p.dados_faltantes[:30] if _t(x, 300)],
                          confianca=p.confianca, justificativa=_t(p.justificativa, 3000))

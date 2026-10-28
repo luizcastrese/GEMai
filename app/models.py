@@ -195,6 +195,9 @@ class Operacao(Base):
     altura_trabalho_m: Mapped[float | None] = mapped_column(Float)
     gasto_energetico_kcal_min: Mapped[float | None] = mapped_column(Float)
     levantamento: Mapped[dict | None] = mapped_column(JSON)  # entradas da equação do NIOSH
+    # Módulo de tempo do catálogo (services/modulos) e as CONDIÇÕES dele (furos por peça, ligações…): nunca tempos
+    modulo: Mapped[str | None] = mapped_column(String(30))
+    modulo_parametros: Mapped[dict] = mapped_column(JSON, default=dict)
 
     etapa: Mapped[Etapa] = relationship(back_populates="operacoes")
 
@@ -466,6 +469,12 @@ class PlanoPasso(Base):
     tempo_exec_min: Mapped[float | None] = mapped_column(Float)
     tempo_padrao_min: Mapped[float | None] = mapped_column(Float)  # None = faltam dados
     tempo_agendado_min: Mapped[float | None] = mapped_column(Float)  # padrão + fadiga acumulada (se informada)
+    # Módulo do catálogo que gerou o passo (os tempos são calculados a partir de condições; ninguém os digita)
+    modulo: Mapped[str] = mapped_column(String(30), default="")
+    modulo_versao: Mapped[int] = mapped_column(Integer, default=0)
+    parametros_modulo: Mapped[dict] = mapped_column(JSON, default=dict)  # condições efetivamente usadas
+    coeficientes: Mapped[list] = mapped_column(JSON, default=list)  # coeficientes do catálogo usados (valor, fonte, status)
+    tempo_normal_min: Mapped[float | None] = mapped_column(Float)  # prep + exec antes das tolerâncias
     faltantes: Mapped[list] = mapped_column(JSON, default=list)
     alertas: Mapped[list] = mapped_column(JSON, default=list)
     observacao: Mapped[str] = mapped_column(Text, default="")

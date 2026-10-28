@@ -215,6 +215,7 @@ def _plano_out(ctx: Ctx, p: PlanoTrabalho, detalhado: bool = True) -> PlanoOut:
             x.recurso_nome, x.origem_nome, x.destino_nome = rec.get(s.recurso_id), esp.get(s.espaco_origem_id), esp.get(s.espaco_destino_id)
             passos.append(x)
         o.passos = passos
+        o.hierarquia = svc.hierarquia_do_plano(o.produto_nome or p.nome, p)
     else:
         o.passos = None
     return o

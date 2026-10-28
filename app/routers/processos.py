@@ -47,7 +47,8 @@ def processo_out(p: Processo, detalhado: bool = True, avisos: list[str] | None =
 # Dados do contorno físico podem ser corrigidos a qualquer momento (não mudam a estrutura do processo);
 # ordens já criadas guardam a estimativa feita na época.
 CAMPOS_CONTORNO = {"recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
-                   "item_comprimento_m", "item_largura_m", "item_altura_m", "num_pessoas", "funcao_requerida"}
+                   "item_comprimento_m", "item_largura_m", "item_altura_m", "num_pessoas", "funcao_requerida",
+                   "modulo", "modulo_parametros"}
 
 
 def _rascunho(p: Processo) -> None:
@@ -180,7 +181,8 @@ def nova_versao(pid: int, ctx: Ctx = Depends(get_ctx)):
                            item_altura_m=op.item_altura_m, inicio_marco=op.inicio_marco, fim_marco=op.fim_marco,
                            perfil_id=op.perfil_id, tipo_movimento=op.tipo_movimento, postura_trabalho=op.postura_trabalho,
                            altura_trabalho_m=op.altura_trabalho_m, gasto_energetico_kcal_min=op.gasto_energetico_kcal_min,
-                           levantamento=dict(op.levantamento) if op.levantamento else None)
+                           levantamento=dict(op.levantamento) if op.levantamento else None,
+                           modulo=op.modulo, modulo_parametros=dict(op.modulo_parametros or {}))
             ctx.db.add(nop)
             ctx.db.flush()
             from ..services.modelo_tempo import modelo_ativo
@@ -299,6 +301,8 @@ def _campos_operacao(dados) -> dict:
         campos["levantamento"] = dados.levantamento.model_dump(exclude_none=True)
     if "campos_extras" in campos and dados.campos_extras is not None:
         campos["campos_extras"] = [c.model_dump() for c in dados.campos_extras]
+    if "modulo_parametros" in campos:
+        campos["modulo_parametros"] = dados.modulo_parametros.model_dump(exclude_none=True) if dados.modulo_parametros is not None else {}
     return campos
 
 
@@ -336,7 +340,7 @@ def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(get_c
     seq = campos.pop("sequencia", None)
     anulaveis = ("recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
                  "item_comprimento_m", "item_largura_m", "item_altura_m", "perfil_id", "altura_trabalho_m",
-                 "gasto_energetico_kcal_min", "levantamento")
+                 "gasto_energetico_kcal_min", "levantamento", "modulo")
     for k, v in campos.items():
         if v is not None or k in anulaveis:
             setattr(op, k, v)

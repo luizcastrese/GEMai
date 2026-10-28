@@ -192,7 +192,8 @@ export async function planoDetalhe(el, id) {
         s.faltantes.length ? h('div', { class: 'warn-l small' }, `Falta: ${s.faltantes.join('; ')}`) : null,
         s.alertas.map((a) => h('div', { class: `small ${a.categoria === 'seguranca' ? 'seg-l' : 'warn-l'}` }, a.msg)),
         estado.avancado ? detalhes('Como o tempo foi calculado', s.composicao.map((c) => h('div', { class: 'small' }, `${c.nome}: ${c.minutos === null ? c.motivo : `${fmtNum(c.minutos, 2)} min`}`)),
-          s.elementos.map((e) => (e.justificativa ? h('div', { class: 'muted small' }, `• ${e.nome}: ${e.justificativa}`) : null))) : null),
+          s.elementos.map((e) => (e.justificativa ? h('div', { class: 'muted small' }, `• ${e.nome}: ${e.justificativa}`) : null)),
+          s.coeficientes.map((c) => h('div', { class: 'muted small' }, `◦ ${c.chave} = ${fmtNum(c.valor, 3)} ${c.unidade} (${c.status === 'calibrado' ? 'calibrado' : 'referência genérica'}; ${c.fonte})`))) : null),
       h('td', null, s.inicio_prev ? hora(s.inicio_prev) : '—'), h('td', null, s.fim_prev ? hora(s.fim_prev) : '—'),
       h('td', null, s.tempo_padrao_min === null ? badge('Sem tempo', 'b-warn') : fmtMin(s.tempo_padrao_min)),
       h('td', { class: 'noprint' }, s.tempo_prep_min ? h('span', { class: 'muted small' }, `preparo ${fmtMin(s.tempo_prep_min)}`) : '')));
@@ -223,7 +224,19 @@ export async function planoDetalhe(el, id) {
     unicos.length ? h('div', { class: 'card' }, h('h3', null, 'Atenção'), h('ul', null, unicos.map((a) => h('li', { class: a.categoria === 'seguranca' ? 'seg-l' : '' }, a.msg)))) : null,
     h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['#', 'Passo', 'Começa', 'Termina', 'Tempo', ''].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),
     acoes,
+    estado.avancado && p.hierarquia ? detalhes('Composição por módulo (produto → grupo → módulo)', hierarquiaView(p.hierarquia)) : null,
     detalhes('Premissas do plano', h('ul', null, p.premissas.map((x) => h('li', { class: 'small' }, x)))));
+}
+
+// Tempo normal + tolerâncias = tempo padrão, com a preparação separada; total e por unidade do produto.
+function hierarquiaView(hi) {
+  const m = (v) => (v === null || v === undefined ? '—' : fmtMin(v));
+  const cols = [{ t: 'Grupo / módulo', f: (x) => x.rotulo }, { t: 'Normal', f: (x) => m(x.tempo_normal_min) }, { t: 'Tolerâncias', f: (x) => m(x.tolerancias_min) },
+    { t: 'Preparação', f: (x) => m(x.preparacao_min) }, { t: 'Padrão', f: (x) => m(x.tempo_padrao_min) }];
+  const linhas = hi.grupos.flatMap((g) => [{ rotulo: h('strong', null, g.grupo), ...g },
+    ...g.modulos.map((x) => ({ rotulo: `   ${x.titulo}: ${x.passo}${x.completo ? '' : ' (incompleto)'}`, ...x }))]);
+  return h('div', null, tabela(cols, linhas),
+    h('p', { class: 'small muted' }, `Por unidade do produto: padrão ${m(hi.por_unidade_produto.tempo_padrao_min)} (normal ${m(hi.por_unidade_produto.tempo_normal_min)}, preparação ${m(hi.por_unidade_produto.preparacao_min)}).`));
 }
 
 function gerarOrdem(p) {
