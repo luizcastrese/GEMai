@@ -61,7 +61,7 @@ function casca(conteudo, hash) {
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
   });
-  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'ERP de Produção'),
+  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'GEMai'),
     Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
@@ -91,7 +91,7 @@ function telaAuth() {
     campo('senha', modo === 'login' ? 'Senha' : 'Senha (mín. 10 caracteres, com maiúsculas, minúsculas e número)', 'password', modo === 'login' ? 'current-password' : 'new-password'),
     h('p', null, h('button', { class: 'pri', type: 'submit' }, modo === 'login' ? 'Entrar' : 'Criar empresa e entrar')));
     f.segmento && (f.segmento.required = false);
-    montar(raiz, h('div', { class: 'auth' }, h('h1', null, 'ERP de Produção com IA'),
+    montar(raiz, h('div', { class: 'auth' }, h('h1', null, 'Entrar no GEMai'),
       h('p', { class: 'muted' }, 'A IA sugere; o sistema valida.'),
       h('div', { class: 'card' }, form,
         h('p', { class: 'small' }, modo === 'login' ? 'Primeiro acesso? ' : 'Já tem conta? ',
