@@ -13,9 +13,9 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-- **Início:** "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, contorno físico incompleto), atalhos e poucos números.
+- **Início:** enquanto a pessoa não completou o caminho, mostra os **primeiros passos** (Produto → Sua oficina → Plano → Conferir → Produzir), com o passo atual em destaque e um botão grande; depois, "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, oficina incompleta), atalhos e poucos números. O servidor deduz o que já foi feito (`GET /jornada`, também em `GET /inicio`); nada é gravado. Cada tela do caminho mostra uma faixa "Passo N de 5" com o botão do próximo passo e uma caixa "Para que serve esta tela?" (abre na primeira visita; "Entendi" recolhe e lembra).
 - **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
-- **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
+- **Sua oficina** (o "contorno físico" dos documentos técnicos): uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
   1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **peças por hora** de cada equipamento; 4. por tarefa: equipamento, de onde sai, para onde vai e **peso da peça**.
   A IA já pergunta isso no diagnóstico e cria os locais citados. Dados opcionais (dimensões, ruído, temperatura…) ficam fora do mínimo. O contorno pode ser corrigido a qualquer momento, inclusive em processo publicado.
 - **Processo:** checklist "Está tudo pronto?" em português comum e um **único Publicar** (a IA prevê o tempo das tarefas na publicação). **A confirmação das previsões é manual**: botão "Confirmar previsões". "Já sei o tempo" substitui a estimativa da IA por um tempo informado.
@@ -76,7 +76,7 @@ preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**
 
 ## Do produto ao plano de trabalho
 
-Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de trabalho → Ordem de produção**.
+Fluxo pensado para o dia a dia: **Produtos → (Sua oficina, o contorno físico) → Planos de trabalho → Ordem de produção**.
 
 1. **Produto:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
    parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,

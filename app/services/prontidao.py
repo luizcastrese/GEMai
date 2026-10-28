@@ -52,7 +52,7 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
                 add("aviso", "Informe de onde a peça sai e para onde vai (ou deixe os dois em branco).")
             if op.espaco_origem_id and op.espaco_destino_id and op.distancia_m is None and modelo_tempo.distancia_entre(
                     db, empresa_id, op.espaco_origem_id, op.espaco_destino_id) is None:
-                add("atencao", "Informe a distância entre os dois locais (tela Contorno físico).")
+                add("atencao", "Informe a distância entre os dois locais (tela Sua oficina).")
             if op.item_peso_kg is None:
                 add("info", "Informe o peso da peça para a previsão considerar o manuseio e o transporte.")
             if alerta_ergonomia(op.ergonomia):
@@ -77,7 +77,7 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
                 r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, modelo_tempo.montar_contexto(db, empresa_id, op, 1.0, None, rec),
                                           m.tolerancias, m.ritmo_pct)
                 if not r.completo:
-                    for f in (r.faltantes or ["dados do contorno físico"]):
+                    for f in (r.faltantes or ["dados da sua oficina"]):
                         add("atencao", f"Para prever o tempo falta: {f}")
                 if m.status_validacao == "pendente":
                     add("info", "A previsão da IA aguarda a sua confirmação.")

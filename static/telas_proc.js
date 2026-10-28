@@ -226,7 +226,7 @@ const ENT = {
     cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Capacidade', f: (r) => (r.capacidade ? `${r.capacidade} ${r.capacidade_unidade}` : '—') },
       { t: 'Tempo médio (calculado)', f: (r) => (r.tempo_medio_min ? `${fmtNum(r.tempo_medio_min, 2)} min/un` : '—') },
       { t: 'Preparação média', f: (r) => (r.tempo_preparacao_medio_min ? `${fmtNum(r.tempo_preparacao_medio_min)} min` : '—') }, { t: 'Próx. manutenção', f: (r) => r.proxima_manutencao || '—' }] },
-  espacos: { rot: 'Espaços (contorno físico)', un: true, campos: [
+  espacos: { rot: 'Espaços (sua oficina)', un: true, campos: [
     { k: 'nome', rotulo: 'Nome (ex.: Estoque de chapas)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['area', 'Área'], ['posto', 'Posto'], ['estoque', 'Estoque'], ['expedicao', 'Expedição']] },
     { k: 'comprimento_m', rotulo: 'Comprimento (m)', tipo: 'number', nulo: true }, { k: 'largura_m', rotulo: 'Largura (m)', tipo: 'number', nulo: true },
     { k: 'pe_direito_m', rotulo: 'Pé-direito (m)', tipo: 'number', nulo: true }, { k: 'piso', rotulo: 'Piso' },
@@ -307,7 +307,7 @@ async function prontidaoPainel(alvo, p, recarregar, todasOps) {
   const opDe = (opId) => p.etapas.flatMap((e) => e.operacoes).find((x) => x.id === opId);
   montar(alvo, h('div', { class: 'top' }, h('h2', null, 'Está tudo pronto?'),
     h('div', { class: 'inline' },
-      h('a', { class: 'btn', href: '#/contorno' }, 'Contorno físico'),
+      h('a', { class: 'btn', href: '#/contorno' }, 'Sua oficina'),
       h('button', { class: semPrevisao ? 'ia' : '', onclick: async () => {
         const c = await tentar(() => post(`/processos/${p.id}/modelar-tempos`));
         if (c) { toast(c.length ? 'A IA preparou as previsões de tempo. Confira e confirme.' : 'Todas as tarefas já têm previsão.'); recarregar(); }

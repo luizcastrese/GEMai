@@ -167,7 +167,7 @@ async function telaEstrutura(area, u, ir) {
     if (!await tentar(() => patch(`/recomendacoes/${rec.id}`, { conteudo: c }))) return;
     const r = await tentar(() => post(`/recomendacoes/${rec.id}/aprovar`, { observacao: 'Revisada no assistente de implantação.' }));
     if (r) {
-      toast('Processo montado. Agora informe o contorno físico mínimo para a IA prever os tempos.');
+      toast('Processo montado. Agora conte sobre a sua oficina (menu “Sua oficina”) para a IA prever os tempos.');
       location.hash = '#/contorno';
     }
   };

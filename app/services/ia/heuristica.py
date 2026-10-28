@@ -275,7 +275,7 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         padrao_apontamento_inicio=op.get("inicio_marco") or f"Quando {op.get('funcao_requerida') or 'o operador'} pega o primeiro item de '{nome}'",
         padrao_apontamento_fim=op.get("fim_marco") or f"Quando o último item de '{nome}' é depositado no destino{' (' + dst['nome'] + ')' if dst else ''}",
         unidade_contagem=op.get("unidade_medida") or "un", confianca="baixa",
-        justificativa=("Modelo montado por regras locais a partir do contorno físico cadastrado, com referências declaradas nas premissas. "
+        justificativa=("Modelo montado por regras locais a partir dos dados da sua oficina, com referências declaradas nas premissas. "
                        "Substitua por medições reais assim que existirem."))
 
 
@@ -459,7 +459,7 @@ def planejar(ctx: dict) -> PlanoProposta:
         nomes = [c["nome"] for c in alvo]
         eq = equip(funcao)
         if eq is None:
-            faltam.append(f"Equipamento para '{verbo.lower()}' (em Contorno físico, marque em 'Para que serve?')")
+            faltam.append(f"Equipamento para '{verbo.lower()}' (em Sua oficina, marque em 'Para que serve?')")
             passos.append(PassoIA(nome=f"{verbo} {pecas:g} peças", tipo=funcao, componentes=nomes, qtd_pecas=pecas))
             continue
         mover(local_atual, eq.get("espaco"), nomes, pecas, peso_medio, f"Levar peças até {eq.get('espaco')} ({verbo.lower()})")
@@ -523,4 +523,4 @@ def planejar(ctx: dict) -> PlanoProposta:
     prem.append("Tempos de montagem e conferência partem de referências genéricas (ou da sua tabela); movimentação usa caminhada a "
                 f"{REFERENCIAS['velocidade_caminhada_m_min']:g} m/min. Substitua por medições assim que existirem.")
     return PlanoProposta(passos=passos, premissas=prem, dados_faltantes=list(dict.fromkeys(faltam)), confianca="baixa",
-                         justificativa="Plano montado por regras locais a partir dos componentes, ligações e contorno físico cadastrados.")
+                         justificativa="Plano montado por regras locais a partir dos componentes, ligações e dados da sua oficina cadastrados.")

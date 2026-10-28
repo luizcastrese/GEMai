@@ -28,7 +28,7 @@ const ROTAS = [
   [/^#\/implantacao$/, gestao.implantacao, ['Configurar', 'Configurar com a IA', '#/implantacao']],
   [/^#\/processos$/, proc.lista, ['Configurar', 'Processos', '#/processos']],
   [/^#\/processos\/(\d+)$/, proc.detalhe],
-  [/^#\/contorno$/, contorno.contorno, ['Configurar', 'Contorno físico', '#/contorno']],
+  [/^#\/contorno$/, contorno.contorno, ['Configurar', 'Sua oficina', '#/contorno']],
   [/^#\/configuracoes$/, config.configuracoes, ['Configurar', 'Configurações', '#/configuracoes']],
   [/^#\/cadastros$/, proc.cadastros],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],

@@ -1,6 +1,7 @@
 import { api, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
-import { detalhes, fmtNum, h, montar, tentar, toast } from './ui.js';
+import { faixaEm } from './jornada.js';
+import { ajudaTela, detalhes, fmtNum, h, montar, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const opcoes = (lista, vazio) => [h('option', { value: '' }, vazio), ...lista.map((x) => h('option', { value: x.id }, x.nome))];
@@ -16,21 +17,27 @@ const REF_ROTULOS = { 'conferencia_final': 'Conferência final de cada unidade',
   'fixador:dobradica': 'Instalar 1 dobradiça', 'fixador:corredica': 'Instalar 1 corrediça', 'fixador:cola': 'Colar 1 junção', 'fixador:prego': 'Pregar 1 prego', 'fixador:encaixe': 'Fazer 1 encaixe',
   'fixador:puxador': 'Instalar 1 puxador', 'fixador:outro': 'Outro tipo de fixação (1 un.)' };
 
-// Contorno físico MÍNIMO: onde as coisas ficam, a que distância, quanto cada máquina produz e quanto pesa a peça.
+// "Sua oficina" (contorno físico MÍNIMO): onde as coisas ficam, a que distância, quanto cada máquina produz e quanto pesa a peça.
 export async function contorno(el) {
   let refAberto = false;
   const uid = estado.unidadeId;
-  const topo = h('div'); const secoes = h('div');
-  montar(el, h('h1', null, 'Contorno físico'),
-    h('p', { class: 'muted' }, 'Só o essencial para a IA prever o tempo: onde as coisas ficam, a que distância, quanto cada máquina faz por hora e quanto pesa cada peça. Tudo é salvo ao preencher.'),
+  const topo = h('div'); const secoes = h('div'); const trilha = h('div');
+  montar(el, h('h1', null, 'Sua oficina'), trilha,
+    ajudaTela('oficina', h('p', null, 'Para calcular o tempo de fabricar, o sistema precisa saber como é a sua oficina: andar do estoque até a bancada também leva tempo.'),
+      h('ul', null, h('li', null, h('strong', null, 'Lugares: '), 'onde ficam o estoque, a bancada de corte, a montagem… Exemplo: Estoque de chapas, Seccionadora, Montagem.'),
+        h('li', null, h('strong', null, 'Distâncias: '), 'quantos metros de um lugar até o outro (pode ser aproximado).'),
+        h('li', null, h('strong', null, 'Máquinas: '), 'para que serve cada uma e quantas peças ela faz por hora.')),
+      h('p', null, 'Informe só o que souber. O que faltar aparece como pendência: o sistema nunca inventa número. Tudo é salvo ao preencher.')),
     topo, secoes);
+  const atualizarFaixa = () => faixaEm(trilha, 'oficina');
 
   const progresso = async () => {
     const c = await get(`/contorno${qs({ unidade_id: uid })}`);
     const barra = h('div', { class: 'bar' }, h('i')); barra.firstChild.style.width = `${c.progresso_pct}%`;
+    atualizarFaixa();
     montar(topo, h('div', { class: c.completo ? 'card ok-box' : 'card' },
-      c.completo ? h('div', null, h('strong', null, '✓ Contorno físico completo.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), ' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos'))
-        : h('div', null, h('strong', null, `${c.progresso_pct}% preenchido`), c.tarefas.length ? ` — faltam ${c.pendentes} informação(ões):` : ' — crie um processo primeiro (Configurar com a IA).',
+      c.completo ? h('div', null, h('strong', null, '✓ Sua oficina está completa.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), ' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos'))
+        : h('div', null, h('strong', null, `${c.progresso_pct}% preenchido`), c.pendentes ? ` — faltam ${c.pendentes} informação(ões):` : ' — cadastre os lugares da oficina abaixo para começar.',
           c.faltando.length ? h('ul', null, c.faltando.slice(0, 6).map((f) => h('li', null, f)), c.faltando.length > 6 ? h('li', { class: 'muted' }, `e mais ${c.faltando.length - 6}…`) : null) : null),
       barra));
     return c;
@@ -44,6 +51,7 @@ export async function contorno(el) {
     // ---- 1. locais
     const novoLocal = h('input', { placeholder: 'ex.: Estoque de chapas' });
     const sLocais = h('div', { class: 'card' }, h('h2', null, '1. Locais por onde a peça passa'),
+      h('p', { class: 'muted small' }, 'Escreva o nome de cada lugar e escolha o tipo. Marque qual é o estoque (onde o material começa) e qual é a montagem.'),
       locais.length ? locais.map((l) => h('div', { class: 'row' }, h('input', { value: l.nome, onchange: (e) => salvar(() => patch(`/espacos/${l.id}`, { nome: e.target.value })) }),
         (() => { const t = h('select', { 'aria-label': 'Tipo do local', onchange: async (e) => { if (await tentar(() => patch(`/espacos/${l.id}`, { tipo: e.target.value }))) desenhar(); } },
           TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r))); t.value = l.tipo; return t; })(),
@@ -57,6 +65,7 @@ export async function contorno(el) {
     // ---- 2. distâncias
     const [oSel, dSel, metros] = [h('select', null, opcoes(locais, 'De…')), h('select', null, opcoes(locais, 'Até…')), h('input', { type: 'number', min: '0', step: 'any', placeholder: 'metros' })];
     const sDist = h('div', { class: 'card' }, h('h2', null, '2. Distância entre os locais (em metros)'),
+      h('p', { class: 'muted small' }, 'Quantos metros se anda de um lugar até o outro. Um valor aproximado já ajuda.'),
       c.distancias.length ? c.distancias.map((d) => h('div', { class: 'row' }, h('div', null, `${d.origem} ↔ ${d.destino}`),
         (() => { const i = h('input', { type: 'number', min: '0', step: 'any', value: d.metros ?? '', placeholder: 'metros' });
           i.addEventListener('change', () => { if (i.value !== '') salvar(() => api('PUT', '/distancias', { origem_id: d.origem_id, destino_id: d.destino_id, metros: Number(i.value) })); }); return i; })()))
@@ -70,6 +79,7 @@ export async function contorno(el) {
     // ---- 3. equipamentos
     const novoEq = h('input', { placeholder: 'ex.: Seccionadora' });
     const sEq = h('div', { class: 'card' }, h('h2', null, '3. Máquinas e equipamentos'),
+      h('p', { class: 'muted small' }, 'Diga para que serve cada máquina e quantas peças ela faz por hora. Se não souber, deixe em branco: o plano avisa que falta e você preenche depois.'),
       equip.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Equipamento', 'Para que serve?', 'Quantas peças por hora faz?', 'Em que local fica?'].map((t) => h('th', null, t)))),
         h('tbody', null, equip.map((r) => h('tr', null, h('td', null, r.nome, r.usado || r.funcao ? '' : h('span', { class: 'muted small' }, ' (não usado em tarefas)')),
           h('td', null, (() => { const f = h('select', { 'aria-label': 'Para que serve', onchange: async (e) => { if (await tentar(() => patch(`/recursos/${r.id}`, { funcao: e.target.value }))) desenhar(); } }, FUNCOES.map(([v, t]) => h('option', { value: v }, t))); f.value = r.funcao || ''; return f; })()),

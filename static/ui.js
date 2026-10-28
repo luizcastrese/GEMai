@@ -154,3 +154,14 @@ export function frasePrevistoReal(previsto, real) {
   const sentido = Math.abs(dif) < 5 ? 'dentro do previsto' : dif > 0 ? `${dif}% acima do previsto` : `${-dif}% abaixo do previsto`;
   return `Previsto ${fmtMin(previsto)}, real ${fmtMin(real)}: ${sentido}.`;
 }
+
+// Caixa "Para que serve esta tela?": aberta na primeira visita; depois de "Entendi" fica recolhida (lembra por tela).
+export function ajudaTela(chave, ...filhos) {
+  const k = `erp.ajuda.${chave}`;
+  let vista = false;
+  try { vista = localStorage.getItem(k) === '1'; } catch { /* ignore */ }
+  const d = h('details', { class: 'ajuda', open: !vista }, h('summary', null, 'Para que serve esta tela?'),
+    h('div', { class: 'corpo' }, filhos, h('button', { class: 'sm', onclick: () => { d.open = false; } }, 'Entendi')));
+  d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '0' : '1'); } catch { /* ignore */ } });
+  return d;
+}

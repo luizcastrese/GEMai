@@ -1,6 +1,7 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
-import { avisoIA, badge, confirmar, detalhes, fmtData, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
+import { ajudaTela, avisoIA, badge, confirmar, detalhes, fmtData, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
+import { faixaEm } from './jornada.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const METODOS = [['parafuso', 'Parafuso'], ['cavilha', 'Cavilha'], ['minifix', 'Minifix'], ['dobradica', 'Dobradiça'], ['corredica', 'Corrediça'],
@@ -17,15 +18,21 @@ function entrada(tipo, valor, extra = {}) { return h('input', { type: tipo, valu
 export async function produtos(el) {
   const lista = await get('/produtos?ativo=true');
   const nome = h('input', { placeholder: 'ex.: Armário de cozinha' });
-  montar(el, h('h1', null, 'Produtos'),
-    h('p', { class: 'muted' }, 'Informe do que o produto é feito (componentes) e como as peças se juntam. A partir disso o sistema monta o plano de trabalho com os tempos.'),
-    h('div', { class: 'card' }, tabela([{ t: 'Produto', f: (p) => h('a', { href: `#/produtos/${p.id}` }, p.nome) }, { t: 'Descrição', f: (p) => p.descricao }],
-      lista.filter((p) => p.tipo === 'produto'), 'Nenhum produto ainda. Crie o primeiro abaixo.')),
-    h('div', { class: 'card' }, h('h3', null, 'Novo produto'), h('div', { class: 'row' }, nome, h('button', { class: 'pri', onclick: async () => {
+  const topo = h('div');
+  montar(el, h('h1', null, 'Produtos'), topo,
+    ajudaTela('produtos', h('p', null, 'Aqui você cadastra o que a sua oficina fabrica. Exemplos: Armário de cozinha, Mesa, Guarda-roupa.'),
+      h('ul', null, h('li', null, 'Digite o nome do produto e clique em “Criar produto”.'),
+        h('li', null, 'Na tela do produto, liste as peças. Se preferir, escreva com suas palavras e a IA monta a lista para você conferir.')),
+      h('p', null, 'Isso é feito uma vez só por produto. Com ele pronto, o sistema calcula o tempo de fabricar.')),
+    lista.some((p) => p.tipo === 'produto') ? h('div', { class: 'card' }, tabela([{ t: 'Produto', f: (p) => h('a', { href: `#/produtos/${p.id}` }, p.nome) }, { t: 'Descrição', f: (p) => p.descricao }],
+      lista.filter((p) => p.tipo === 'produto'))) : null,
+    h('div', { class: 'card' }, h('h3', null, lista.some((p) => p.tipo === 'produto') ? 'Novo produto' : 'Cadastre o seu primeiro produto'),
+      h('p', { class: 'muted small' }, 'Dê um nome simples, do jeito que vocês falam na oficina.'), h('div', { class: 'row' }, nome, h('button', { class: 'pri', onclick: async () => {
       if (!nome.value.trim()) return toast('Digite o nome do produto.', true);
       const r = await tentar(() => post('/produtos', { nome: nome.value.trim(), tipo: 'produto' }));
       if (r) location.hash = `#/produtos/${r.id}`;
     } }, 'Criar produto'))));
+  faixaEm(topo, 'produto');
 }
 
 export async function produtoDetalhe(el, id) {
@@ -51,7 +58,7 @@ export async function produtoDetalhe(el, id) {
     const novo = { nome: h('input', { placeholder: 'ex.: Lateral' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: MDF)' }) };
     const sComps = h('div', { class: 'card' }, h('h2', null, '1. Componentes'),
       h('p', { class: 'muted small' }, 'Quantidade é por unidade do produto. Medidas em metros. Se não souber o peso, informe material e medidas: o sistema estima e marca como "estimado".'),
-      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', ''].map((t) => h('th', null, t)))),
+      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Parte (ex.: porta)', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', ''].map((t) => h('th', null, t)))),
         h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum componente ainda. Adicione abaixo ou use "Descrever com a IA".'),
       h('div', { class: 'row' }, novo.nome, novo.qtd, novo.mat, h('button', { onclick: async () => {
         if (!novo.nome.value.trim()) return toast('Digite o nome do componente.', true);
@@ -72,15 +79,23 @@ export async function produtoDetalhe(el, id) {
       } }, '+ Adicionar ligação')) : null);
 
     const sPlano = h('div', { class: 'card' }, h('h2', null, '3. Plano de trabalho'),
-      h('p', { class: 'muted' }, 'O sistema considera movimentação, usinagem, montagem, conferência, carga, ambiente e a jornada, e entrega os passos com horários.'),
+      h('p', { class: 'muted' }, 'É o passo a passo para fabricar este produto, com o tempo e o horário de cada passo. Antes, conte como é a sua oficina (menu “Sua oficina”) para o cálculo ficar certo.'),
       h('div', { class: 'inline' }, h('button', { class: 'pri big', disabled: !comps.length, onclick: () => abrirGerar({ produtoId: id, produtoNome: p.nome }) }, 'Gerar plano de trabalho'),
         h('a', { class: 'btn', href: '#/planos' }, 'Ver planos anteriores')));
     montar(area, sComps, sLig, sPlano);
+    atualizarFaixa();
   };
 
-  montar(el, h('p', null, h('a', { href: '#/produtos' }, '← Produtos')), h('h1', null, p.nome),
-    h('div', { class: 'inline' }, h('button', { class: 'ia', onclick: () => descreverComIA(p, desenhar) }, 'Descrever com a IA')),
-    h('p', { class: 'muted small' }, 'Escreva em texto livre (ex.: "armário de MDF com 2 portas, 3 prateleiras e 4 dobradiças"). A IA propõe a lista; você confere antes de salvar.'), area);
+  const topo = h('div');
+  montar(el, h('p', null, h('a', { href: '#/produtos' }, '← Produtos')), h('h1', null, p.nome), topo,
+    ajudaTela('produto', h('p', null, 'Pense na lista de materiais do produto: quais peças ele leva e como uma peça se prende na outra.'),
+      h('ul', null, h('li', null, 'Não precisa ser perfeito: o que faltar o sistema avisa depois, e você completa.'),
+        h('li', null, 'As medidas são em metros. Exemplo: 80 cm = 0,8 e 18 mm = 0,018.'),
+        h('li', null, 'Se não souber o peso, informe o material e as medidas: o sistema estima e marca como “estimado”.'))),
+    h('div', { class: 'card' }, h('h3', null, 'Quer ir mais rápido?'),
+      h('p', { class: 'muted small' }, 'Escreva em texto livre (ex.: "armário de MDF com 2 portas, 3 prateleiras e 4 dobradiças"). A IA propõe a lista; você confere antes de salvar.'),
+      h('button', { class: 'ia big', onclick: () => descreverComIA(p, desenhar) }, 'Descrever com a IA')), area);
+  const atualizarFaixa = () => faixaEm(topo, 'produto');
   await desenhar();
 }
 
@@ -102,7 +117,7 @@ function descreverComIA(p, depois) {
 function conferirProposta(p, r, depois) {
   const existentes = h('input', { type: 'checkbox' });
   modal('Confira a lista sugerida', h('div', null, avisoIA('Medidas, pesos e fixadores que a IA não conhece ficam em branco: você completa depois. Nada foi salvo ainda.'),
-    tabela([{ t: 'Componente', f: (c) => c.nome }, { t: 'Qtd.', f: (c) => fmtNum(c.quantidade, 2) }, { t: 'Material', f: (c) => c.material || '—' }, { t: 'Subconjunto', f: (c) => c.grupo }], r.componentes, 'A IA não encontrou componentes no texto.'),
+    tabela([{ t: 'Componente', f: (c) => c.nome }, { t: 'Qtd.', f: (c) => fmtNum(c.quantidade, 2) }, { t: 'Material', f: (c) => c.material || '—' }, { t: 'Parte do produto', f: (c) => c.grupo }], r.componentes, 'A IA não encontrou componentes no texto.'),
     r.ligacoes.length ? h('div', null, h('h3', null, 'Ligações'), r.ligacoes.map((l) => h('div', { class: 'lig' }, `${l.componente} → ${l.ligado_a || 'o conjunto'} · ${rotMetodo(l.metodo)} · ${l.fixadores} un.`))) : null,
     r.dados_faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'A IA não soube: '), r.dados_faltantes.join('; ')) : null,
     r.aviso ? h('p', { class: 'muted small' }, r.aviso) : null,
@@ -155,18 +170,26 @@ export async function planos(el) {
   const [ps, prods] = await Promise.all([get(`/planos${qs({ unidade_id: estado.unidadeId })}`), get('/produtos?ativo=true')]);
   const nome = (id) => prods.find((x) => x.id === id)?.nome ?? '—';
   const escolha = h('select', null, h('option', { value: '' }, 'Escolha o produto…'), prods.filter((x) => x.tipo === 'produto').map((x) => h('option', { value: x.id }, x.nome)));
-  montar(el, h('h1', null, 'Planos de trabalho'),
-    h('p', { class: 'muted' }, 'Cada plano é uma sugestão calculada a partir do produto e do contorno físico. Só vale depois que você confirmar.'),
-    h('div', { class: 'card' }, h('div', { class: 'row' }, escolha, h('button', { class: 'pri', onclick: () => {
+  const temProduto = prods.some((x) => x.tipo === 'produto');
+  const topo = h('div');
+  montar(el, h('h1', null, 'Planos de trabalho'), topo,
+    ajudaTela('planos', h('p', null, h('strong', null, 'Plano de trabalho'), ' é o passo a passo para fabricar um produto: o que fazer, em que ordem, quanto tempo leva cada passo e a que horas começa.'),
+      h('ul', null, h('li', null, 'O sistema (com a IA) sugere o plano a partir do produto e da sua oficina.'),
+        h('li', null, 'Você confere e aperta “Confirmar plano”. Só então ele vale.'),
+        h('li', null, 'Depois, gere a ordem de produção: ela vai para a “Minha fila” da equipe.'))),
+    temProduto ? h('div', { class: 'card' }, h('h3', null, 'Montar um novo plano'), h('div', { class: 'row' }, escolha, h('button', { class: 'pri', onclick: () => {
       if (!escolha.value) return toast('Escolha o produto.', true);
       abrirGerar({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
-    } }, 'Novo plano'))),
-    h('div', { class: 'card' }, tabela([
+    } }, 'Novo plano')))
+      : h('div', { class: 'card' }, h('h3', null, 'Primeiro, cadastre um produto'), h('p', { class: 'muted' }, 'O plano é feito a partir de um produto. Você ainda não tem nenhum.'),
+        h('a', { class: 'btn pri big', href: '#/produtos' }, 'Cadastrar o primeiro produto')),
+    ps.length || temProduto ? h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge('Rascunho', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) },
       { t: 'Tempo de trabalho', f: (p) => fmtMin(p.totais.tempo_padrao_min) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
       { t: 'Pendências', f: (p) => (p.totais.completo ? badge('Completo', 'b-ok') : badge('Incompleto', 'b-warn')) },
-      { t: 'Ordem', f: (p) => (p.ordem_id ? h('a', { href: `#/ordens/${p.ordem_id}` }, 'Ver ordem') : '—') }], ps, 'Nenhum plano ainda. Escolha um produto acima.')));
+      { t: 'Ordem', f: (p) => (p.ordem_id ? h('a', { href: `#/ordens/${p.ordem_id}` }, 'Ver ordem') : '—') }], ps, 'Nenhum plano ainda. Escolha o produto acima e clique em “Novo plano”.')) : null);
+  faixaEm(topo, 'plano');
 }
 
 export async function planoDetalhe(el, id) {
@@ -194,8 +217,8 @@ export async function planoDetalhe(el, id) {
         estado.avancado ? detalhes('Como o tempo foi calculado', s.composicao.map((c) => h('div', { class: 'small' }, `${c.nome}: ${c.minutos === null ? c.motivo : `${fmtNum(c.minutos, 2)} min`}`)),
           s.elementos.map((e) => (e.justificativa ? h('div', { class: 'muted small' }, `• ${e.nome}: ${e.justificativa}`) : null))) : null),
       h('td', null, s.inicio_prev ? hora(s.inicio_prev) : '—'), h('td', null, s.fim_prev ? hora(s.fim_prev) : '—'),
-      h('td', null, s.tempo_padrao_min === null ? badge('Sem tempo', 'b-warn') : fmtMin(s.tempo_padrao_min)),
-      h('td', { class: 'noprint' }, s.tempo_prep_min ? h('span', { class: 'muted small' }, `preparo ${fmtMin(s.tempo_prep_min)}`) : '')));
+      h('td', null, s.tempo_padrao_min === null ? badge('Falta informação', 'b-warn') : fmtMin(s.tempo_padrao_min)),
+      h('td', { class: 'noprint' }, s.tempo_prep_min ? h('span', { class: 'muted small' }, `inclui preparo: ${fmtMin(s.tempo_prep_min)}`) : '')));
   });
 
   const acoes = h('div', { class: 'inline noprint' },
@@ -211,19 +234,33 @@ export async function planoDetalhe(el, id) {
     h('button', { onclick: () => tentar(() => baixar(`/planos/${id}/exportar.csv`, `plano-${id}.csv`)) }, 'Baixar planilha'),
     p.status !== 'cancelado' && !p.ordem_id ? h('button', { class: 'dng', onclick: () => confirmar('Cancelar este plano?', async () => { if (await tentar(() => post(`/planos/${id}/cancelar`))) recarregar(); }, 'Cancelar plano') }, 'Cancelar plano') : null);
 
+  const topo = h('div', { class: 'noprint' });
+  const seguranca = Object.assign(badge(`Segurança da estimativa: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''),
+    { title: 'Fica em “média” até você medir a produção real e comparar com o previsto.' });
+  const agora = p.status === 'cancelado' ? null : p.status === 'rascunho'
+    ? (p.faltantes.length ? 'Este plano ainda tem pendências. Preencha o que falta (aviso amarelo abaixo), aperte “Recalcular” e depois confirme.'
+      : 'Confira os passos abaixo. Estando tudo certo, aperte “Confirmar plano” no fim da página.')
+    : (p.ordem_id ? 'A ordem de produção já foi criada. Acompanhe o trabalho em “Minha fila” e em “Ordens de produção”.'
+      : 'Plano confirmado! Agora aperte “Gerar ordem de produção” (no fim da página) para colocar o trabalho na fila.');
+  if (agora) faixaEm(topo, p.status === 'rascunho' ? 'confirmar' : 'ordem', { texto: agora, proximo: false });
   montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/planos' }, '← Planos de trabalho')),
-    h('h1', null, p.nome), h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
-      badge(`Confiança: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''), badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado por regras locais', 'b-ia')),
-    (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa. Tempos de montagem e conferência partem de referências genéricas até você informar os seus (Contorno físico) ou medir a produção. Quando houver apontamentos reais, compare com o previsto.'),
-    h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Pessoas-hora', `${fmtNum(t.horas_homem, 1)} h`),
+    h('h1', null, p.nome), topo, h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
+      seguranca, badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado automaticamente (sem IA externa)', 'b-ia')),
+    h('div', { class: 'noprint' }, ajudaTela('plano-detalhe', h('p', null, 'Como ler este plano:'),
+      h('ul', null, h('li', null, 'Cada linha é um passo do trabalho, na ordem em que acontece.'),
+        h('li', null, 'Os horários já consideram a jornada que você informou, o almoço e o fim de semana.'),
+        h('li', null, 'Passo em amarelo com “Falta informação” precisa de um dado seu (veja o aviso amarelo).'),
+        h('li', null, 'É uma estimativa. Só vale depois que você aperta “Confirmar plano”.')))),
+    (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa. Tempos de montagem e conferência partem de referências genéricas até você informar os seus (menu “Sua oficina”) ou medir a produção. Quando houver apontamentos reais, compare com o previsto.'),
+    h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Horas de trabalho somando as pessoas', `${fmtNum(t.horas_homem, 1)} h`),
       kpi('Começa', t.inicio ? fmtData(t.inicio) : '—', 'peq'), kpi('Termina', t.fim ? fmtData(t.fim) : '—', 'peq'), kpi('Dias de trabalho', t.dias || '—')),
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
-      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher no Contorno físico'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
+      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher em Sua oficina'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
         p.status === 'rascunho' ? h('span', { class: 'muted small' }, 'Depois, use "Recalcular".') : null)) : null,
     unicos.length ? h('div', { class: 'card' }, h('h3', null, 'Atenção'), h('ul', null, unicos.map((a) => h('li', { class: a.categoria === 'seguranca' ? 'seg-l' : '' }, a.msg)))) : null,
-    h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['#', 'Passo', 'Começa', 'Termina', 'Tempo', ''].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),
+    h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Nº', 'Passo', 'Começa', 'Termina', 'Tempo', ''].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),
     acoes,
-    detalhes('Premissas do plano', h('ul', null, p.premissas.map((x) => h('li', { class: 'small' }, x)))));
+    detalhes('Em que este plano se baseia', h('ul', null, p.premissas.map((x) => h('li', { class: 'small' }, x)))));
 }
 
 function gerarOrdem(p) {

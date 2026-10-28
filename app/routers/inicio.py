@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from ..constants import ORDEM_ABERTA
 from ..deps import Ctx, get_ctx
 from ..models import Apontamento, ModeloTempo, Ocorrencia, Operacao, Ordem, Processo, Etapa
-from ..services import contorno
+from ..services import contorno, jornada
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["inicio"])
@@ -25,7 +25,7 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     else:
         unidades = ctx.ids_unidades()
     if not unidades:
-        return {"acoes": [], "numeros": {}}
+        return {"acoes": [], "numeros": {}, "jornada": jornada.passos(ctx.db, ctx.empresa_id, [])}
     hoje = datetime.now(timezone.utc).astimezone(tz_empresa(ctx.empresa)).date()
     abertas = ctx.db.scalars(select(Ordem).where(Ordem.empresa_id == ctx.empresa_id, Ordem.unidade_id.in_(unidades),
                                                  Ordem.status.in_(ORDEM_ABERTA))).all()
@@ -51,7 +51,7 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     cont = contorno.resumo(ctx.db, ctx.empresa_id, unidades)
     if cont["tarefas"] and cont["pendentes"]:
         acoes.append({"codigo": "contorno", "nivel": "acao", "link": "#/contorno",
-                      "titulo": _plural(cont["pendentes"], "informação do contorno físico falta", "informações do contorno físico faltam")
+                      "titulo": _plural(cont["pendentes"], "informação sobre sua oficina falta", "informações sobre sua oficina faltam")
                                 + " para a IA prever os tempos"})
     # previsões da IA aguardando confirmação (versão ativa de cada operação)
     pend = ctx.db.scalars(select(ModeloTempo).where(
@@ -77,4 +77,12 @@ def inicio(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
     elif ativos_n and not abertas:
         acoes.append({"codigo": "criar_ordem", "nivel": "info", "link": "#/ordens",
                       "titulo": "Nenhuma ordem em andamento. Crie uma para começar a produzir"})
-    return {"acoes": acoes, "numeros": numeros}
+    return {"acoes": acoes, "numeros": numeros, "jornada": jornada.passos(ctx.db, ctx.empresa_id, unidades)}
+
+
+@router.get("/jornada")
+def primeiros_passos(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
+    """Os 5 passos do produto até a primeira ordem, com o que já foi feito e para onde ir."""
+    if unidade_id is not None:
+        ctx.exige_unidade(unidade_id)
+    return jornada.passos(ctx.db, ctx.empresa_id, [unidade_id] if unidade_id is not None else ctx.ids_unidades())
