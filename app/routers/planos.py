@@ -11,10 +11,12 @@ from sqlalchemy.exc import IntegrityError
 from .. import audit
 from ..deps import Ctx, get_ctx
 from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoPasso, PlanoTrabalho, Produto, Recurso, ReferenciaTempo
+from ..ratelimit import limite_ia
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
-                       InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
+                       ArranjoIn, ArranjosOut, InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoDeArranjoIn, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
                        PlanoPassoOut, ReferenciaIn, ReferenciaOut)
 from ..services import ia, modelo_tempo, plano as svc
+from ..services.arranjo import avaliar as arranjo_av, servico as arranjo
 from ..services.dashboard import tz_empresa
 from .ordens import _numero, ordem_out
 
@@ -164,8 +166,8 @@ def aplicar_estrutura(pid: int, dados: AplicarEstruturaIn, ctx: Ctx = Depends(ge
     return _estrutura(ctx, p)
 
 
-# ------------------------------------------------------------------ referências de tempo
-@router.get("/referencias-tempo", response_model=list[ReferenciaOut])
+# ------------------------------------------------------------------ referências de tempo (DEPRECATED: não alimentam mais o cálculo)
+@router.get("/referencias-tempo", response_model=list[ReferenciaOut], deprecated=True)
 def listar_referencias(ctx: Ctx = Depends(get_ctx)):
     informadas = {r.chave: r.minutos for r in ctx.db.scalars(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id))}
     out = []
@@ -177,7 +179,7 @@ def listar_referencias(ctx: Ctx = Depends(get_ctx)):
     return out
 
 
-@router.put("/referencias-tempo", response_model=ReferenciaOut)
+@router.put("/referencias-tempo", response_model=ReferenciaOut, deprecated=True)
 def definir_referencia(dados: ReferenciaIn, ctx: Ctx = Depends(get_ctx)):
     r = ctx.db.scalar(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id, ReferenciaTempo.chave == dados.chave))
     antes = audit.snap(r) if r else None
@@ -192,7 +194,7 @@ def definir_referencia(dados: ReferenciaIn, ctx: Ctx = Depends(get_ctx)):
     return ReferenciaOut(chave=r.chave, minutos=r.minutos, padrao_minutos=modelo_tempo.REFERENCIAS_MONTAGEM.get(r.chave), informada=True)
 
 
-@router.delete("/referencias-tempo/{chave}", status_code=204)
+@router.delete("/referencias-tempo/{chave}", status_code=204, deprecated=True)
 def restaurar_referencia(chave: str, ctx: Ctx = Depends(get_ctx)):
     r = ctx.db.scalar(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id, ReferenciaTempo.chave == chave))
     if r:
@@ -215,6 +217,7 @@ def _plano_out(ctx: Ctx, p: PlanoTrabalho, detalhado: bool = True) -> PlanoOut:
             x.recurso_nome, x.origem_nome, x.destino_nome = rec.get(s.recurso_id), esp.get(s.espaco_origem_id), esp.get(s.espaco_destino_id)
             passos.append(x)
         o.passos = passos
+        o.hierarquia = svc.hierarquia_do_plano(o.produto_nome or p.nome, p)
     else:
         o.passos = None
     return o
@@ -226,7 +229,7 @@ def _plano(ctx: Ctx, pid: int) -> PlanoTrabalho:
 
 def _cfg(dados: PlanoGerarIn) -> dict:
     return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
-            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
+            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_ignorada": bool(dados.fadiga_pct_hora)}
 
 
 @router.post("/planos", response_model=PlanoOut, status_code=201)
@@ -235,6 +238,44 @@ def gerar_plano(dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
     produto = ctx.obter(Produto, dados.produto_id)
     plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(dados))
     ctx.auditar("plano.gerar", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "quantidade": dados.quantidade, "provedor": plano.provedor})
+    ctx.db.commit()
+    return _plano_out(ctx, plano)
+
+
+def _cfg_arranjo(dados: ArranjoIn) -> dict:
+    return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
+            "pessoas": 1, "perfil_id": dados.perfil_id}
+
+
+@router.post("/planos/arranjos", response_model=ArranjosOut)
+def recomendar_arranjos(dados: ArranjoIn, ctx: Ctx = Depends(get_ctx)):
+    """Arranjos candidatos (equipe, lotes, prioridade, meio de movimentação) CALCULADOS pelo motor modular e escalonados com
+    recursos limitados e dependências do produto. Devolve os melhores com os trade-offs; nada é gravado. A IA, se pedida,
+    só explica e sugere alternativas (que o sistema avalia); nunca define tempos."""
+    ctx.exige_unidade(dados.unidade_id)
+    produto = ctx.obter(Produto, dados.produto_id)
+    if dados.explicar:
+        limite_ia.checar(f"{ctx.empresa_id}")
+    r = arranjo.recomendar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(dados), pessoas_max=dados.pessoas_max,
+                           n_melhores=dados.n_melhores, explicar=dados.explicar)
+    ctx.auditar("plano.arranjos", "produto", produto.id, None, {"avaliados": r["avaliados"], "candidatos": len(r["candidatos"])})
+    ctx.db.commit()
+    return r
+
+
+@router.post("/planos/de-arranjo", response_model=PlanoOut, status_code=201)
+def plano_do_arranjo(dados: PlanoDeArranjoIn, ctx: Ctx = Depends(get_ctx)):
+    """Gera o plano de trabalho a partir do arranjo ESCOLHIDO pelo usuário (recalculado pelo motor; agenda em paralelo)."""
+    ctx.exige_unidade(dados.unidade_id)
+    produto = ctx.obter(Produto, dados.produto_id)
+    e = dados.escolha
+    if e.meio_id is not None:
+        meio = ctx.obter(Recurso, e.meio_id)
+        if meio.unidade_id != dados.unidade_id or meio.funcao != "movimentacao":
+            raise HTTPException(422, "Meio de movimentação inválido para esta unidade.")
+    plano = arranjo.gerar_do_arranjo(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(dados),
+                                     arranjo_av.Config(e.pessoas, e.lotes, e.regra, e.meio_id))
+    ctx.auditar("plano.gerar_de_arranjo", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "arranjo": plano.totais.get("arranjo", {}).get("id")})
     ctx.db.commit()
     return _plano_out(ctx, plano)
 

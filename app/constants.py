@@ -36,8 +36,10 @@ FORMULAS_TEMPO = ("linear", "lote", "fixo")
 
 PARAMETROS_PADRAO = {
     # nome: (unidade, descrição)
-    "tempo_preparacao_min": ("min", "Tempo de preparação por ordem/lote"),
-    "tempo_unitario_min": ("min/un", "Tempo de execução por unidade"),
     "tamanho_lote": ("un", "Unidades por lote (fórmula 'lote')"),
     "perda_percentual": ("%", "Perda/refugo esperado"),
 }
+
+# DEPRECATED: tempo digitado (por unidade/preparação) deixou de ser entrada. O tempo é saída do motor modular
+# (histórico normalizado ou módulo do catálogo). Parâmetros antigos seguem gravados, mas são ignorados.
+PARAMETROS_TEMPO_OBSOLETOS = ("tempo_preparacao_min", "tempo_unitario_min")

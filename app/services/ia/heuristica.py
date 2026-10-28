@@ -9,10 +9,9 @@ from __future__ import annotations
 import re
 import unicodedata
 
-import math
 
-from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, TMU_MIN, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, ComponenteIA, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
+from .esquemas import (AnaliseTexto, CandidatoMeio, ExplicacaoArranjos, SugestaoModulo, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -21,7 +20,7 @@ BASE = {
     "Processos": ["Quais são as etapas do processo, na ordem em que acontecem?",
                   "Existem caminhos alternativos ou etapas que só ocorrem em alguns casos?"],
     "Recursos": ["Quais máquinas, ferramentas, equipamentos e instalações são utilizados?",
-                 "Para cada máquina, quantas peças ou unidades ela faz por hora, mais ou menos?"],
+                 "Para cada máquina, qual a marca e o modelo (para buscar a ficha técnica) e para que ela serve?"],
     "Pessoas": ["Quem executa cada etapa e quantas pessoas participam? Há diferença entre operadores?"],
     "Materiais": ["O que entra em cada etapa e em que quantidade? Existem perdas ou refugos?",
                   "Quanto pesa, em média, cada peça ou material que as pessoas carregam?"],
@@ -38,7 +37,7 @@ BASE = {
 # Perguntas de aprofundamento disparadas por palavras nas respostas/descrição.
 GATILHOS = [
     (r"m[aá]quina|cnc|equipamento|forno|serra|prensa|esteira", "Recursos",
-     "Para cada máquina citada: qual a capacidade (unidades/hora) e quanto tempo leva a preparação (setup)?"),
+     "Para cada máquina citada: qual a marca e o modelo e para que ela serve? (a ficha técnica traz as características; o tempo é calculado)"),
     (r"perda|refugo|desperd[ií]cio|sobra", "Materiais",
      "Qual é a porcentagem aproximada de perda ou refugo e em qual etapa ela mais ocorre?"),
     (r"espera|fila|aguard|parad", "Tempo",
@@ -169,12 +168,7 @@ def estruturar(ctx: dict) -> EstruturaProposta:
         etapas.append(EtapaIA(
             nome=n, operacoes=[OperacaoIA(
                 nome=n, recurso=None,
-                parametros=[
-                    ParametroIA(nome="tempo_preparacao_min", unidade="min",
-                                justificativa="A medir: tempo de preparação informado/medido pela empresa."),
-                    ParametroIA(nome="tempo_unitario_min", unidade="min/un",
-                                justificativa="A medir: tempo de execução por unidade."),
-                ],
+                parametros=[ParametroIA(nome="perda_percentual", unidade="%", justificativa="A medir: perda/refugo esperado.")],
                 inicio_marco=f"Quando a primeira unidade de '{n}' é iniciada",
                 fim_marco=f"Quando a última unidade de '{n}' é concluída e liberada para a próxima etapa")]))
     base_texto = _norm(" ".join([ctx.get("descricao", "")] + [q.get("resposta") or "" for q in qa]))
@@ -211,11 +205,7 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         els.append(ElementoTempo(nome=f"Preparação de {rec['nome']}", tipo="preparacao", metodo="fixo", a_min=prep,
                                  justificativa="Valor de referência genérico; meça o setup real da sua operação."))
         prem.append(f"Preparação de {prep:g} min por ordem é uma referência genérica, não um dado da empresa.")
-        if rec.get("capacidade_un_h"):
-            els.append(ElementoTempo(nome=f"Processamento em {rec['nome']}", tipo="processamento", metodo="capacidade_recurso",
-                                     depende_operador=False, justificativa="Usa a capacidade informada do equipamento (tempo de máquina)."))
-        else:
-            faltam.append(f"Capacidade (un/h) do equipamento '{rec['nome']}'")
+        faltam.append(f"Tempo de máquina de '{rec['nome']}': escolha um módulo de tempo para a operação e preencha a ficha técnica do equipamento")
     if (org or dst) and not (org and dst and org.get('nome') == dst.get('nome') and not dist):
         if dist is not None:
             itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pessoas // peso), 1) if peso else 1
@@ -240,7 +230,7 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         prem.append("Manuseio: 0,15 min + 0,012 min/kg por unidade (referência genérica).")
         if mov:
             faltam.append(f"Índices de movimento (MOST) para o tipo '{mov}'")
-    elif not rec or not rec.get("capacidade_un_h"):
+    elif not rec:
         faltam.append("Peso e dimensões do item manuseado, ou o tipo de movimento")
     if not els:
         faltam.append("Equipamento/posto ou espaços e item físico da operação")
@@ -393,17 +383,70 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
                               observacoes="Lista extraída do texto por regras locais: confira nomes e quantidades e complete as medidas.")
 
 
+# ---------------------------------------------------------------- arranjos (explicação local)
+def explicar_arranjos(fatos: dict) -> ExplicacaoArranjos:
+    """Texto a partir dos NÚMEROS calculados pelo sistema (nenhum inventado). Sem IA externa não sugere alternativas."""
+    cs = fatos.get("candidatos") or []
+    if not cs:
+        return ExplicacaoArranjos(texto="Nenhum arranjo viável: complete as pendências do plano.")
+    rapido = min(cs, key=lambda c: c["makespan_min"])
+    barato = min(cs, key=lambda c: c["pessoas_hora"])
+    txt = (f"Mais rápido: {rapido['rotulo']} — {rapido['makespan_min']:g} min de trabalho corrido, {rapido['pessoas_hora']:g} pessoas-hora. "
+           f"Menor esforço: {barato['rotulo']} — {barato['pessoas_hora']:g} pessoas-hora, {barato['makespan_min']:g} min. ")
+    if rapido is not barato:
+        txt += "Mais gente reduz o prazo, mas costuma aumentar as pessoas-hora e a ocupação ociosa; veja o gargalo de cada arranjo."
+    return ExplicacaoArranjos(texto=txt)
+
+
+# ---------------------------------------------------------------- módulo de tempo de uma operação (escolha local)
+_PALAVRAS_MODULO = (("corte", "cort", "serra", "seccion", "esquadrej"), ("bordo", "bord", "colagem de borda"), ("furacao", "fur"),
+                    ("movimentacao", "transport", "mover", "levar", "carreg", "deslocar", "movimentar", "buscar"),
+                    ("conferencia", "conferi", "inspec", "qualidade", "revis"), ("montagem", "mont", "fixar", "parafus", "encaix"))
+
+
+def sugerir_modulo(ctx: dict) -> SugestaoModulo:
+    """Escolhe o módulo por palavras-chave do nome/descrição. Não produz tempo nem número algum."""
+    nome = _norm(ctx.get("nome", ""))
+    primeira = nome.split()[0] if nome.split() else ""  # o verbo da tarefa ("Levar…", "Cortar…") manda mais que o resto
+    n = f"{nome} {_norm(ctx.get('descricao', ''))}"
+    for alvo in (primeira, n):
+        for chave, *palavras in _PALAVRAS_MODULO:
+            if any(p in alvo for p in palavras):
+                return SugestaoModulo(modulo=chave, justificativa=f"O nome/descrição lembra '{chave}' (regra local por palavra-chave): confirme.")
+    return SugestaoModulo(modulo=None, justificativa="Não reconheci o tipo de trabalho: escolha o módulo manualmente.")
+
+
+# ---------------------------------------------------------------- meios (identificação local)
+_PALAVRAS_MEIO = (("corte", "seccionadora", "serra", "esquadrejadeira", "cnc"), ("bordo", "coladeira", "borda"),
+                  ("furacao", "furadeira", "furacao", "coligada"), ("movimentacao", "carrinho", "paleteira", "empilhadeira", "talha", "ponte rolante"))
+
+
+def identificar_meio(ctx: dict, imagem=None) -> IdentificacaoMeio:
+    """Sem IA externa: não adivinha marca nem modelo. Devolve o texto como modelo candidato (confiança baixa) para a
+    pessoa conferir e confirmar; a função é só uma pista por palavra-chave."""
+    texto = (ctx.get("texto") or "").strip()
+    n = _norm(texto)
+    funcao = next((f for f, *palavras in _PALAVRAS_MEIO if any(p in n for p in palavras)), "")
+    if not texto:
+        return IdentificacaoMeio()
+    tipo = "meio_movimentacao" if funcao == "movimentacao" else "maquina"
+    return IdentificacaoMeio(candidatos=[CandidatoMeio(
+        modelo=texto[:200], tipo=tipo, funcao=funcao, confianca="baixa",
+        observacao="Identificação local (sem IA externa): confira a marca e o modelo antes de confirmar.")])
+
+
+def buscar_ficha(ctx: dict) -> FichaTecnicaIA:
+    """Sem IA externa não há busca na web: nada é preenchido (a ficha fica como pendência para preenchimento manual)."""
+    return FichaTecnicaIA(encontrada=False)
+
+
 # ---------------------------------------------------------------- plano de trabalho (heurística local)
-_POS_IDX = MOVIMENTOS_MOST["levantamento_curvado"] + MOVIMENTOS_MOST["posicionamento_preciso"]
-POS_MIN = sum(_POS_IDX) * 10 * TMU_MIN  # minutos para pegar e posicionar uma peça (índices MOST ilustrativos)
-
-
 def planejar(ctx: dict) -> PlanoProposta:
-    """Plano a partir dos componentes, das ligações e do contorno físico. Regras e referências declaradas;
-    o que faltar vira `dados_faltantes` (nunca um tempo inventado em silêncio)."""
+    """Plano a partir dos componentes, das ligações e do contorno físico: ESCOLHE MÓDULOS do catálogo e mapeia
+    componentes, equipamentos e locais. Não produz tempo algum (nem a_min, nem taxas): o sistema calcula. O que faltar
+    vira `dados_faltantes`."""
     N = float(ctx["produto"]["quantidade"])
     comps, ligs = ctx["componentes"], ctx["ligacoes"]
-    refs = ctx["referencias"]
     pessoas_eq = max(int(ctx.get("pessoas") or 1), 1)
     espacos, recursos = ctx.get("espacos", []), ctx.get("recursos", [])
     prem: list[str] = []
@@ -421,26 +464,17 @@ def planejar(ctx: dict) -> PlanoProposta:
         faltam.append("Local de montagem")
 
     def equip(funcao: str):
-        lista = [r for r in recursos if r.get("funcao") == funcao]
-        return next((r for r in lista if r.get("capacidade_un_h")), lista[0] if lista else None)
+        return next((r for r in recursos if r.get("funcao") == funcao), None)
 
-    def pessoas_para(peso):
-        return max(pessoas_eq, math.ceil(peso / REFERENCIAS["carga_manual_max_kg"])) if peso else pessoas_eq
+    meio = equip("movimentacao")  # meio de movimentação cadastrado, se houver
 
-    def mover(origem, destino, nomes, pecas, peso, titulo):
+    def mover(origem, destino, nomes, titulo):
         if not origem or not destino or origem == destino:
             return
-        pes = pessoas_para(peso)
-        itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pes // peso), 1) if peso else 1
-        passos.append(PassoIA(nome=titulo, tipo="movimentacao", componentes=nomes, qtd_pecas=pecas, espaco_origem=origem, espaco_destino=destino,
-                              pessoas=pes, elementos=[ElementoTempo(
-                                  nome=f"Levar de {origem} até {destino}", tipo="deslocamento", metodo="deslocamento",
-                                  velocidade_m_min=REFERENCIAS["velocidade_caminhada_m_min"], itens_por_viagem=itens, ida_e_volta=True,
-                                  justificativa=f"{itens} peça(s) por viagem (carga manual de referência: {REFERENCIAS['carga_manual_max_kg']:g} kg por pessoa).")]))
+        passos.append(PassoIA(nome=titulo, modulo="movimentacao", componentes=nomes, espaco_origem=origem, espaco_destino=destino,
+                              recurso=meio["nome"] if meio else None, pessoas=pessoas_eq))
 
     paineis = [c for c in comps if c.get("comp") and c.get("larg")]
-    pesos = [c["peso_kg"] for c in paineis if c.get("peso_kg")]
-    peso_medio = sum(pesos) / len(pesos) if pesos else None
     for c in comps:
         if c.get("peso_origem") == "estimado":
             prem.append(f"Peso de '{c['nome']}' estimado por material e medidas ({c['peso_kg']:.1f} kg): informe o real.")
@@ -451,76 +485,40 @@ def planejar(ctx: dict) -> PlanoProposta:
     local_atual = estoque
     etapas_maq = (("corte", "Cortar", lambda c: True), ("bordo", "Colar borda", lambda c: (c.get("bordas_m") or 0) > 0),
                   ("furacao", "Furar", lambda c: (c.get("furos") or 0) > 0))
-    for funcao, verbo, filtro in etapas_maq:
+    for modulo, verbo, filtro in etapas_maq:
         alvo = [c for c in paineis if filtro(c)]
         if not alvo:
             continue
         pecas = sum(c["qtd"] for c in alvo) * N
         nomes = [c["nome"] for c in alvo]
-        eq = equip(funcao)
+        eq = equip(modulo)
         if eq is None:
             faltam.append(f"Equipamento para '{verbo.lower()}' (em Contorno físico, marque em 'Para que serve?')")
-            passos.append(PassoIA(nome=f"{verbo} {pecas:g} peças", tipo=funcao, componentes=nomes, qtd_pecas=pecas))
+            passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", modulo=modulo, componentes=nomes))
             continue
-        mover(local_atual, eq.get("espaco"), nomes, pecas, peso_medio, f"Levar peças até {eq.get('espaco')} ({verbo.lower()})")
+        mover(local_atual, eq.get("espaco"), nomes, f"Levar peças até {eq.get('espaco')} ({verbo.lower()})")
         local_atual = eq.get("espaco") or local_atual
-        els = [ElementoTempo(nome=f"Preparar {eq['nome']}", tipo="preparacao", metodo="fixo", a_min=REFERENCIAS["preparacao_maquina_min"],
-                             justificativa="Referência genérica de preparação; meça a sua."),
-               ElementoTempo(nome=f"{verbo} em {eq['nome']}", tipo="processamento", metodo="capacidade_recurso", depende_operador=False,
-                             justificativa="Capacidade (peças por hora) informada para o equipamento.")]
-        if not eq.get("capacidade_un_h"):
-            faltam.append(f"Quantas peças por hora faz '{eq['nome']}'")
-        passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", tipo=funcao, componentes=nomes, qtd_pecas=pecas, recurso=eq["nome"],
-                              espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq, elementos=els))
-    mover(local_atual, montagem, [c["nome"] for c in paineis], sum(c["qtd"] for c in paineis) * N, peso_medio, "Levar peças até a montagem")
+        passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", modulo=modulo, componentes=nomes, recurso=eq["nome"],
+                              espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq))
+    mover(local_atual, montagem, [c["nome"] for c in paineis], "Levar peças até a montagem")
 
-    # --- montagem por subconjunto e final
+    # --- montagem por subconjunto e final (a derivação das ligações e quantidades é do sistema)
     grupo_de = {c["nome"]: c.get("grupo") or "Corpo" for c in comps}
     grupos = list(dict.fromkeys(grupo_de.values()))
-
-    def elementos_montagem(lista_ligs, n_pecas, rotulo):
-        els = []
-        if n_pecas:
-            els.append(ElementoTempo(nome=f"Pegar e posicionar {n_pecas:g} peça(s)/conjunto(s) por unidade", tipo="manuseio", metodo="fixo", por_unidade=True,
-                                     a_min=round(n_pecas * POS_MIN, 4),
-                                     justificativa=f"{len(_POS_IDX)} índices MOST ilustrativos (≈{POS_MIN * 60:.0f} s por peça): curvar/levantar + posicionar com cuidado."))
-        por_metodo: dict[str, int] = {}
-        for l in lista_ligs:
-            por_metodo[l["metodo"]] = por_metodo.get(l["metodo"], 0) + int(l.get("fixadores") or 0)
-        for metodo, n in por_metodo.items():
-            if n <= 0:
-                continue
-            chave = f"fixador:{metodo}" if f"fixador:{metodo}" in refs else "fixador:outro"
-            origem = "da sua oficina" if chave in ctx.get("referencias_informadas", []) else "genérico"
-            els.append(ElementoTempo(nome=f"Fixar com {metodo} ({n} un por unidade)", tipo="processamento", metodo="fixo", por_unidade=True,
-                                     a_min=round(n * refs[chave], 4), justificativa=f"{refs[chave]:g} min por {metodo} ({origem})."))
-        return els
-
     for g in grupos:
         membros = [c for c in comps if (c.get("grupo") or "Corpo") == g]
-        nomes = [c["nome"] for c in membros]
         l_g = [l for l in ligs if grupo_de.get(l["componente"]) == g and (not l.get("ligado_a") or grupo_de.get(l["ligado_a"]) == g)]
-        pecas_g = sum(c["qtd"] for c in membros if c.get("comp") and c.get("larg"))
-        if not pecas_g and not l_g:
+        if not any(c.get("comp") and c.get("larg") for c in membros) and not l_g:
             continue
-        if not l_g:
-            faltam.append(f"Como se montam as peças do grupo '{g}' (método e nº de fixadores)")
-        pesos_g = [c["peso_kg"] for c in membros if c.get("peso_kg")]
-        passos.append(PassoIA(nome=f"Montar {g}", tipo="montagem", grupo=g, componentes=nomes, qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem,
-                              pessoas=pessoas_para(max(pesos_g) if pesos_g else None), elementos=elementos_montagem(l_g, pecas_g, g)))
+        passos.append(PassoIA(nome=f"Montar {g}", modulo="montagem", grupo=g, componentes=[c["nome"] for c in membros],
+                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
     l_final = [l for l in ligs if l.get("ligado_a") and grupo_de.get(l["componente"]) != grupo_de.get(l["ligado_a"])]
     if l_final or len(grupos) > 1:
-        if not l_final:
-            faltam.append("Como os subconjuntos se ligam na montagem final (método e nº de fixadores)")
-        peso_conj = sum((c.get("peso_kg") or 0) * c["qtd"] for c in comps)
-        passos.append(PassoIA(nome="Montagem final", tipo="montagem", grupo="Final", componentes=[g for g in grupos], qtd_pecas=N,
-                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_para(peso_conj or None),
-                              elementos=elementos_montagem(l_final, max(len(grupos) - 1, 1), "final")))
-    passos.append(PassoIA(nome="Conferência final", tipo="inspecao", qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem, pessoas=1,
-                          elementos=[ElementoTempo(nome="Conferir acabamento, folgas e funcionamento", tipo="inspecao", metodo="fixo", por_unidade=True,
-                                                   a_min=refs["conferencia_final"], justificativa="Referência genérica; ajuste ao seu padrão de qualidade.")]))
+        passos.append(PassoIA(nome="Montagem final", modulo="montagem", grupo="Final", final=True, componentes=[c["nome"] for c in comps],
+                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
+    passos.append(PassoIA(nome="Conferência final", modulo="conferencia", espaco_origem=montagem, espaco_destino=montagem, pessoas=1))
     prem.append("Pressupõe uma equipe executando os passos em sequência (sem trabalho em paralelo entre passos).")
-    prem.append("Tempos de montagem e conferência partem de referências genéricas (ou da sua tabela); movimentação usa caminhada a "
-                f"{REFERENCIAS['velocidade_caminhada_m_min']:g} m/min. Substitua por medições assim que existirem.")
+    prem.append("Cada passo é um módulo do catálogo: os tempos saem das condições do produto e da ficha técnica validada dos meios, "
+                "com coeficientes de referência genéricos do catálogo (rotulados) até a calibração com o seu histórico.")
     return PlanoProposta(passos=passos, premissas=prem, dados_faltantes=list(dict.fromkeys(faltam)), confianca="baixa",
-                         justificativa="Plano montado por regras locais a partir dos componentes, ligações e contorno físico cadastrados.")
+                         justificativa="Plano montado por regras locais: escolha de módulos e mapeamento de componentes, equipamentos e locais.")

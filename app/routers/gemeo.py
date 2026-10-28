@@ -9,10 +9,11 @@ from .. import audit
 from ..deps import Ctx, get_ctx
 from ..models import Espaco, ModeloTempo, PerfilMaoDeObra, Processo, Produto, Recurso
 from ..ratelimit import limite_ia
-from ..schemas import DecisaoIn, EstimativaOut, ModeloTempoManualIn, ModeloTempoOut
+from ..schemas import DecisaoIn, EstimativaOut, ModeloTempoManualIn, ModeloTempoOut, SugestaoModuloOut
 from ..services import ergonomia, estimativa, ia, modelo_tempo, prontidao
 from ..services.dashboard import alerta_ergonomia
 from ..services.modelo_tempo import ModeloTempoIA, sanear_modelo
+from ..services.modulos import catalogo, entradas as entradas_modulo
 from .processos import _operacao
 
 router = APIRouter(tags=["gemeo-digital"])
@@ -47,8 +48,7 @@ def contexto_ia(ctx: Ctx, op, etapa, proc) -> dict:
                     "peso_corporal_kg": perfil.peso_corporal_kg, "faixa_etaria": perfil.faixa_etaria,
                     "experiencia": perfil.experiencia, "ritmo_pct": perfil.ritmo_pct} if perfil else None),
         "ergonomia_calculada": erg,
-        "recurso": ({"nome": rec.nome, "tipo": rec.tipo, "capacidade": rec.capacidade,
-                     "capacidade_unidade": rec.capacidade_unidade, "capacidade_un_h": c.capacidade_un_h} if rec else None),
+        "recurso": ({"nome": rec.nome, "tipo": rec.tipo, "funcao": rec.funcao} if rec else None),
         "espaco_origem": _esp(ctx.db, op.espaco_origem_id), "espaco_destino": _esp(ctx.db, op.espaco_destino_id),
         "distancia_m": c.distancia_m,
         "item": {"peso_kg": c.peso_kg, "comprimento_m": c.comprimento_m, "largura_m": c.largura_m, "altura_m": c.altura_m},
@@ -85,7 +85,7 @@ def _gerar(ctx: Ctx, op, etapa, proc) -> ModeloTempo:
     return mt
 
 
-@router.post("/operacoes/{oid}/modelo-tempo/gerar", response_model=ModeloTempoOut, status_code=201)
+@router.post("/operacoes/{oid}/modelo-tempo/gerar", response_model=ModeloTempoOut, status_code=201, deprecated=True)
 def gerar_modelo(oid: int, ctx: Ctx = Depends(get_ctx)):
     op, etapa, proc = _operacao(ctx, oid)
     mt = _gerar(ctx, op, etapa, proc)
@@ -93,7 +93,7 @@ def gerar_modelo(oid: int, ctx: Ctx = Depends(get_ctx)):
     return mt
 
 
-@router.post("/processos/{pid}/modelar-tempos", response_model=list[ModeloTempoOut], status_code=201)
+@router.post("/processos/{pid}/modelar-tempos", response_model=list[ModeloTempoOut], status_code=201, deprecated=True)
 def modelar_processo(pid: int, refazer: bool = False, ctx: Ctx = Depends(get_ctx)):
     """Gera modelos de tempo (IA) para as operações do processo que ainda não têm um."""
     proc = ctx.obter(Processo, pid)
@@ -106,7 +106,7 @@ def modelar_processo(pid: int, refazer: bool = False, ctx: Ctx = Depends(get_ctx
     return criados
 
 
-@router.post("/operacoes/{oid}/modelo-tempo", response_model=ModeloTempoOut, status_code=201)
+@router.post("/operacoes/{oid}/modelo-tempo", response_model=ModeloTempoOut, status_code=201, deprecated=True)
 def modelo_manual(oid: int, dados: ModeloTempoManualIn, ctx: Ctx = Depends(get_ctx)):
     """Modelo definido por uma pessoa (nasce validado). Mesmo vocabulário fechado de métodos."""
     op, _, proc = _operacao(ctx, oid)
@@ -158,17 +158,42 @@ def rejeitar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     return mt
 
 
+@router.get("/modulos")
+def listar_modulos(ctx: Ctx = Depends(get_ctx)):
+    """Catálogo FECHADO de módulos de tempo: chave, título, condições de entrada. Não expõe tempos nem coeficientes."""
+    return catalogo.resumo_para_ia()
+
+
+@router.post("/operacoes/{oid}/modulo/sugerir", response_model=SugestaoModuloOut)
+def sugerir_modulo(oid: int, ctx: Ctx = Depends(get_ctx)):
+    """A IA (ou a regra local) ESCOLHE um módulo do catálogo para a operação. Nada é gravado: a pessoa aplica a sugestão
+    (PATCH da operação). A resposta lista as condições que ainda faltam para o módulo calcular o tempo; não há tempos aqui."""
+    op, _, _ = _operacao(ctx, oid)
+    limite_ia.checar(f"{ctx.empresa_id}")
+    r, prov, aviso = ia.sugerir_modulo(ctx.empresa, {"nome": op.nome, "descricao": op.descricao, "unidade_medida": op.unidade_medida,
+                                                    "modulos": catalogo.resumo_para_ia()})
+    mod = catalogo.obter(r.modulo) if r.modulo else None
+    faltantes = []
+    if mod is not None:
+        ent, _ = entradas_modulo.entrada_da_operacao(ctx.db, ctx.empresa_id, op, 1.0, None, None, modulo=mod.chave)
+        faltantes = mod.montar(ent).faltantes
+    ctx.auditar("operacao.sugerir_modulo", "operacao", op.id, None, {"modulo": r.modulo, "provedor": prov})
+    ctx.db.commit()
+    return SugestaoModuloOut(modulo=r.modulo, titulo=mod.titulo if mod else None, justificativa=r.justificativa, faltantes=faltantes,
+                             provedor=prov, aviso=aviso)
+
+
 @router.get("/operacoes/{oid}/estimativa", response_model=EstimativaOut)
 def simular(oid: int, quantidade: float = Query(1, gt=0, le=1e9), produto_id: int | None = None,
             ctx: Ctx = Depends(get_ctx)):
     """Simulação (what-if): tempo planejado desta operação para uma quantidade e produto."""
-    op, _, _ = _operacao(ctx, oid)
+    op, _, proc = _operacao(ctx, oid)
     prod = None
     if produto_id is not None:
         prod = ctx.db.get(Produto, produto_id)
         if not prod or prod.empresa_id != ctx.empresa_id:
             raise HTTPException(404, "Registro não encontrado.")
-    est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, quantidade, prod)
+    est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, quantidade, prod, unidade_id=proc.unidade_id)
     total = None if est.exec is None else round((est.prep or 0) + est.exec, 2)
     return EstimativaOut(fonte=est.fonte, validada=est.validada, quantidade=quantidade,
                          preparacao_min=None if est.exec is None else round(est.prep or 0, 2),

@@ -12,12 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 
 from .. import audit
-from ..constants import PARAMETROS_PADRAO
+from ..constants import PARAMETROS_PADRAO, PARAMETROS_TEMPO_OBSOLETOS
 from ..deps import Ctx, get_ctx
 from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
-from ..services import estimativa, timecalc
+from ..services.modulos import ficha as ficha_catalogo
+from ..services import estimativa
 from ..services.dashboard import alerta_ergonomia
 
 router = APIRouter(tags=["processos"])
@@ -47,7 +48,8 @@ def processo_out(p: Processo, detalhado: bool = True, avisos: list[str] | None =
 # Dados do contorno físico podem ser corrigidos a qualquer momento (não mudam a estrutura do processo);
 # ordens já criadas guardam a estimativa feita na época.
 CAMPOS_CONTORNO = {"recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
-                   "item_comprimento_m", "item_largura_m", "item_altura_m", "num_pessoas", "funcao_requerida"}
+                   "item_comprimento_m", "item_largura_m", "item_altura_m", "num_pessoas", "funcao_requerida",
+                   "modulo", "modulo_parametros"}
 
 
 def _rascunho(p: Processo) -> None:
@@ -180,7 +182,8 @@ def nova_versao(pid: int, ctx: Ctx = Depends(get_ctx)):
                            item_altura_m=op.item_altura_m, inicio_marco=op.inicio_marco, fim_marco=op.fim_marco,
                            perfil_id=op.perfil_id, tipo_movimento=op.tipo_movimento, postura_trabalho=op.postura_trabalho,
                            altura_trabalho_m=op.altura_trabalho_m, gasto_energetico_kcal_min=op.gasto_energetico_kcal_min,
-                           levantamento=dict(op.levantamento) if op.levantamento else None)
+                           levantamento=dict(op.levantamento) if op.levantamento else None,
+                           modulo=op.modulo, modulo_parametros=dict(op.modulo_parametros or {}))
             ctx.db.add(nop)
             ctx.db.flush()
             from ..services.modelo_tempo import modelo_ativo
@@ -219,8 +222,8 @@ def publicar(pid: int, ctx: Ctx = Depends(get_ctx)):
     avisos = []
     for e in p.etapas:
         for op in e.operacoes:
-            if "tempo_unitario_min" not in estimativa.parametros_vigentes(ctx.db, ctx.empresa_id, "operacao", op.id):
-                avisos.append(f"'{op.nome}' sem tempo unitário validado: a estimativa dependerá do histórico.")
+            if not op.modulo:
+                avisos.append(f"'{op.nome}' sem módulo de tempo: a estimativa dependerá do histórico (escolha o tipo de trabalho).")
     anterior = ctx.db.scalars(select(Processo).where(
         Processo.empresa_id == ctx.empresa_id, Processo.codigo == p.codigo, Processo.status == "ativo"))
     for a in anterior:
@@ -299,6 +302,8 @@ def _campos_operacao(dados) -> dict:
         campos["levantamento"] = dados.levantamento.model_dump(exclude_none=True)
     if "campos_extras" in campos and dados.campos_extras is not None:
         campos["campos_extras"] = [c.model_dump() for c in dados.campos_extras]
+    if "modulo_parametros" in campos:
+        campos["modulo_parametros"] = dados.modulo_parametros.model_dump(exclude_none=True) if dados.modulo_parametros is not None else {}
     return campos
 
 
@@ -336,7 +341,7 @@ def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(get_c
     seq = campos.pop("sequencia", None)
     anulaveis = ("recurso_padrao_id", "espaco_origem_id", "espaco_destino_id", "distancia_m", "item_peso_kg",
                  "item_comprimento_m", "item_largura_m", "item_altura_m", "perfil_id", "altura_trabalho_m",
-                 "gasto_energetico_kcal_min", "levantamento")
+                 "gasto_energetico_kcal_min", "levantamento", "modulo")
     for k, v in campos.items():
         if v is not None or k in anulaveis:
             setattr(op, k, v)
@@ -413,9 +418,19 @@ def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(get_ctx)):
     uni = _unidade_do_escopo(ctx, dados.escopo_tipo, dados.escopo_id)
     if dados.valor_num is None and dados.valor_texto is None:
         raise HTTPException(422, "Informe valor_num ou valor_texto.")
+    if dados.nome in PARAMETROS_TEMPO_OBSOLETOS:
+        raise HTTPException(422, "Tempo digitado é obsoleto: o tempo é calculado pelo sistema (histórico ou módulo de tempo).")
     campos = dados.model_dump(exclude={"origem"})
     if not campos["unidade"] and campos["nome"] in PARAMETROS_PADRAO:
         campos["unidade"] = PARAMETROS_PADRAO[campos["nome"]][0]
+    if dados.escopo_tipo == "recurso":
+        # ficha técnica do meio: só parâmetros do catálogo, em unidade e faixa plausíveis (características, nunca tempos)
+        if dados.valor_num is None:
+            raise HTTPException(422, "Informe valor_num para um parâmetro da ficha técnica.")
+        valor, motivo = ficha_catalogo.validar_valor(dados.nome, dados.valor_num, dados.unidade or None)
+        if valor is None:
+            raise HTTPException(422, f"Parâmetro de ficha técnica inválido: {motivo}.")
+        campos["valor_num"], campos["unidade"] = valor, ficha_catalogo.PARAMETROS_FICHA[dados.nome].unidade
     p = _nova_versao_parametro(ctx, uni, campos, origem=dados.origem, status="validado", vigente=True)
     ctx.auditar("parametro.criar", "parametro", p.id, None, audit.snap(p))
     ctx.db.commit()
@@ -461,34 +476,10 @@ def rejeitar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     return p
 
 
-@router.post("/operacoes/{oid}/parametros/atualizar-historico", response_model=list[ParametroOut])
+@router.post("/operacoes/{oid}/parametros/atualizar-historico", deprecated=True, status_code=410)
 def atualizar_parametros_do_historico(oid: int, ctx: Ctx = Depends(get_ctx)):
-    """Recalcula tempos da operação a partir do histórico APROVADO e grava como nova versão
-    (origem 'calculado'), validada pelo gestor que executou a ação."""
-    op, _, p = _operacao(ctx, oid)
-    from ..config import get_settings
-    minimo = get_settings().min_amostras_historico
-    params = estimativa.parametros_vigentes(ctx.db, ctx.empresa_id, "operacao", op.id)
-    lote = params["tamanho_lote"].valor_num if "tamanho_lote" in params else None
-    amostras, preps = estimativa.historico_operacao(ctx.db, ctx.empresa_id, op.id, op.formula_tipo, lote)
-    criados = []
-    if len(amostras) < minimo:
-        raise HTTPException(409, f"Histórico aprovado insuficiente ({len(amostras)}/{minimo} amostras).")
-    novos = [("tempo_unitario_min", timecalc.mediana(amostras), "min/un", len(amostras))]
-    if len(preps) >= minimo:
-        novos.append(("tempo_preparacao_min", timecalc.mediana(preps), "min", len(preps)))
-    for nome, valor, un, n in novos:
-        atual = params.get(nome)
-        if atual and atual.valor_num is not None and abs(atual.valor_num - valor) < 1e-9:
-            continue
-        pr = _nova_versao_parametro(
-            ctx, p.unidade_id,
-            {"escopo_tipo": "operacao", "escopo_id": op.id, "nome": nome, "valor_num": round(valor, 4),
-             "valor_texto": None, "unidade": un,
-             "justificativa": f"Mediana de {n} amostras aprovadas do histórico."},
-            origem="calculado", status="validado", vigente=True)
-        ctx.auditar("parametro.atualizar_historico", "parametro", pr.id, audit.snap(atual) if atual else None,
-                    audit.snap(pr))
-        criados.append(pr)
-    ctx.db.commit()
-    return criados
+    """DEPRECATED. Gravava a mediana bruta do histórico como "tempo por unidade". O tempo não é mais um parâmetro
+    digitado nem derivado em parâmetro: o histórico aprovado já é a fonte principal (normalizado pelo ritmo e com as
+    tolerâncias do módulo/modelo)."""
+    _operacao(ctx, oid)
+    raise HTTPException(410, "Obsoleto: o histórico aprovado já é a fonte principal do tempo; não há parâmetro de tempo a atualizar.")

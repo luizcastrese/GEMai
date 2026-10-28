@@ -15,7 +15,7 @@ from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, PerfilMao
 from ..schemas import (CalibrarRitmoIn, CalibrarRitmoOut, RitmoPessoaOut, DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, PerfilIn, PerfilOut, PerfilUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
                        ProdutoIn, ProdutoOut, ProdutoUpdate, RecursoIn, RecursoOut, RecursoUpdate)
 from ..config import get_settings
-from ..services import calibracao_ritmo, ritmo, timecalc
+from ..services import calibracao_ritmo, equipe, ritmo, timecalc
 
 router = APIRouter(tags=["cadastros"])
 
@@ -161,6 +161,17 @@ crud("espacos", Espaco, EspacoIn, EspacoUpdate, EspacoOut, "espaco", por_unidade
 crud("perfis-mao-de-obra", PerfilMaoDeObra, PerfilIn, PerfilUpdate, PerfilOut, "perfil_mao_de_obra", por_unidade=True)
 crud("pessoas", Pessoa, PessoaIn, PessoaUpdate, PessoaOut, "pessoa", por_unidade=True, validar=_validar_pessoa,
      pos_leitura=_ritmos_efetivos)
+
+
+@router.post("/pessoas/vincular-usuarios")
+def vincular_usuarios(ctx: Ctx = Depends(get_ctx)):
+    """Garante uma pessoa ativa para cada usuário ativo nas unidades em que atua (rotina para usuários já
+    existentes). Idempotente: só cria o que falta e não altera nem reativa nada."""
+    criadas = equipe.vincular_usuarios(ctx.db, ctx.empresa_id)
+    for p in criadas:
+        ctx.auditar("pessoa.vincular_usuario", "pessoa", p.id, None, audit.snap(p))
+    ctx.db.commit()
+    return {"criadas": len(criadas), "pessoas": [{"id": p.id, "nome": p.nome, "unidade_id": p.unidade_id} for p in criadas]}
 
 
 @router.post("/pessoas/calibrar-ritmo", response_model=CalibrarRitmoOut)

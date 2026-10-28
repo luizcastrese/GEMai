@@ -2,7 +2,7 @@
 
 Mínimo = o que cada tarefa precisa para o tempo ser calculado:
   • locais por onde a peça passa e a distância entre eles;
-  • para cada equipamento usado, quantas peças por hora ele faz;
+  • para cada equipamento usado, para que serve e a ficha técnica validada (avanço, velocidade… — nunca uma taxa digitada);
   • o peso da peça manuseada.
 Dimensões dos locais, temperatura, ruído, etc. são opcionais e ficam fora deste mínimo.
 """
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Componente, Distancia, Espaco, Etapa, Operacao, Processo, Produto, Recurso
 from . import modelo_tempo
+from .modulos import entradas as entradas_modulo, ficha as ficha_catalogo
 
 
 def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
@@ -82,18 +83,21 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
             faltando.append(f"Distância entre {par['origem']} e {par['destino']}")
     equipamentos = []
     for r in equip.values():
-        cap = modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade)
         usado = r.id in equip_usados
+        validados = entradas_modulo.ficha_do_meio(db, empresa_id, r.id)
+        precisa = ficha_catalogo.aplicaveis(r.funcao) if r.funcao else []
+        faltam_ficha = [p for p in precisa if p.nome not in validados]
         if usado:
             total += 1
-            if cap is None:
-                faltando.append(f"Quantas peças por hora faz '{r.nome}'")
-        equipamentos.append({"id": r.id, "nome": r.nome, "capacidade": r.capacidade, "capacidade_unidade": r.capacidade_unidade,
-                             "pecas_por_hora": cap, "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao})
+            if not r.funcao:
+                faltando.append(f"Para que serve '{r.nome}' (função)")
+            elif faltam_ficha:
+                faltando.append(f"Ficha técnica de '{r.nome}': faltam " + ", ".join(p.descricao.lower() for p in faltam_ficha))
+        equipamentos.append({"id": r.id, "nome": r.nome, "ficha_validada": len(precisa) - len(faltam_ficha), "ficha_total": len(precisa),
+                             "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao, "marca": r.marca, "modelo": r.modelo})
     pendentes = len(faltando)
     return {
-        "locais": [{"id": e.id, "nome": e.nome, "tipo": e.tipo, "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct,
-                    "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in locais],
+        "locais": [{"id": e.id, "nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in locais],
         "equipamentos": sorted(equipamentos, key=lambda x: x["nome"]),
         "pecas": [{"id": p.id, "nome": p.nome, "peso_kg": p.peso_kg} for p in pecas],
         "tarefas": tarefas, "distancias": sorted(pares.values(), key=lambda x: (x["origem"], x["destino"])),

@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 
+from .services.modulos.catalogo import ChaveModulo
+
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 
@@ -212,6 +214,20 @@ class EtapaUpdate(In):
     condicao: Curto | None = None
 
 
+class LigacaoModuloIn(In):
+    metodo: Literal["parafuso", "cavilha", "minifix", "dobradica", "corredica", "cola", "prego", "encaixe", "puxador", "outro"]
+    fixadores: int = Field(0, ge=0, le=5000)
+
+
+class ModuloParametros(In):
+    """CONDIÇÕES do módulo de tempo de uma operação (nunca tempos): o sistema calcula a partir delas."""
+
+    furos_por_peca: int | None = Field(None, ge=0, le=2000)
+    bordas_m_por_peca: float | None = Field(None, ge=0, le=200)
+    pecas_por_unidade: float | None = Field(None, ge=0, le=10000)
+    ligacoes: list[LigacaoModuloIn] = Field(default_factory=list, max_length=50)
+
+
 class OperacaoIn(In):
     nome: Nome
     descricao: Texto = ""
@@ -240,6 +256,8 @@ class OperacaoIn(In):
     altura_trabalho_m: float | None = Field(None, ge=0, le=3)
     gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
     levantamento: Levantamento | None = None
+    modulo: ChaveModulo | None = None
+    modulo_parametros: ModuloParametros = Field(default_factory=ModuloParametros)
 
 
 class OperacaoUpdate(In):
@@ -269,6 +287,8 @@ class OperacaoUpdate(In):
     altura_trabalho_m: float | None = Field(None, ge=0, le=3)
     gasto_energetico_kcal_min: float | None = Field(None, ge=0, le=30)
     levantamento: Levantamento | None = None
+    modulo: ChaveModulo | None = None
+    modulo_parametros: ModuloParametros | None = None
 
 
 class OperacaoOut(Out):
@@ -301,6 +321,8 @@ class OperacaoOut(Out):
     altura_trabalho_m: float | None = None
     gasto_energetico_kcal_min: float | None = None
     levantamento: dict | None = None
+    modulo: str | None = None
+    modulo_parametros: dict = {}
 
 
 class EtapaOut(Out):
@@ -357,6 +379,9 @@ class ParametroOut(Out):
     versao: int
     vigente: bool
     justificativa: str
+    fonte_url: str | None = None
+    fonte_data: date | None = None
+    confianca: str | None = None
     criado_em: datetime
     validado_em: datetime | None
 
@@ -366,10 +391,13 @@ class DecisaoIn(In):
 
 
 # ------------------------------------------------------------------ recursos e cadastros
+FuncaoMeio = Literal["", "corte", "furacao", "bordo", "movimentacao", "acabamento", "montagem", "outro"]
+
+
 class RecursoIn(In):
     unidade_id: int
     nome: Nome
-    tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] = "maquina"
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] = "maquina"
     processos_relacionados: list[Curto] = Field(default_factory=list, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] = "un/h"
@@ -377,14 +405,17 @@ class RecursoIn(In):
     local_posto: Curto = ""
     horas_disponiveis_dia: float = Field(8.0, gt=0, le=24)
     espaco_id: int | None = None
-    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] = ""
+    funcao: FuncaoMeio = ""
+    marca: Annotated[str, Field(max_length=120)] = ""
+    modelo: Annotated[str, Field(max_length=200)] = ""
+    modelo_confirmado: bool = False
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
 
 
 class RecursoUpdate(In):
     nome: Nome | None = None
-    tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] | None = None
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] | None = None
     processos_relacionados: list[Curto] | None = Field(None, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] | None = None
@@ -392,7 +423,10 @@ class RecursoUpdate(In):
     local_posto: Curto | None = None
     horas_disponiveis_dia: float | None = Field(None, gt=0, le=24)
     espaco_id: int | None = None
-    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] | None = None
+    funcao: FuncaoMeio | None = None
+    marca: Annotated[str, Field(max_length=120)] | None = None
+    modelo: Annotated[str, Field(max_length=200)] | None = None
+    modelo_confirmado: bool | None = None
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
     ativo: bool | None = None
@@ -411,6 +445,9 @@ class RecursoOut(Out):
     horas_disponiveis_dia: float
     espaco_id: int | None = None
     funcao: str = ""
+    marca: str = ""
+    modelo: str = ""
+    modelo_confirmado: bool = False
     ultima_manutencao: date | None
     proxima_manutencao: date | None
     origem: str
@@ -563,7 +600,7 @@ class EspacoIn(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
-    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30, deprecated=True, description="OBSOLETO: não entra mais no cálculo.")
     observacoes: Texto = ""
 
 
@@ -578,7 +615,7 @@ class EspacoUpdate(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
-    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30, deprecated=True, description="OBSOLETO: não entra mais no cálculo.")
     observacoes: Texto | None = None
     ativo: bool | None = None
 
@@ -1032,7 +1069,7 @@ class PlanoGerarIn(In):
     so_dias_uteis: bool = True
     pessoas: int = Field(1, ge=1, le=50)
     perfil_id: int | None = None
-    fadiga_pct_hora: float = Field(0.0, ge=0, le=10)
+    fadiga_pct_hora: float = Field(0.0, ge=0, le=10, deprecated=True, description="OBSOLETO: ignorado (a fadiga por turno só entra quando aprendida dos dados).")
 
 
 class PlanoPassoOut(Out):
@@ -1060,6 +1097,14 @@ class PlanoPassoOut(Out):
     observacao: str
     inicio_prev: datetime | None
     fim_prev: datetime | None
+    modulo: str = ""
+    modulo_versao: int = 0
+    parametros_modulo: dict = {}
+    coeficientes: list = []
+    tempo_normal_min: float | None = None
+    previsto_normal_min: float | None = None
+    fator_calibracao: float = 1.0
+    amostras_calibracao: int = 0
     recurso_nome: str | None = None
     origem_nome: str | None = None
     destino_nome: str | None = None
@@ -1084,8 +1129,142 @@ class PlanoOut(Out):
     criado_em: datetime
     confirmado_em: datetime | None
     passos: list[PlanoPassoOut] | None = None
+    hierarquia: dict | None = None  # produto → grupo → módulo → elementos (normal, tolerâncias, padrão, preparação)
 
 
 class PlanoOrdemIn(In):
     cliente: Nome | None = None
     prazo: date | None = None
+
+
+# ------------------------------------------------------------------ meios (cadastro assistido)
+class IdentificarMeioIn(In):
+    unidade_id: int
+    texto: Annotated[str, Field(min_length=2, max_length=500)]
+    foto_base64: str | None = Field(None, max_length=8_000_000)  # opcional; só JPEG/PNG; descartada após o uso
+
+
+class IdentificarMeioOut(BaseModel):
+    candidatos: list[dict]
+    pergunta: str | None = None
+    provedor: str
+    aviso: str = ""
+    confirmacao_necessaria: bool = True
+
+
+class BuscarFichaIn(In):
+    pass
+
+
+class BuscarFichaOut(BaseModel):
+    encontrada: bool
+    sugeridos: list[ParametroOut]
+    descartados: list[dict]
+    pendencias: list[str]
+    provedor: str
+    aviso: str = ""
+    aviso_fonte: str = "Valores achados na web são sugestões pendentes: confira a fonte e valide para entrarem no cálculo."
+
+
+class FichaMeioOut(BaseModel):
+    recurso_id: int
+    nome: str
+    marca: str
+    modelo: str
+    modelo_confirmado: bool
+    funcao: str
+    parametros: list[dict]
+    pendencias: list[str]
+    busca_disponivel: bool
+
+
+class SugestaoModuloOut(BaseModel):
+    modulo: str | None
+    titulo: str | None = None
+    justificativa: str = ""
+    faltantes: list[str] = []  # o que ainda falta para o módulo sugerido calcular o tempo (condições, não tempos)
+    provedor: str
+    aviso: str = ""
+    aplicar_com: str = "PATCH /operacoes/{id} com {\"modulo\": ...}: a sugestão só vale depois que uma pessoa a aplica."
+
+
+# ------------------------------------------------------------------ calibração por módulo
+class CalibrarModulosIn(In):
+    unidade_id: int | None = None
+    aplicar: bool = False  # False = prévia (nada é gravado); True = registra PROPOSTAS pendentes (uma pessoa valida depois)
+
+
+class CalibracaoModuloOut(Out):
+    id: int
+    unidade_id: int
+    modulo: str
+    fator: float
+    mediana_bruta: float
+    limitado: bool
+    amostras: int
+    versao: int
+    status: str
+    vigente: bool
+    justificativa: str
+    criado_em: datetime
+    validado_em: datetime | None
+
+
+class SugestaoModuloCalibOut(BaseModel):
+    unidade_id: int
+    modulo: str
+    titulo: str
+    amostras: int
+    minimo: int
+    mediana_bruta: float | None
+    fator_sugerido: float | None
+    limitado: bool
+    status: str  # sugerido | insuficiente
+    vigente: dict | None = None  # {fator, amostras, versao} da calibração validada em uso
+    proposta_id: int | None = None  # id da proposta pendente criada (aplicar=true)
+
+
+class CalibrarModulosOut(BaseModel):
+    aplicado: bool
+    aviso: str
+    criterios: dict
+    modulos: list[SugestaoModuloCalibOut]
+    propostas: int
+
+
+# ------------------------------------------------------------------ arranjo recomendado
+class ArranjoIn(In):
+    produto_id: int
+    unidade_id: int
+    quantidade: float = Field(1.0, gt=0, le=100000)
+    nome: Annotated[str, Field(max_length=300)] | None = None
+    inicio: UTC | None = None
+    blocos: list[Annotated[list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]], Field(min_length=2, max_length=2)]] | None = Field(None, max_length=6)
+    so_dias_uteis: bool = True
+    perfil_id: int | None = None
+    pessoas_max: int = Field(4, ge=1, le=8)  # maior equipe a considerar
+    n_melhores: int = Field(5, ge=1, le=10)
+    explicar: bool = False  # a IA explica os trade-offs e pode sugerir alternativas (o sistema as calcula)
+
+
+class EscolhaArranjoIn(In):
+    pessoas: int = Field(ge=1, le=8)
+    lotes: Literal[1, 2, 4] = 1
+    regra: Literal["plano", "critico"] = "plano"
+    meio_id: int | None = None
+
+
+class PlanoDeArranjoIn(ArranjoIn):
+    escolha: EscolhaArranjoIn
+
+
+class ArranjosOut(BaseModel):
+    provedor: str
+    aviso: str = ""
+    avaliados: int
+    candidatos: list[dict]
+    pendencias: list[str]
+    explicacao: str = ""
+    explicacao_provedor: str = ""
+    equipe_minima: int = 1
+    premissas: list[str] = []

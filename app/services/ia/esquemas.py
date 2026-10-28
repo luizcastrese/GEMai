@@ -2,9 +2,13 @@
 e saneada (limites de tamanho) antes de ser gravada: a IA nunca grava diretamente no ERP."""
 from typing import Literal
 
+from ...constants import PARAMETROS_TEMPO_OBSOLETOS
+
 from pydantic import BaseModel, Field
 
-from ..modelo_tempo import METODOS_LIGACAO, ElementoTempo, ModeloTempoIA, sanear_modelo
+from ..modelo_tempo import METODOS_LIGACAO
+from ..modulos.catalogo import CHAVES as CHAVES_MODULOS
+from ..modulos.catalogo import ChaveModulo
 
 GRUPOS = ["Processos", "Recursos", "Pessoas", "Materiais", "Tempo", "Quantidade",
           "Qualidade", "Manutenção", "Ergonomia", "Ambiente", "Informação"]
@@ -119,7 +123,7 @@ def sanear_estrutura(e: EstruturaProposta) -> EstruturaProposta:
                     continue
                 params = [ParametroIA(nome=_t(x.nome, 80).lower().replace(" ", "_"), unidade=_t(x.unidade, 30),
                                       valor=x.valor, justificativa=_t(x.justificativa, 500))
-                          for x in op.parametros[:MAX_PARAMS] if _t(x.nome, 80)]
+                          for x in op.parametros[:MAX_PARAMS] if _t(x.nome, 80) and _t(x.nome, 80).lower().replace(" ", "_") not in PARAMETROS_TEMPO_OBSOLETOS]
                 ops.append(OperacaoIA(
                     nome=_t(op.nome, 200), descricao=_t(op.descricao, 2000), recurso=_t(op.recurso, 200) or None,
                     formula_tipo=op.formula_tipo, unidade_medida=_t(op.unidade_medida, 30) or "un",
@@ -195,17 +199,133 @@ class EstruturaProdutoIA(BaseModel):
 
 
 class PassoIA(BaseModel):
+    """Um passo do plano = um MÓDULO do catálogo fechado + o mapeamento das condições do produto.
+
+    A IA escolhe o módulo e aponta quais componentes, equipamento e locais entram. NÃO há campo de tempo, taxa,
+    percentual ou elemento: o sistema deriva as condições (medidas, pesos, distâncias, ficha técnica) e calcula.
+    Campos desconhecidos (ex.: `a_min`, `elementos`, `tempo_min`) são ignorados na validação.
+    """
+
     nome: str
-    tipo: Literal["movimentacao", "corte", "furacao", "bordo", "montagem", "inspecao", "outro"] = "outro"
+    modulo: ChaveModulo
     grupo: str = ""
+    final: bool = False  # montagem final (liga os subconjuntos entre si)
     componentes: list[str] = Field(default_factory=list)
-    qtd_pecas: float = 1.0
-    recurso: str | None = None
+    recurso: str | None = None  # equipamento ou meio de movimentação cadastrado
     espaco_origem: str | None = None
     espaco_destino: str | None = None
     pessoas: int = 1
-    elementos: list[ElementoTempo] = Field(default_factory=list)
     observacao: str = ""
+
+
+class SugestaoModulo(BaseModel):
+    """A IA só ESCOLHE um módulo do catálogo fechado (ou nenhum). Sem tempos, taxas ou coeficientes."""
+
+    modulo: ChaveModulo | None = None
+    justificativa: str = ""
+
+
+def sanear_sugestao_modulo(x: SugestaoModulo) -> SugestaoModulo:
+    return SugestaoModulo(modulo=x.modulo if x.modulo in CHAVES_MODULOS else None, justificativa=_limpo(x.justificativa, 400))
+
+
+class AlternativaArranjo(BaseModel):
+    pessoas: int = 1
+    lotes: int = 1
+    regra: Literal["plano", "critico"] = "plano"
+
+
+class ExplicacaoArranjos(BaseModel):
+    """A IA EXPLICA os trade-offs e pode sugerir alternativas DENTRO do espaço de arranjos; não define tempos."""
+
+    texto: str = ""
+    alternativas: list[AlternativaArranjo] = Field(default_factory=list)
+
+
+def sanear_explicacao(e: ExplicacaoArranjos) -> ExplicacaoArranjos:
+    return ExplicacaoArranjos(
+        texto=_limpo(e.texto, 1500),
+        alternativas=[AlternativaArranjo(pessoas=min(max(int(a.pessoas), 1), 8), lotes=min((1, 2, 4), key=lambda x: abs(x - int(a.lotes))), regra=a.regra)
+                      for a in e.alternativas[:3]])
+
+
+# ---------------------------------------------------------------- meios: identificação e ficha técnica
+class CandidatoMeio(BaseModel):
+    marca: str = ""
+    modelo: str = ""
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] = "maquina"
+    funcao: Literal["", "corte", "furacao", "bordo", "movimentacao", "acabamento", "montagem", "outro"] = ""
+    confianca: Literal["baixa", "media", "alta"] = "baixa"
+    observacao: str = ""
+
+
+class IdentificacaoMeio(BaseModel):
+    candidatos: list[CandidatoMeio] = Field(default_factory=list)
+    pergunta: str | None = None  # só quando a descrição é ambígua
+
+
+class ParametroFichaIA(BaseModel):
+    nome: str
+    valor: float | None = None
+    unidade: str = ""
+    fonte_url: str = ""
+    confianca: Literal["baixa", "media", "alta"] = "baixa"
+
+
+class FichaTecnicaIA(BaseModel):
+    """Só números e referência. Nenhum texto de catálogo é aceito ou guardado."""
+
+    encontrada: bool = False
+    parametros: list[ParametroFichaIA] = Field(default_factory=list)
+
+
+def _limpo(s: str | None, n: int) -> str:
+    return "".join(c for c in (s or "") if c.isprintable()).strip()[:n]
+
+
+def sanear_identificacao(i: IdentificacaoMeio) -> IdentificacaoMeio:
+    return IdentificacaoMeio(
+        candidatos=[CandidatoMeio(marca=_limpo(c.marca, 120), modelo=_limpo(c.modelo, 200), tipo=c.tipo, funcao=c.funcao,
+                                  confianca=c.confianca, observacao=_limpo(c.observacao, 300))
+                    for c in i.candidatos[:5] if _limpo(c.modelo, 200) or _limpo(c.marca, 120)],
+        pergunta=_limpo(i.pergunta, 300) or None)
+
+
+def sanear_ficha(f: FichaTecnicaIA, funcao: str = "") -> tuple[list[dict], list[dict]]:
+    """(parâmetros aceitos, descartados com o motivo). Só entra o que tem nome do catálogo (aplicável à função do meio),
+    valor numérico na unidade certa, dentro da faixa plausível e FONTE (URL http/https) citada."""
+    from ..modulos import ficha
+    aceitos, descartados, vistos = [], [], set()
+    for p in f.parametros[:40]:
+        nome = _limpo(p.nome, 80)
+
+        def recusa(motivo: str):
+            descartados.append({"nome": nome, "motivo": motivo})
+
+        if nome in vistos:
+            recusa("duplicado")
+            continue
+        cat = ficha.PARAMETROS_FICHA.get(nome)
+        if cat is None:
+            recusa("parâmetro fora do catálogo da ficha técnica")
+            continue
+        if funcao and funcao not in cat.funcoes:
+            recusa("não se aplica à função deste meio")
+            continue
+        if p.valor is None:
+            recusa("sem valor")
+            continue
+        url = ficha.url_de_fonte(_limpo(p.fonte_url, 500))
+        if url is None:
+            recusa("sem fonte citada (URL http/https válida): número sem fonte não entra")
+            continue
+        valor, motivo = ficha.validar_valor(nome, p.valor, _limpo(p.unidade, 20) or cat.unidade)
+        if valor is None:
+            recusa(motivo)
+            continue
+        vistos.add(nome)
+        aceitos.append({"nome": nome, "valor": valor, "unidade": cat.unidade, "fonte_url": url, "confianca": p.confianca})
+    return aceitos, descartados
 
 
 class PlanoProposta(BaseModel):
@@ -244,12 +364,13 @@ def sanear_plano(p: PlanoProposta) -> PlanoProposta:
     for ps in p.passos[:120]:
         if not _t(ps.nome, 300):
             continue
-        els = sanear_modelo(ModeloTempoIA(elementos=ps.elementos)).elementos
+        if ps.modulo not in CHAVES_MODULOS:  # o catálogo é fechado
+            continue
         passos.append(PassoIA(
-            nome=_t(ps.nome, 300), tipo=ps.tipo, grupo=_t(ps.grupo, 80), componentes=[_t(x, 200) for x in ps.componentes[:60] if _t(x, 200)],
-            qtd_pecas=min(max(float(ps.qtd_pecas or 1), 0.01), 1e7), recurso=_t(ps.recurso, 200) or None,
+            nome=_t(ps.nome, 300), modulo=ps.modulo, grupo=_t(ps.grupo, 80), final=bool(ps.final),
+            componentes=[_t(x, 200) for x in ps.componentes[:60] if _t(x, 200)], recurso=_t(ps.recurso, 200) or None,
             espaco_origem=_t(ps.espaco_origem, 200) or None, espaco_destino=_t(ps.espaco_destino, 200) or None,
-            pessoas=min(max(int(ps.pessoas or 1), 1), 20), elementos=els, observacao=_t(ps.observacao, 1000)))
+            pessoas=min(max(int(ps.pessoas or 1), 1), 20), observacao=_t(ps.observacao, 1000)))
     return PlanoProposta(passos=passos, premissas=[_t(x, 400) for x in p.premissas[:30] if _t(x, 400)],
                          dados_faltantes=[_t(x, 300) for x in p.dados_faltantes[:30] if _t(x, 300)],
                          confianca=p.confianca, justificativa=_t(p.justificativa, 3000))

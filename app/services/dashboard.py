@@ -78,6 +78,7 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
                                                   "boa": 0.0, "refugo": 0.0, "ordens": 0})
     est_tot = real_tot = 0.0
     acur: dict[str, dict] = defaultdict(lambda: {"n": 0, "sinal": 0.0, "abs": 0.0})
+    acur_mod: dict[str, dict] = defaultdict(lambda: {"n": 0, "sinal": 0.0, "abs": 0.0, "calibradas": 0})
     for o in ordens_ativas:
         for m in mets[o.id]:
             e = por_etapa[m["etapa"]]
@@ -101,6 +102,12 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
                     a["n"] += 1
                     a["sinal"] += erro
                     a["abs"] += abs(erro)
+                    if m.get("modulo"):  # acurácia por módulo de tempo (inclui o efeito da calibração validada, se houver)
+                        am = acur_mod[m["modulo"]]
+                        am["n"] += 1
+                        am["sinal"] += erro
+                        am["abs"] += abs(erro)
+                        am["calibradas"] += 1 if (m.get("fator_calibracao") or 1.0) != 1.0 else 0
                 sem = ce.astimezone(tz).date()
                 sem -= timedelta(days=sem.weekday())
                 tend[sem]["est"] += m["estimado_min"]
@@ -221,6 +228,9 @@ def calcular(db: Session, empresa: Empresa, unidade_ids: list[int], de: date, at
         "acuracia_por_fonte": [
             {"fonte": f, "operacoes": a["n"], "desvio_medio_pct": timecalc.arred(a["sinal"] / a["n"]),
              "erro_absoluto_medio_pct": timecalc.arred(a["abs"] / a["n"])} for f, a in sorted(acur.items())],
+        "acuracia_por_modulo": [
+            {"modulo": mo, "operacoes": a["n"], "operacoes_calibradas": a["calibradas"], "desvio_medio_pct": timecalc.arred(a["sinal"] / a["n"]),
+             "erro_absoluto_medio_pct": timecalc.arred(a["abs"] / a["n"])} for mo, a in sorted(acur_mod.items())],
         "gargalos": gargalos[:10],
         "paradas": {"total_min": timecalc.arred(sum(p["duracao_min"] for p in paradas_l)),
                     "por_causa": paradas_l[:10]},

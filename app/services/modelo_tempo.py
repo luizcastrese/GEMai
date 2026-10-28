@@ -9,7 +9,7 @@ Métodos:
 - fixo               t = a · (qtd se por_unidade)
 - linear_driver      t = (a + b · driver) · (qtd se por_unidade)       driver ∈ peso_kg, area_m2, comprimento_m, volume_m3, distancia_m
 - deslocamento       t = ceil(qtd / itens_por_viagem) · distancia / velocidade · (2 se ida_e_volta)
-- capacidade_recurso t = qtd / capacidade(un/h) · 60
+- capacidade_recurso t = qtd / capacidade(un/h) · 60   (DEPRECATED: capacidade digitada não alimenta mais o cálculo)
 - indices_most       t = Σ índices · 10 · 0,0006 min (1 TMU = 0,036 s), · qtd se por_unidade. Inspirado no BasicMOST
                      (General Move A B G A B P A); os índices devem ser conferidos com o cartão MOST certificado.
 
@@ -208,12 +208,9 @@ def montar_contexto(db: Session, empresa_id: int, operacao, quantidade: float, p
         setattr(c, campo, v if v is not None else getattr(operacao, op_campo))
     c.distancia_m = operacao.distancia_m if operacao.distancia_m is not None else distancia_entre(
         db, empresa_id, operacao.espaco_origem_id, operacao.espaco_destino_id)
-    rec = recurso
-    if rec is None and operacao.recurso_padrao_id:
-        from ..models import Recurso
-        rec = db.get(Recurso, operacao.recurso_padrao_id)
-    if rec is not None:
-        c.capacidade_un_h = capacidade_por_hora(rec.capacidade, rec.capacidade_unidade)
+    # DEPRECATED: `Recurso.capacidade` ("peças por hora" digitada) NÃO alimenta mais o cálculo: tempo de máquina vem da
+    # ficha técnica do meio, via módulos de tempo. `capacidade_un_h` fica vazio (o método `capacidade_recurso` só
+    # calcula se um chamador a fornecer explicitamente, como nos testes do motor).
     return c
 
 

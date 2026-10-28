@@ -145,7 +145,7 @@ def test_sem_modelo_assume_tudo_dependente_do_operador_com_aviso(admin, gestor, 
     _historico(db_factory, admin.usuario, op, unidade_id, [[_n(veloz["id"], 8)] for _ in range(3)])
     e = _estimar(db_factory, admin.usuario, op)
     assert e.tempo_normal == pytest.approx(12.0)  # f = 1: 0,8 × 1,5
-    assert any("Sem modelo: assumido 100% do tempo dependente do operador" in a for a in e.avisos)
+    assert any("Sem módulo nem modelo: assumido 100% do tempo dependente do operador" in a for a in e.avisos)
 
 
 # ------------------------------------------------------------------ c) tolerâncias
@@ -179,7 +179,7 @@ def test_avisa_quando_modelo_e_historico_divergem_mais_de_30_pct(admin, gestor, 
     _modelo(gestor, op, [{"nome": "Montar", "tipo": "manuseio", "metodo": "fixo", "por_unidade": True, "a_min": 1}], TOL)
     p = _pessoa(gestor, unidade_id, "Normal", ritmo_pct=100)
     _historico(db_factory, admin.usuario, op, unidade_id, [[_n(p["id"], 20)] for _ in range(3)])  # 2 min/un contra 1 do modelo
-    assert any("revise as premissas do modelo" in a for a in _estimar(db_factory, admin.usuario, op).avisos)
+    assert any("revise as premissas" in a for a in _estimar(db_factory, admin.usuario, op).avisos)
 
 
 # ------------------------------------------------------------------ d) precedência do ritmo
@@ -211,6 +211,7 @@ def test_historico_usa_pessoa_depois_perfil_e_conta_os_nao_normalizados(admin, g
     assert e.tempo_normal == pytest.approx(10.0) and e.amostras == 4
     assert e.amostras_nao_normalizadas == 2 and e.ritmo_normalizado
     assert any("2 de 4 apontamentos sem pessoa/ritmo, não normalizados" in a for a in e.avisos)
+    assert any("mais de 30%" in a for a in e.avisos)  # 50 % sem normalizar: aviso reforçado
 
 
 # ------------------------------------------------------------------ g) fonte, anulados e não aprovados
@@ -261,10 +262,11 @@ def test_calibracao_previa_nao_grava_e_aplicar_grava_e_audita(admin, gestor, uni
     assert r.status_code == 200, r.text
     previa = r.json()
     assert previa["aplicado"] is False and previa["aplicadas"] == 0 and "RELATIVO À EQUIPE" in previa["aviso"]
-    assert [p["nome"] for p in previa["pessoas"]] == ["Ana", "Bia", "Caio"]  # ordem alfabética, sem ranking
-    sug = {p["nome"]: p["ritmo_sugerido"] for p in previa["pessoas"]}
-    assert sug == {"Ana": 125.0, "Bia": 100.0, "Caio": 80.0}
-    assert all(p["status"] == "sugerido" and not p["aplicado"] and p["amostras"] == 6 for p in previa["pessoas"])
+    nomes = [p["nome"] for p in previa["pessoas"]]
+    assert nomes == sorted(nomes, key=str.lower)  # ordem alfabética, sem ranking (inclui as pessoas dos usuários)
+    equipe = [p for p in previa["pessoas"] if p["nome"] in ("Ana", "Bia", "Caio")]
+    assert {p["nome"]: p["ritmo_sugerido"] for p in equipe} == {"Ana": 125.0, "Bia": 100.0, "Caio": 80.0}
+    assert all(p["status"] == "sugerido" and not p["aplicado"] and p["amostras"] == 6 for p in equipe)
     assert all(_pessoa_api(gestor, i)["ritmo_pct"] is None for i in ids.values())  # nada gravado
     db = db_factory()
     assert db.query(AuditLog).filter(AuditLog.acao == "pessoa.calibrar_ritmo").count() == 0
@@ -328,7 +330,8 @@ def test_calibracao_limita_a_50_150_e_respeita_os_minimos(admin, gestor, unidade
 def test_calibracao_ignora_operacao_de_uma_pessoa_so(admin, gestor, unidade_id, db_factory):
     op, ids = _equipe(admin, gestor, unidade_id, db_factory, {"Sozinha": 1.0})
     r = gestor.post("/pessoas/calibrar-ritmo", {}).json()
-    assert r["operacoes_consideradas"] == 0 and r["pessoas"][0]["status"] == "insuficiente"
+    sozinha = next(p for p in r["pessoas"] if p["nome"] == "Sozinha")
+    assert r["operacoes_consideradas"] == 0 and sozinha["status"] == "insuficiente"
     assert r["operacoes_ignoradas"] and "só uma pessoa" in r["operacoes_ignoradas"][0]
 
 
@@ -411,8 +414,8 @@ def test_calibracao_so_enxerga_operacoes_das_unidades_autorizadas(admin, gestor,
     _historico(db_factory, admin.usuario, op2, u2, [[_n(ids[n], t * 10)] for n, t in {"Ana": 0.8, "Bia": 1.25}.items() for _ in range(6)])
     # gestor só acessa a unidade 1: não vê a operação (nem o nome) nem conta a operação da Filial
     r = gestor.post("/pessoas/calibrar-ritmo", {}).json()
-    assert r["operacoes_consideradas"] == 0 and r["operacoes_ignoradas"] == [] and r["pessoas"] == []
-    assert "Filial" not in str(r)
+    assert r["operacoes_consideradas"] == 0 and r["operacoes_ignoradas"] == []
+    assert all(p["status"] == "insuficiente" for p in r["pessoas"]) and "Filial" not in str(r)
     # o administrador (sem restrição) enxerga; e escolher a unidade limita ao histórico dela
     assert admin.post("/pessoas/calibrar-ritmo", {}).json()["operacoes_consideradas"] == 1
     assert admin.post("/pessoas/calibrar-ritmo", {"unidade_id": unidade_id}).json()["operacoes_consideradas"] == 0

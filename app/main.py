@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from . import models  # noqa: F401  (registra as tabelas)
 from .config import get_settings
 from .database import Base, engine
-from .routers import apontamentos, auth, cadastros, contorno, diagnostico, empresa, gemeo, gestao, ia, inicio, ordens, planos, processos
+from .routers import apontamentos, auth, cadastros, calibracao, contorno, diagnostico, empresa, gemeo, gestao, ia, inicio, meios, ordens, planos, processos
 
 log = logging.getLogger("erp")
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -48,7 +48,10 @@ def criar_app() -> FastAPI:
     @app.middleware("http")
     async def seguranca(request: Request, call_next):
         tamanho = request.headers.get("content-length")
-        if tamanho and tamanho.isdigit() and int(tamanho) > MAX_BODY:
+        limite = MAX_BODY
+        if request.url.path == "/api/v1/meios/identificar":  # única rota que recebe foto (JPEG/PNG em base64)
+            limite = max(MAX_BODY, s.foto_max_bytes * 4 // 3 + 20_000)
+        if tamanho and tamanho.isdigit() and int(tamanho) > limite:
             return JSONResponse({"detail": "Corpo da requisição grande demais."}, status_code=413)
         resp = await call_next(request)
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -73,7 +76,7 @@ def criar_app() -> FastAPI:
         log.exception("Erro não tratado em %s", request.url.path)
         return JSONResponse({"detail": "Erro interno do servidor."}, status_code=500)
 
-    for r in (auth, empresa, cadastros, diagnostico, processos, gemeo, ordens, apontamentos, ia, gestao, inicio, contorno, planos):
+    for r in (auth, empresa, cadastros, diagnostico, processos, gemeo, ordens, apontamentos, ia, gestao, inicio, contorno, planos, meios, calibracao):
         app.include_router(r.router, prefix="/api/v1")
 
     @app.get("/api/v1/saude", tags=["infra"])

@@ -24,19 +24,23 @@ def test_lista_o_que_falta_e_o_progresso_sobe_ate_completar(gestor, unidade_id):
     r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
     textos = " | ".join(r["faltando"])
     assert "Peso da peça em 'Cortar'" in textos and "Peso da peça em 'Lixar'" in textos
-    assert "Quantas peças por hora faz 'Serra'" in textos
+    assert "Para que serve 'Serra'" in textos
     assert len([f for f in r["faltando"] if f.startswith("Distância")]) == 1  # o mesmo par conta uma vez
     assert r["pendentes"] == 4 and r["completo"] is False
     antes = r["progresso_pct"]
 
     assert gestor.c.put("/api/v1/distancias", headers=gestor.h, json={"origem_id": cor["id"], "destino_id": est["id"], "metros": 25}).status_code == 200
-    assert gestor.patch(f"/recursos/{serra['id']}", {"capacidade": 60}).status_code == 200
+    assert gestor.patch(f"/recursos/{serra['id']}", {"funcao": "corte"}).status_code == 200
+    r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
+    assert any("Ficha técnica de 'Serra'" in f and "avanço" in f for f in r["faltando"])  # a função pede a ficha, não uma taxa
+    for nome, v in (("avanco_corte_m_min", 30), ("espessura_max_corte_mm", 40)):
+        assert gestor.post("/parametros", {"escopo_tipo": "recurso", "escopo_id": serra["id"], "nome": nome, "valor_num": v}).status_code == 201
     for op in ops:
         assert gestor.patch(f"/operacoes/{op}", {"item_peso_kg": 8}).status_code == 200
     r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
     assert r["pendentes"] == 0 and r["completo"] is True and r["progresso_pct"] == 100 > antes
     assert r["distancias"][0]["metros"] == 25 and r["tarefas"][0]["distancia_m"] == 25
-    assert r["equipamentos"][0]["pecas_por_hora"] == 60
+    assert (r["equipamentos"][0]["ficha_validada"], r["equipamentos"][0]["ficha_total"]) == (2, 2)
 
     # e com o contorno completo a IA já consegue prever o tempo (sem inventar nada além do declarado)
     m = gestor.post(f"/operacoes/{ops[0]}/modelo-tempo/gerar").json()
@@ -88,7 +92,7 @@ def test_ia_pergunta_o_contorno_minimo_e_cria_os_locais(gestor, unidade_id):
     for _ in range(3):  # as rodadas cobrem todos os grupos
         perguntas += gestor.post(f"/unidades/{unidade_id}/diagnostico/perguntas/gerar").json()["perguntas"]
     textos = " ".join(p["texto"] for p in perguntas)
-    assert "quantas peças ou unidades ela faz por hora" in textos  # capacidade das máquinas
+    assert "qual a marca e o modelo" in textos and "faz por hora" not in textos  # ficha técnica, não taxa digitada
     assert "Quanto pesa, em média, cada peça" in textos  # peso
     assert "lugares por onde o material passa" in textos  # locais
     resp = {p["texto"]: p["id"] for p in perguntas}

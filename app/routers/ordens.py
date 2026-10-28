@@ -134,7 +134,7 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(get_ctx)):
         for op in e.operacoes:
             seq += 1
             pulada = op.id in dados.pular_operacoes
-            est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, dados.quantidade, pr, recursos_obj.get(op.id))
+            est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, dados.quantidade, pr, recursos_obj.get(op.id), unidade_id=uni.id)
             if not pulada and est.exec is not None:
                 total += (est.prep or 0.0) + est.exec
                 algum = True
@@ -145,7 +145,8 @@ def criar(dados: OrdemIn, ctx: Ctx = Depends(get_ctx)):
                 tempo_prep_est_min=est.prep if est.exec is not None else None, tempo_exec_est_min=est.exec,
                 fonte_estimativa=est.fonte, amostras=est.amostras, opcional=e.opcional,
                 detalhe_estimativa=est.detalhe, estimativa_validada=est.validada,
-                status="pulada" if pulada else "pendente"))
+                modulo=est.modulo, previsto_normal_min=est.previsto_normal_modulo, fracao_operador=est.fracao_operador,
+                fator_calibracao=est.fator_calibracao, status="pulada" if pulada else "pendente"))
     o.tempo_estimado_min = round(total, 2) if algum else None
     ctx.db.flush()
     ctx.db.refresh(o)
