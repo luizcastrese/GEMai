@@ -1,7 +1,7 @@
 """Configuração central, lida de variáveis de ambiente (ou arquivo .env)."""
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SECRET_PADRAO = "dev-only-insecure-secret-change-me-0123456789"
@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     ia_modelo: str = "claude-opus-5-5"
     ia_timeout_segundos: float = 60.0
+
+    @field_validator("database_url")
+    @classmethod
+    def _driver_postgres(cls, v: str) -> str:
+        # Provedores (Render, Heroku…) entregam "postgres://" ou "postgresql://"; o driver instalado é o psycopg 3.
+        for prefixo in ("postgres://", "postgresql://"):
+            if v.startswith(prefixo):
+                return "postgresql+psycopg://" + v[len(prefixo):]
+        return v
 
     @property
     def producao(self) -> bool:

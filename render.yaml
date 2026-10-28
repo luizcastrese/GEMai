@@ -1,0 +1,34 @@
+# Blueprint do Render: aplicação (Docker) + PostgreSQL.
+# No Render: New > Blueprint > escolha este repositório. Informe ERP_ANTHROPIC_API_KEY (opcional) quando pedido.
+services:
+  - type: web
+    name: gemai
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/v1/saude
+    envVars:
+      - key: ERP_AMBIENTE
+        value: producao
+      - key: ERP_SECRET_KEY
+        generateValue: true
+      - key: ERP_DATABASE_URL
+        fromDatabase:
+          name: gemai-db
+          property: connectionString
+      # true só para criar a primeira empresa; depois troque para false no painel do Render.
+      - key: ERP_PERMITIR_CADASTRO_PUBLICO
+        value: "true"
+      - key: ERP_ANTHROPIC_API_KEY
+        sync: false
+      - key: ERP_IA_PROVEDOR
+        value: auto
+      - key: PORT
+        value: "8000"
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
+
+databases:
+  - name: gemai-db
+    plan: basic-256mb
+    databaseName: erp
+    user: erp
