@@ -217,7 +217,11 @@ class Recurso(Base):
     equipes_habilitadas: Mapped[list] = mapped_column(JSON, default=list)
     local_posto: Mapped[str] = mapped_column(String(200), default="")
     horas_disponiveis_dia: Mapped[float] = mapped_column(Float, default=8.0)
-    funcao: Mapped[str] = mapped_column(String(20), default="")  # corte|furacao|bordo|acabamento|montagem|outro
+    funcao: Mapped[str] = mapped_column(String(20), default="")  # corte|furacao|bordo|movimentacao|acabamento|montagem|outro
+    # Identificação do meio (marca/modelo) para buscar a ficha técnica; o modelo só vale depois de CONFIRMADO por uma pessoa
+    marca: Mapped[str] = mapped_column(String(120), default="")
+    modelo: Mapped[str] = mapped_column(String(200), default="")
+    modelo_confirmado: Mapped[bool] = mapped_column(Boolean, default=False)
     espaco_id: Mapped[int | None] = mapped_column(ForeignKey("espacos.id"))
     ultima_manutencao: Mapped[date | None] = mapped_column(Date)
     proxima_manutencao: Mapped[date | None] = mapped_column(Date)
@@ -504,6 +508,10 @@ class Parametro(Base):
     versao: Mapped[int] = mapped_column(Integer, default=1)
     vigente: Mapped[bool] = mapped_column(Boolean, default=False)
     justificativa: Mapped[str] = mapped_column(Text, default="")
+    # Rastro de parâmetros vindos de busca na web (origem 'ia_web'): só número + referência, nunca texto copiado
+    fonte_url: Mapped[str | None] = mapped_column(String(500))
+    fonte_data: Mapped[date | None] = mapped_column(Date)
+    confianca: Mapped[str | None] = mapped_column(String(10))  # baixa | media | alta
     recomendacao_id: Mapped[int | None] = mapped_column(ForeignKey("recomendacoes_ia.id"))
     criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)

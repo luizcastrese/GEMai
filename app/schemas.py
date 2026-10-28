@@ -379,6 +379,9 @@ class ParametroOut(Out):
     versao: int
     vigente: bool
     justificativa: str
+    fonte_url: str | None = None
+    fonte_data: date | None = None
+    confianca: str | None = None
     criado_em: datetime
     validado_em: datetime | None
 
@@ -388,10 +391,13 @@ class DecisaoIn(In):
 
 
 # ------------------------------------------------------------------ recursos e cadastros
+FuncaoMeio = Literal["", "corte", "furacao", "bordo", "movimentacao", "acabamento", "montagem", "outro"]
+
+
 class RecursoIn(In):
     unidade_id: int
     nome: Nome
-    tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] = "maquina"
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] = "maquina"
     processos_relacionados: list[Curto] = Field(default_factory=list, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] = "un/h"
@@ -399,14 +405,17 @@ class RecursoIn(In):
     local_posto: Curto = ""
     horas_disponiveis_dia: float = Field(8.0, gt=0, le=24)
     espaco_id: int | None = None
-    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] = ""
+    funcao: FuncaoMeio = ""
+    marca: Annotated[str, Field(max_length=120)] = ""
+    modelo: Annotated[str, Field(max_length=200)] = ""
+    modelo_confirmado: bool = False
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
 
 
 class RecursoUpdate(In):
     nome: Nome | None = None
-    tipo: Literal["maquina", "posto", "ferramenta", "instalacao"] | None = None
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] | None = None
     processos_relacionados: list[Curto] | None = Field(None, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] | None = None
@@ -414,7 +423,10 @@ class RecursoUpdate(In):
     local_posto: Curto | None = None
     horas_disponiveis_dia: float | None = Field(None, gt=0, le=24)
     espaco_id: int | None = None
-    funcao: Literal["", "corte", "furacao", "bordo", "acabamento", "montagem", "outro"] | None = None
+    funcao: FuncaoMeio | None = None
+    marca: Annotated[str, Field(max_length=120)] | None = None
+    modelo: Annotated[str, Field(max_length=200)] | None = None
+    modelo_confirmado: bool | None = None
     ultima_manutencao: date | None = None
     proxima_manutencao: date | None = None
     ativo: bool | None = None
@@ -433,6 +445,9 @@ class RecursoOut(Out):
     horas_disponiveis_dia: float
     espaco_id: int | None = None
     funcao: str = ""
+    marca: str = ""
+    modelo: str = ""
+    modelo_confirmado: bool = False
     ultima_manutencao: date | None
     proxima_manutencao: date | None
     origem: str
@@ -1117,3 +1132,44 @@ class PlanoOut(Out):
 class PlanoOrdemIn(In):
     cliente: Nome | None = None
     prazo: date | None = None
+
+
+# ------------------------------------------------------------------ meios (cadastro assistido)
+class IdentificarMeioIn(In):
+    unidade_id: int
+    texto: Annotated[str, Field(min_length=2, max_length=500)]
+    foto_base64: str | None = Field(None, max_length=8_000_000)  # opcional; só JPEG/PNG; descartada após o uso
+
+
+class IdentificarMeioOut(BaseModel):
+    candidatos: list[dict]
+    pergunta: str | None = None
+    provedor: str
+    aviso: str = ""
+    confirmacao_necessaria: bool = True
+
+
+class BuscarFichaIn(In):
+    pass
+
+
+class BuscarFichaOut(BaseModel):
+    encontrada: bool
+    sugeridos: list[ParametroOut]
+    descartados: list[dict]
+    pendencias: list[str]
+    provedor: str
+    aviso: str = ""
+    aviso_fonte: str = "Valores achados na web são sugestões pendentes: confira a fonte e valide para entrarem no cálculo."
+
+
+class FichaMeioOut(BaseModel):
+    recurso_id: int
+    nome: str
+    marca: str
+    modelo: str
+    modelo_confirmado: bool
+    funcao: str
+    parametros: list[dict]
+    pendencias: list[str]
+    busca_disponivel: bool

@@ -11,7 +11,7 @@ import unicodedata
 
 
 from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, ComponenteIA, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from .esquemas import (AnaliseTexto, CandidatoMeio, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -390,6 +390,30 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
         faltam = ["Medidas de cada peça (comprimento, largura e espessura)", "Como cada componente se liga aos outros (método e nº de fixadores)"]
     return EstruturaProdutoIA(componentes=comps, ligacoes=[], dados_faltantes=faltam,
                               observacoes="Lista extraída do texto por regras locais: confira nomes e quantidades e complete as medidas.")
+
+
+# ---------------------------------------------------------------- meios (identificação local)
+_PALAVRAS_MEIO = (("corte", "seccionadora", "serra", "esquadrejadeira", "cnc"), ("bordo", "coladeira", "borda"),
+                  ("furacao", "furadeira", "furacao", "coligada"), ("movimentacao", "carrinho", "paleteira", "empilhadeira", "talha", "ponte rolante"))
+
+
+def identificar_meio(ctx: dict, imagem=None) -> IdentificacaoMeio:
+    """Sem IA externa: não adivinha marca nem modelo. Devolve o texto como modelo candidato (confiança baixa) para a
+    pessoa conferir e confirmar; a função é só uma pista por palavra-chave."""
+    texto = (ctx.get("texto") or "").strip()
+    n = _norm(texto)
+    funcao = next((f for f, *palavras in _PALAVRAS_MEIO if any(p in n for p in palavras)), "")
+    if not texto:
+        return IdentificacaoMeio()
+    tipo = "meio_movimentacao" if funcao == "movimentacao" else "maquina"
+    return IdentificacaoMeio(candidatos=[CandidatoMeio(
+        modelo=texto[:200], tipo=tipo, funcao=funcao, confianca="baixa",
+        observacao="Identificação local (sem IA externa): confira a marca e o modelo antes de confirmar.")])
+
+
+def buscar_ficha(ctx: dict) -> FichaTecnicaIA:
+    """Sem IA externa não há busca na web: nada é preenchido (a ficha fica como pendência para preenchimento manual)."""
+    return FichaTecnicaIA(encontrada=False)
 
 
 # ---------------------------------------------------------------- plano de trabalho (heurística local)

@@ -1,6 +1,7 @@
 import { api, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
 import { detalhes, fmtNum, h, montar, tentar, toast } from './ui.js';
+import { secaoMeios } from './telas_meios.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const opcoes = (lista, vazio) => [h('option', { value: '' }, vazio), ...lista.map((x) => h('option', { value: x.id }, x.nome))];
@@ -11,7 +12,7 @@ const seletor = (lista, valor, vazio, aoMudar) => {
 };
 
 const TIPOS_LOCAL = [['area', 'Outro / área de trabalho'], ['estoque', 'Estoque (início)'], ['montagem', 'Montagem'], ['posto', 'Posto'], ['expedicao', 'Expedição']];
-const FUNCOES = [['', 'Não informado'], ['corte', 'Cortar'], ['bordo', 'Colar borda'], ['furacao', 'Furar'], ['acabamento', 'Acabamento'], ['montagem', 'Montagem'], ['outro', 'Outro']];
+const FUNCOES = [['', 'Não informado'], ['corte', 'Cortar'], ['bordo', 'Colar borda'], ['furacao', 'Furar'], ['movimentacao', 'Movimentar peças'], ['acabamento', 'Acabamento'], ['montagem', 'Montagem'], ['outro', 'Outro']];
 const REF_ROTULOS = { 'conferencia_final': 'Conferência final de cada unidade', 'fixador:parafuso': 'Colocar 1 parafuso', 'fixador:cavilha': 'Colocar 1 cavilha', 'fixador:minifix': 'Colocar 1 minifix',
   'fixador:dobradica': 'Instalar 1 dobradiça', 'fixador:corredica': 'Instalar 1 corrediça', 'fixador:cola': 'Colar 1 junção', 'fixador:prego': 'Pregar 1 prego', 'fixador:encaixe': 'Fazer 1 encaixe',
   'fixador:puxador': 'Instalar 1 puxador', 'fixador:outro': 'Outro tipo de fixação (1 un.)' };
@@ -120,7 +121,8 @@ export async function contorno(el) {
           ...[['temperatura_c', 'Temperatura (°C)', l.temperatura_c], ['ruido_db', 'Ruído (dB)', l.ruido_db], ['tolerancia_ambiente_pct', 'Folga extra (%)', l.tolerancia_ambiente_pct]].map(([k, rot, v]) =>
             h('div', null, h('label', null, rot), (() => { const i = h('input', { type: 'number', step: 'any', value: v ?? '' }); i.addEventListener('change', () => salvar(() => patch(`/espacos/${l.id}`, { [k]: num(i.value) }))); return i; })()))))
           : h('p', { class: 'muted' }, 'Cadastre os locais primeiro.')));
-    montar(secoes, sLocais, sDist, sEq, sTar, sPecas, sRef, sAmb);
+    const sMeios = await secaoMeios(uid, desenhar);
+    montar(secoes, sLocais, sDist, sEq, sMeios, sTar, sPecas, sRef, sAmb);
   };
   await desenhar();
 }

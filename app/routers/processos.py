@@ -17,6 +17,7 @@ from ..deps import Ctx, get_ctx
 from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
+from ..services.modulos import ficha as ficha_catalogo
 from ..services import estimativa, timecalc
 from ..services.dashboard import alerta_ergonomia
 
@@ -420,6 +421,14 @@ def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(get_ctx)):
     campos = dados.model_dump(exclude={"origem"})
     if not campos["unidade"] and campos["nome"] in PARAMETROS_PADRAO:
         campos["unidade"] = PARAMETROS_PADRAO[campos["nome"]][0]
+    if dados.escopo_tipo == "recurso":
+        # ficha técnica do meio: só parâmetros do catálogo, em unidade e faixa plausíveis (características, nunca tempos)
+        if dados.valor_num is None:
+            raise HTTPException(422, "Informe valor_num para um parâmetro da ficha técnica.")
+        valor, motivo = ficha_catalogo.validar_valor(dados.nome, dados.valor_num, dados.unidade or None)
+        if valor is None:
+            raise HTTPException(422, f"Parâmetro de ficha técnica inválido: {motivo}.")
+        campos["valor_num"], campos["unidade"] = valor, ficha_catalogo.PARAMETROS_FICHA[dados.nome].unidade
     p = _nova_versao_parametro(ctx, uni, campos, origem=dados.origem, status="validado", vigente=True)
     ctx.auditar("parametro.criar", "parametro", p.id, None, audit.snap(p))
     ctx.db.commit()

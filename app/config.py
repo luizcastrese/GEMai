@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     ia_modelo: str = "claude-opus-5-5"
     ia_timeout_segundos: float = 60.0
+    # Busca de ficha técnica na web (ferramenta de servidor da API Anthropic). O tipo segue a documentação vigente;
+    # modelos mais antigos exigem a variante básica (web_search_20250305).
+    ia_busca_ferramenta: str = "web_search_20260209"
+    ia_busca_max_usos: int = 5
+    foto_max_bytes: int = 4_000_000  # foto opcional de um meio (JPEG/PNG), descartada após a identificação
 
     @field_validator("database_url")
     @classmethod

@@ -216,6 +216,85 @@ class PassoIA(BaseModel):
     observacao: str = ""
 
 
+# ---------------------------------------------------------------- meios: identificação e ficha técnica
+class CandidatoMeio(BaseModel):
+    marca: str = ""
+    modelo: str = ""
+    tipo: Literal["maquina", "posto", "ferramenta", "instalacao", "meio_movimentacao"] = "maquina"
+    funcao: Literal["", "corte", "furacao", "bordo", "movimentacao", "acabamento", "montagem", "outro"] = ""
+    confianca: Literal["baixa", "media", "alta"] = "baixa"
+    observacao: str = ""
+
+
+class IdentificacaoMeio(BaseModel):
+    candidatos: list[CandidatoMeio] = Field(default_factory=list)
+    pergunta: str | None = None  # só quando a descrição é ambígua
+
+
+class ParametroFichaIA(BaseModel):
+    nome: str
+    valor: float | None = None
+    unidade: str = ""
+    fonte_url: str = ""
+    confianca: Literal["baixa", "media", "alta"] = "baixa"
+
+
+class FichaTecnicaIA(BaseModel):
+    """Só números e referência. Nenhum texto de catálogo é aceito ou guardado."""
+
+    encontrada: bool = False
+    parametros: list[ParametroFichaIA] = Field(default_factory=list)
+
+
+def _limpo(s: str | None, n: int) -> str:
+    return "".join(c for c in (s or "") if c.isprintable()).strip()[:n]
+
+
+def sanear_identificacao(i: IdentificacaoMeio) -> IdentificacaoMeio:
+    return IdentificacaoMeio(
+        candidatos=[CandidatoMeio(marca=_limpo(c.marca, 120), modelo=_limpo(c.modelo, 200), tipo=c.tipo, funcao=c.funcao,
+                                  confianca=c.confianca, observacao=_limpo(c.observacao, 300))
+                    for c in i.candidatos[:5] if _limpo(c.modelo, 200) or _limpo(c.marca, 120)],
+        pergunta=_limpo(i.pergunta, 300) or None)
+
+
+def sanear_ficha(f: FichaTecnicaIA, funcao: str = "") -> tuple[list[dict], list[dict]]:
+    """(parâmetros aceitos, descartados com o motivo). Só entra o que tem nome do catálogo (aplicável à função do meio),
+    valor numérico na unidade certa, dentro da faixa plausível e FONTE (URL http/https) citada."""
+    from ..modulos import ficha
+    aceitos, descartados, vistos = [], [], set()
+    for p in f.parametros[:40]:
+        nome = _limpo(p.nome, 80)
+
+        def recusa(motivo: str):
+            descartados.append({"nome": nome, "motivo": motivo})
+
+        if nome in vistos:
+            recusa("duplicado")
+            continue
+        cat = ficha.PARAMETROS_FICHA.get(nome)
+        if cat is None:
+            recusa("parâmetro fora do catálogo da ficha técnica")
+            continue
+        if funcao and funcao not in cat.funcoes:
+            recusa("não se aplica à função deste meio")
+            continue
+        if p.valor is None:
+            recusa("sem valor")
+            continue
+        url = ficha.url_de_fonte(_limpo(p.fonte_url, 500))
+        if url is None:
+            recusa("sem fonte citada (URL http/https válida): número sem fonte não entra")
+            continue
+        valor, motivo = ficha.validar_valor(nome, p.valor, _limpo(p.unidade, 20) or cat.unidade)
+        if valor is None:
+            recusa(motivo)
+            continue
+        vistos.add(nome)
+        aceitos.append({"nome": nome, "valor": valor, "unidade": cat.unidade, "fonte_url": url, "confianca": p.confianca})
+    return aceitos, descartados
+
+
 class PlanoProposta(BaseModel):
     passos: list[PassoIA] = Field(default_factory=list)
     premissas: list[str] = Field(default_factory=list)

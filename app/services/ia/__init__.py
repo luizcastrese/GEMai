@@ -11,8 +11,8 @@ from ...config import get_settings
 from ...models import Empresa
 from ..modelo_tempo import ModeloTempoIA, sanear_modelo
 from . import claude, heuristica
-from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, ListaPerguntas, PerguntaIA, PlanoProposta,
-                       sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
+from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, FichaTecnicaIA, IdentificacaoMeio, ListaPerguntas,
+                       PerguntaIA, PlanoProposta, sanear_identificacao, sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
 
 log = logging.getLogger("erp.ia")
 
@@ -66,3 +66,18 @@ def interpretar_produto(empresa: Empresa, ctx: dict) -> tuple[EstruturaProdutoIA
 def planejar(empresa: Empresa, ctx: dict) -> tuple[PlanoProposta, str, str]:
     r, prov, aviso = _executar(empresa, "planejar", ctx)
     return sanear_plano(r), prov, aviso
+
+
+def externa_disponivel(empresa: Empresa) -> bool:
+    """IA externa habilitada (chave no servidor + consentimento da empresa): exigida para foto e busca na web."""
+    return provedor_ativo(empresa) == claude.NOME
+
+
+def identificar_meio(empresa: Empresa, ctx: dict, imagem: tuple[bytes, str] | None = None) -> tuple[IdentificacaoMeio, str, str]:
+    r, prov, aviso = _executar(empresa, "identificar_meio", ctx, imagem)
+    return sanear_identificacao(r), prov, aviso
+
+
+def buscar_ficha(empresa: Empresa, ctx: dict) -> tuple[FichaTecnicaIA, str, str]:
+    """Busca de ficha técnica. Só o provedor externo pesquisa na web; o local devolve 'não encontrada'."""
+    return _executar(empresa, "buscar_ficha", ctx)
