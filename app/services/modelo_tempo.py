@@ -35,6 +35,7 @@ METODOS = ("fixo", "linear_driver", "deslocamento", "capacidade_recurso", "indic
 INDICES_MOST = (0, 1, 3, 6, 10, 16)  # valores de índice do BasicMOST
 TMU_MIN = 0.0006  # 1 TMU = 0,0006 min = 0,036 s
 LIMITE_TOLERANCIA = 0.5
+RITMO_MIN, RITMO_MAX = 50.0, 150.0  # limites de ritmo (%) do motor; 100 = ritmo normal
 DRIVERS = ("nenhum", "peso_kg", "area_m2", "comprimento_m", "volume_m3", "distancia_m")
 
 # Referências genéricas usadas SÓ pelo provedor local; sempre declaradas nas premissas, confiança baixa.
@@ -136,7 +137,7 @@ def sanear_modelo(m: ModeloTempoIA) -> ModeloTempoIA:
             indices_most=[min(INDICES_MOST, key=lambda x: abs(x - int(i))) for i in e.indices_most[:30]],
             depende_operador=False if e.metodo == "capacidade_recurso" else e.depende_operador))
     return ModeloTempoIA(
-        elementos=els, fator_ambiente=_num(m.fator_ambiente, 0.5, 3.0, 1.0), ritmo_pct=_num(m.ritmo_pct, 50, 150, 100.0),
+        elementos=els, fator_ambiente=_num(m.fator_ambiente, 0.5, 3.0, 1.0), ritmo_pct=_num(m.ritmo_pct, RITMO_MIN, RITMO_MAX, 100.0),
         tolerancias=[ToleranciaTempo(categoria=_t(t.categoria, 120), percentual=_num(t.percentual, 0, 50, 0.0),
                                      justificativa=_t(t.justificativa, 400), fonte=_t(t.fonte, 200))
                      for t in m.tolerancias[:15] if _t(t.categoria, 120)],
@@ -274,11 +275,55 @@ def fator_tolerancia(tolerancias: list[dict] | None) -> tuple[float, float]:
     return 1.0 / (1.0 - p), p
 
 
+def depende_do_operador(e: dict) -> bool:
+    """Elemento cujo tempo muda com o ritmo de quem executa (tempo de máquina não muda)."""
+    return bool(e.get("depende_operador", True)) and e.get("metodo") != "capacidade_recurso"
+
+
+@dataclass
+class FracaoOperador:
+    """Fração do tempo-base (antes de ritmo, ambiente e tolerâncias) que depende do operador, em [0, 1]."""
+
+    execucao: float | None = None
+    preparacao: float | None = None  # None = o modelo não tem elementos de preparação
+    geral: float | None = None  # None = não calculável (modelo incompleto ou sem elementos)
+    faltantes: list[str] = field(default_factory=list)
+
+
+def fracao_operador(elementos: list[dict], c: Contexto) -> FracaoOperador:
+    """f = Σ minutos dos elementos com `depende_operador` ÷ Σ minutos de todos, no contexto dado.
+
+    Serve à normalização do histórico pelo ritmo (`estimativa`). Se algum elemento não pode ser calculado
+    por falta de dado físico, a fração NÃO é estimada: `geral` fica None e os faltantes são listados.
+    """
+    fr = FracaoOperador()
+    op = {"preparacao": 0.0, "execucao": 0.0}
+    tot = {"preparacao": 0.0, "execucao": 0.0}
+    for e in elementos:
+        t, falta = _elemento(e, c)
+        if falta:
+            fr.faltantes.append(falta)
+            continue
+        k = "preparacao" if e.get("tipo") == "preparacao" else "execucao"
+        tot[k] += t
+        if depende_do_operador(e):
+            op[k] += t
+    if fr.faltantes or not elementos:
+        return fr
+    total = tot["preparacao"] + tot["execucao"]
+    if total > 0:
+        fr.geral = (op["preparacao"] + op["execucao"]) / total
+    for k in ("preparacao", "execucao"):
+        if tot[k] > 0:
+            setattr(fr, k, op[k] / tot[k])
+    return fr
+
+
 def calcular(elementos: list[dict], fator_ambiente: float, c: Contexto, tolerancias: list[dict] | None = None,
              ritmo_pct: float = 100.0) -> Resultado:
     r = Resultado(fator_ambiente=fator_ambiente)
     f = min(max(fator_ambiente or 1.0, 0.5), 3.0)
-    ritmo = 100.0 / min(max(ritmo_pct or 100.0, 50.0), 150.0)
+    ritmo = 100.0 / min(max(ritmo_pct or 100.0, RITMO_MIN), RITMO_MAX)
     ft, p = fator_tolerancia(tolerancias)
     base_prep = base_exec = 0.0
     linhas = []
@@ -289,7 +334,7 @@ def calcular(elementos: list[dict], fator_ambiente: float, c: Contexto, toleranc
             linhas.append({"nome": e.get("nome", "?"), "tipo": e.get("tipo", "outro"), "minutos": None, "motivo": falta})
             continue
         t *= f
-        if e.get("depende_operador", True) and e.get("metodo") != "capacidade_recurso":
+        if depende_do_operador(e):
             t *= ritmo
         linhas.append({"nome": e.get("nome", "?"), "tipo": e.get("tipo", "outro"), "minutos": round(t, 3)})
         if e.get("tipo") == "preparacao":
