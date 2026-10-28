@@ -10,6 +10,7 @@ from ..database import get_db
 from ..deps import Ctx, agora, get_ctx
 from ..models import Empresa, Unidade, Usuario, UsuarioUnidade
 from ..ratelimit import ip_cliente, limite_cadastro, limite_login
+from ..services import equipe
 from ..schemas import (AlterarSenhaIn, LoginIn, RedefinirSenhaIn, RegistrarEmpresaIn, TokenOut,
                        UsuarioIn, UsuarioOut, UsuarioUpdate)
 from ..security import (criar_token, hash_senha, senha_precisa_rehash, validar_forca_senha,
@@ -53,6 +54,8 @@ def registrar(dados: RegistrarEmpresaIn, request: Request, db: Session = Depends
     db.add_all([uni, usr])
     db.flush()
     audit.registrar(db, emp.id, usr.id, "empresa.criar", "empresa", emp.id, None, audit.snap(emp), ip_cliente(request))
+    for p in equipe.garantir_pessoas_do_usuario(db, usr, [uni.id]):
+        audit.registrar(db, emp.id, usr.id, "pessoa.vincular_usuario", "pessoa", p.id, None, audit.snap(p), ip_cliente(request))
     db.commit()
     return _token(db, usr)
 
@@ -127,6 +130,13 @@ def _outro_ativo(ctx: Ctx, excluir_id: int) -> bool:
         Usuario.empresa_id == ctx.empresa_id, Usuario.ativo.is_(True), Usuario.id != excluir_id)))
 
 
+def _vincular_pessoas(ctx: Ctx, u: Usuario) -> None:
+    """Garante a pessoa (quem executa) do usuário nas unidades em que ele atua; só cria, nunca altera."""
+    ctx.db.flush()  # as unidades recém-atribuídas precisam estar visíveis à consulta
+    for p in equipe.garantir_pessoas_do_usuario(ctx.db, u):
+        ctx.auditar("pessoa.vincular_usuario", "pessoa", p.id, None, audit.snap(p))
+
+
 @router.get("/usuarios", response_model=list[UsuarioOut])
 def listar_usuarios(ctx: Ctx = Depends(get_ctx)):
     us = ctx.db.scalars(select(Usuario).where(Usuario.empresa_id == ctx.empresa_id).order_by(Usuario.nome))
@@ -145,6 +155,7 @@ def criar_usuario(dados: UsuarioIn, ctx: Ctx = Depends(get_ctx)):
     ctx.db.flush()
     ctx.db.add_all(UsuarioUnidade(usuario_id=u.id, unidade_id=i) for i in ids)
     ctx.auditar("usuario.criar", "usuario", u.id, None, {**audit.snap(u), "unidade_ids": ids})
+    _vincular_pessoas(ctx, u)
     ctx.db.commit()
     return usuario_out(ctx.db, u)
 
@@ -178,6 +189,7 @@ def atualizar_usuario(uid: int, dados: UsuarioUpdate, ctx: Ctx = Depends(get_ctx
     ctx.db.flush()
     ctx.auditar("usuario.atualizar", "usuario", u.id, antes,
                 {**audit.snap(u), "unidade_ids": usuario_out(ctx.db, u).unidade_ids})
+    _vincular_pessoas(ctx, u)
     ctx.db.commit()
     return usuario_out(ctx.db, u)
 

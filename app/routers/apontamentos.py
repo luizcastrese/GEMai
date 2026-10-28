@@ -14,7 +14,7 @@ from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Ocorrencia, Operacao, Ordem, OrdemOperacao, Pessoa, Recurso, Usuario
 from ..schemas import (AnularIn, ApontamentoManualIn, ApontamentoOut, DecisaoIn, FecharOcorrenciaIn,
                        FinalizarApontamentoIn, IniciarApontamentoIn, OcorrenciaIn, OcorrenciaOut)
-from ..services import timecalc
+from ..services import equipe, timecalc
 
 router = APIRouter(tags=["apontamentos"])
 TOLERANCIA_FUTURO = timedelta(minutes=5)
@@ -61,8 +61,12 @@ def _pessoa_do_usuario(ctx: Ctx, unidade_id: int) -> Pessoa | None:
 
 
 def _resolver_pessoa(ctx: Ctx, unidade_id: int, pessoa_id: int | None) -> int | None:
-    if pessoa_id is None:  # sem indicação: a pessoa vinculada ao próprio usuário, se houver
+    if pessoa_id is None:  # sem indicação: a pessoa vinculada ao próprio usuário (criada se faltar)
         p = _pessoa_do_usuario(ctx, unidade_id)
+        if p is None:
+            p, nova = equipe.garantir_pessoa(ctx.db, ctx.usuario, unidade_id)
+            if nova:
+                ctx.auditar("pessoa.vincular_usuario", "pessoa", p.id, None, audit.snap(p))
         return p.id if p else None
     p = ctx.db.get(Pessoa, pessoa_id)
     if not p or p.empresa_id != ctx.empresa_id or p.unidade_id != unidade_id:

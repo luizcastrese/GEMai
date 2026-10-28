@@ -202,9 +202,15 @@ export async function aprovacoes(el) {
 // ---------------------------------------------------------------- fila do operador
 export async function fila(el) {
   let timer = null;
+  let executor; // pessoa que executa (padrão: a vinculada ao usuário); undefined = ainda não escolhida
   const area = h('div');
   const carregar = async () => {
-    const [ops, abertos, recursos] = await Promise.all([get(`/operador/fila${qs({ unidade_id: estado.unidadeId })}`), get('/apontamentos/abertos'), get(`/recursos${qs({ unidade_id: estado.unidadeId, ativo: true })}`)]);
+    const [ops, abertos, recursos, equipe] = await Promise.all([get(`/operador/fila${qs({ unidade_id: estado.unidadeId })}`), get('/apontamentos/abertos'), get(`/recursos${qs({ unidade_id: estado.unidadeId, ativo: true })}`),
+      get(`/pessoas${qs({ unidade_id: estado.unidadeId, ativo: true })}`)]);
+    if (executor === undefined) executor = equipe.find((p) => p.usuario_id === estado.usuario?.id)?.id ?? '';
+    // Quem está executando? Informar a pessoa certa melhora o histórico; não bloqueia (vazio = a pessoa do próprio usuário).
+    const quem = h('select', { 'aria-label': 'Quem está executando?', onchange: (e) => { executor = e.target.value === '' ? '' : Number(e.target.value); } },
+      [['', 'Eu (padrão)'], ...equipe.map((p) => [p.id, p.nome])].map(([v, r]) => h('option', { value: v, selected: String(v) === String(executor) }, r)));
     const mapaOps = new Map(ops.map((x) => [x.id, x]));
     clearInterval(timer);
     const cronos = [];
@@ -218,9 +224,10 @@ export async function fila(el) {
     const tick = () => cronos.forEach(([t, ini]) => { const s = Math.max(0, Math.floor((Date.now() - ini) / 1000)); t.textContent = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60].map((n) => String(n).padStart(2, '0')).join(':'); });
     tick(); timer = setInterval(tick, 1000);
     const livres = ops.filter((x) => !abertos.some((a) => a.ordem_operacao_id === x.id));
-    const iniciar = async (x, t) => { if (await tentar(() => post('/apontamentos/iniciar', { ordem_operacao_id: x.id, tipo: t }), 'Começou!')) carregar(); };
+    const iniciar = async (x, t) => { if (await tentar(() => post('/apontamentos/iniciar', { ordem_operacao_id: x.id, tipo: t, pessoa_id: executor === '' ? null : executor }), 'Começou!')) carregar(); };
     montar(area, blocoAbertos.length ? [h('h2', null, 'Em andamento'), blocoAbertos] : null,
       h('h2', null, 'O que fazer agora'),
+      h('div', { class: 'card' }, h('label', null, 'Quem está executando?'), quem),
       livres.length ? livres.map((x) => h('div', { class: 'card fila-card' },
         h('div', null, h('div', { class: 'muted small' }, `${x.ordem_numero} · ${fmtNum(x.qtd_planejada, 2)} un`), h('strong', null, `${x.etapa_nome} › ${x.nome}`)),
         h('div', { class: 'btns' }, h('button', { class: 'pri big', disabled: abertos.length > 0, onclick: () => iniciar(x, 'execucao') }, '▶ Iniciar'),
