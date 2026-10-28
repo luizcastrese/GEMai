@@ -426,6 +426,8 @@ class PessoaIn(In):
     equipe: Annotated[str, Field(max_length=120)] = ""
     habilitacoes: list[Curto] = Field(default_factory=list, max_length=50)
     usuario_id: int | None = None
+    perfil_id: int | None = None
+    ritmo_pct: float | None = Field(None, ge=50, le=150)  # ao informar, a origem passa a "informado"
 
 
 class PessoaUpdate(In):
@@ -434,6 +436,8 @@ class PessoaUpdate(In):
     equipe: Annotated[str, Field(max_length=120)] | None = None
     habilitacoes: list[Curto] | None = Field(None, max_length=50)
     usuario_id: int | None = None
+    perfil_id: int | None = None
+    ritmo_pct: float | None = Field(None, ge=50, le=150)  # None explícito limpa o ritmo da pessoa
     ativo: bool | None = None
 
 
@@ -446,6 +450,43 @@ class PessoaOut(Out):
     habilitacoes: list
     usuario_id: int | None
     ativo: bool
+    perfil_id: int | None = None
+    ritmo_pct: float | None = None
+    ritmo_origem: str = ""  # "" | informado | calibrado
+    ritmo_amostras: int = 0
+    ritmo_calibrado_em: datetime | None = None
+    # Ritmo usado na normalização do histórico (pessoa > perfil > 100); só preenchido nas listagens/consultas.
+    ritmo_efetivo: float | None = None
+    ritmo_efetivo_origem: str = ""  # pessoa | perfil | padrao
+
+
+class CalibrarRitmoIn(In):
+    unidade_id: int | None = None
+    aplicar: bool = False  # False = prévia, nada é gravado
+
+
+class RitmoPessoaOut(BaseModel):
+    pessoa_id: int
+    nome: str
+    unidade_id: int
+    status: Literal["sugerido", "mantido", "insuficiente"]
+    aplicado: bool
+    ritmo_atual: float
+    ritmo_atual_origem: str  # informado | calibrado | perfil | padrao
+    ritmo_sugerido: float | None
+    operacoes_usadas: int
+    amostras: int
+    motivo: str = ""
+
+
+class CalibrarRitmoOut(BaseModel):
+    aplicado: bool
+    aviso: str
+    criterios: dict
+    operacoes_consideradas: int
+    operacoes_ignoradas: list[str]
+    aplicadas: int
+    pessoas: list[RitmoPessoaOut]
 
 
 class MaterialIn(In):

@@ -246,8 +246,10 @@ const ENT = {
       { k: 'observacoes', rotulo: 'Observações', tipo: 'textarea' }],
     cols: [{ t: 'Perfil', f: (r) => r.nome }, { t: 'Sexo ref.', f: (r) => r.sexo }, { t: 'Estatura', f: (r) => (r.estatura_cm ? `${r.estatura_cm} cm` : '—') },
       { t: 'Peso corporal', f: (r) => (r.peso_corporal_kg ? `${r.peso_corporal_kg} kg` : '—') }, { t: 'Experiência', f: (r) => r.experiencia }, { t: 'Ritmo', f: (r) => `${r.ritmo_pct}%` }] },
-  pessoas: { rot: 'Pessoas', un: true, campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'funcao', rotulo: 'Função' }, { k: 'equipe', rotulo: 'Equipe' }, { k: 'habilitacoes', rotulo: 'Habilitações', tipo: 'lista' }],
-    cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Função', f: (r) => r.funcao }, { t: 'Equipe', f: (r) => r.equipe }, { t: 'Habilitações', f: (r) => r.habilitacoes.join(', ') }] },
+  pessoas: { rot: 'Pessoas', un: true, campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'funcao', rotulo: 'Função' }, { k: 'equipe', rotulo: 'Equipe' }, { k: 'habilitacoes', rotulo: 'Habilitações', tipo: 'lista' },
+    { k: 'ritmo_pct', rotulo: 'Ritmo (%) — 100 = ritmo da equipe; vazio usa o do perfil (ou 100)', tipo: 'number', nulo: true, min: 50 }],
+    cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Função', f: (r) => r.funcao }, { t: 'Equipe', f: (r) => r.equipe }, { t: 'Habilitações', f: (r) => r.habilitacoes.join(', ') },
+      { t: 'Perfil', f: (r) => r._perfil || '—' }, { t: 'Ritmo (normalização do histórico)', f: (r) => ritmoTexto(r) }] },
   materiais: { rot: 'Materiais', campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'tipo', rotulo: 'Tipo' }, { k: 'unidade_medida', rotulo: 'Unidade de medida' }],
     cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Unidade', f: (r) => r.unidade_medida }] },
   produtos: { rot: 'Produtos / serviços', campos: [{ k: 'nome', rotulo: 'Nome' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['produto', 'Produto'], ['servico', 'Serviço']] }, { k: 'descricao', rotulo: 'Descrição', tipo: 'textarea' },
@@ -259,11 +261,41 @@ const ENT = {
 const AVANCADO = {
   recursos: ['processos_relacionados', 'equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao', 'capacidade_unidade'],
   espacos: ['pe_direito_m', 'piso', 'temperatura_c', 'umidade_pct', 'ruido_db', 'iluminancia_lux', 'observacoes'],
-  pessoas: ['habilitacoes'], produtos: ['comprimento_m', 'largura_m', 'altura_m'],
+  pessoas: ['habilitacoes', 'ritmo_pct'], produtos: ['comprimento_m', 'largura_m', 'altura_m'],
 };
 const COLS_SIMPLES = { recursos: 3, espacos: 3, pessoas: 3, 'perfis-mao-de-obra': 6 };
 const ROTULOS = { recursos: 'Equipamentos', espacos: 'Locais', pessoas: 'Equipe', materiais: 'Materiais', produtos: 'Produtos e serviços', 'perfis-mao-de-obra': 'Perfis de mão de obra' };
 const AJUSTES = { recursos: { capacidade: 'Quantas peças por hora faz? (opcional, ajuda a IA a prever o tempo)' }, espacos: { nome: 'Nome do local (ex.: Estoque de chapas)' } };
+
+const ORIGEM_RITMO = { informado: 'informado', calibrado: 'calibrado pela equipe', perfil: 'do perfil', padrao: 'padrão, sem ajuste', pessoa: 'informado' };
+const ritmoTexto = (r) => (r.ritmo_efetivo == null ? '—' : `${fmtNum(r.ritmo_efetivo, 1)}% (${ORIGEM_RITMO[r.ritmo_efetivo_origem === 'pessoa' ? r.ritmo_origem : r.ritmo_efetivo_origem] || r.ritmo_efetivo_origem})`);
+const ritmoAjuda = (p) => {
+  const origem = !p || !p.ritmo_origem ? 'Sem ritmo próprio: vale o do perfil ou 100.'
+    : p.ritmo_origem === 'calibrado' ? `Calibrado pela equipe em ${fmtData(p.ritmo_calibrado_em)} (${p.ritmo_amostras} amostras).` : 'Informado manualmente.';
+  return `${origem} É um ritmo relativo à equipe, usado só para normalizar o histórico de tempos; não é avaliação de ritmo (OIT).`;
+};
+
+// Prévia da calibração: nada é gravado até a pessoa confirmar. Sem ranking: a lista vem em ordem alfabética.
+async function calibrarRitmo(depois) {
+  const previa = await tentar(() => post('/pessoas/calibrar-ritmo', { unidade_id: estado.unidadeId }));
+  if (!previa) return;
+  const aplicaveis = previa.pessoas.filter((x) => x.status === 'sugerido').length;
+  const c = previa.criterios;
+  const STATUS_RITMO = { sugerido: ['b-pri', 'Sugerido'], mantido: ['', 'Mantido (informado)'], insuficiente: ['b-warn', 'Dados insuficientes'] };
+  modal('Calibrar ritmo pela equipe', h('div', null,
+    h('div', { class: 'aviso' }, previa.aviso),
+    h('p', { class: 'muted small' }, `Critérios: operações com ≥ ${c.min_amostras_operacao} amostras e 2 ou mais pessoas; por pessoa, ≥ ${c.min_amostras_pessoa} apontamentos aprovados em ≥ ${c.min_operacoes} operação(ões) (2 ou mais é mais robusto); limite ${c.limites_pct[0]}–${c.limites_pct[1]}%. Operações consideradas: ${previa.operacoes_consideradas}.`),
+    tabela([{ t: 'Pessoa', f: (x) => x.nome }, { t: 'Ritmo atual', f: (x) => `${fmtNum(x.ritmo_atual, 1)}% (${ORIGEM_RITMO[x.ritmo_atual_origem] || x.ritmo_atual_origem})` },
+      { t: 'Sugerido', f: (x) => (x.ritmo_sugerido == null ? '—' : `${fmtNum(x.ritmo_sugerido, 1)}%`) },
+      { t: 'Situação', f: (x) => h('span', null, badge(STATUS_RITMO[x.status][1], STATUS_RITMO[x.status][0]), x.motivo ? h('div', { class: 'muted small' }, x.motivo) : null) },
+      { t: 'Base', f: (x) => `${x.amostras} amostras · ${x.operacoes_usadas} operação(ões)` }], previa.pessoas, 'Nenhuma pessoa cadastrada.'),
+    previa.operacoes_ignoradas.length ? detalhes('Operações sem comparação possível', h('ul', { class: 'small' }, previa.operacoes_ignoradas.map((t) => h('li', null, t)))) : null),
+  { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Fechar'),
+    h('button', { class: 'pri', disabled: !aplicaveis, onclick: async () => {
+      const r = await tentar(() => post('/pessoas/calibrar-ritmo', { unidade_id: estado.unidadeId, aplicar: true }));
+      if (r) { toast(`${r.aplicadas} ritmo(s) gravado(s).`); fechar(); depois(); }
+    } }, aplicaveis ? `Aplicar ${aplicaveis} sugestão(ões)` : 'Nada a aplicar')] });
+}
 
 export async function cadastros(el) {
   let aba = 'recursos';
@@ -273,8 +305,16 @@ export async function cadastros(el) {
     const e = ENT[aba];
     const itens = await get(`/${aba}${qs({ unidade_id: e.un ? estado.unidadeId : '' })}`);
     const espacos = aba === 'recursos' ? await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`) : [];
+    const perfisTodos = aba === 'pessoas' ? await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId })}`) : [];
+    itens.forEach((p) => { p._perfil = perfisTodos.find((x) => x.id === p.perfil_id)?.nome; });
     const abrir = (item) => {
       let campos = aba === 'recursos' ? [...e.campos, { k: 'espaco_id', rotulo: 'Em que local fica?', tipo: 'select', num: true, opcoes: [['', '—'], ...espacos.map((x) => [x.id, x.nome])] }] : e.campos;
+      if (aba === 'pessoas') {
+        // perfil já atribuído continua selecionável mesmo inativo (senão salvar outra coisa o removeria)
+        const perfis = perfisTodos.filter((x) => x.ativo || x.id === item?.perfil_id);
+        if (perfis.length) campos = [...campos, { k: 'perfil_id', rotulo: 'Perfil de mão de obra (referência)', tipo: 'select', num: true, opcoes: [['', '—'], ...perfis.map((x) => [x.id, x.nome])] }];
+        campos = campos.map((c) => (c.k === 'ritmo_pct' ? { ...c, ajuda: ritmoAjuda(item) } : c));
+      }
       campos = campos.filter((c) => estado.avancado || !(AVANCADO[aba] || []).includes(c.k)).map((c) => ((AJUSTES[aba] || {})[c.k] ? { ...c, rotulo: AJUSTES[aba][c.k] } : c));
       const f = formulario(campos, item || {});
       modal(item ? `Editar — ${item.nome}` : `Novo — ${e.rot}`, f.el, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
@@ -283,7 +323,10 @@ export async function cadastros(el) {
           if (await tentar(() => (item ? patch(`/${aba}/${item.id}`, v) : post(`/${aba}`, v)), 'Salvo.')) { fechar(); desenhar(); }
         } }, 'Salvar')] });
     };
-    montar(area, e.aviso ? h('div', { class: 'aviso' }, e.aviso) : null, h('p', null, h('button', { class: 'pri', onclick: () => abrir() }, '+ Adicionar')),
+    const avisoRitmo = aba === 'pessoas' && estado.avancado
+      ? h('div', { class: 'aviso' }, 'O ritmo de cada pessoa é dado de desempenho individual (LGPD: finalidade e minimização). Serve só para normalizar o histórico de tempos; não é ranking nem critério de avaliação, contratação ou alocação.') : null;
+    montar(area, e.aviso ? h('div', { class: 'aviso' }, e.aviso) : null, avisoRitmo, h('p', { class: 'inline' }, h('button', { class: 'pri', onclick: () => abrir() }, '+ Adicionar'),
+      aba === 'pessoas' && estado.avancado ? h('button', { onclick: () => calibrarRitmo(desenhar) }, 'Calibrar ritmo pela equipe') : null),
       h('div', { class: 'card' }, tabela([...(estado.avancado ? e.cols : e.cols.slice(0, COLS_SIMPLES[aba] || 99)), { t: 'Situação', f: (r) => (r.ativo ? badge('Ativo', 'b-ok') : badge('Inativo')) },
         { t: '', f: (r) => h('div', { class: 'inline' }, h('button', { class: 'sm', onclick: () => abrir(r) }, 'Editar'),
           h('button', { class: 'sm', onclick: async () => { if (await tentar(() => patch(`/${aba}/${r.id}`, { ativo: !r.ativo }))) desenhar(); } }, r.ativo ? 'Desativar' : 'Reativar')) }], itens)),
