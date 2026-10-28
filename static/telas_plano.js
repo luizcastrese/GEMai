@@ -74,6 +74,7 @@ export async function produtoDetalhe(el, id) {
     const sPlano = h('div', { class: 'card' }, h('h2', null, '3. Plano de trabalho'),
       h('p', { class: 'muted' }, 'O sistema considera movimentação, usinagem, montagem, conferência, carga, ambiente e a jornada, e entrega os passos com horários.'),
       h('div', { class: 'inline' }, h('button', { class: 'pri big', disabled: !comps.length, onclick: () => abrirGerar({ produtoId: id, produtoNome: p.nome }) }, 'Gerar plano de trabalho'),
+        h('button', { class: 'big', disabled: !comps.length, title: 'O sistema compara equipes, lotes e meios de movimentação e mostra o que cada escolha custa.', onclick: () => abrirArranjos({ produtoId: id, produtoNome: p.nome }) }, 'Recomendar arranjo'),
         h('a', { class: 'btn', href: '#/planos' }, 'Ver planos anteriores')));
     montar(area, sComps, sLig, sPlano);
   };
@@ -148,6 +149,55 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     } }, plano ? 'Recalcular' : 'Gerar plano')] });
 }
 
+// ---------------------------------------------------------------- arranjo recomendado
+const rotRegra = { plano: 'na ordem do plano', critico: 'o caminho mais longo primeiro' };
+
+export async function abrirArranjos({ produtoId, produtoNome }) {
+  const f = {
+    qtd: entrada('number', 1, { min: '0', step: 'any' }),
+    ini: entrada('datetime-local', isoLocal(new Date())),
+    max: entrada('number', 4, { min: '1', max: '8', step: '1' }),
+    ia: h('input', { type: 'checkbox' }),
+  };
+  const saida = h('div', { class: 'arranjos' });
+  const corpoReq = () => ({ produto_id: produtoId, unidade_id: estado.unidadeId, quantidade: Number(f.qtd.value) || 1,
+    inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null, pessoas_max: Number(f.max.value) || 4 });
+  const escolher = async (c, fechar) => {
+    const r = await tentar(() => post('/planos/de-arranjo', { ...corpoReq(), escolha: { pessoas: c.pessoas, lotes: c.lotes, regra: c.regra, meio_id: c.meio_id } }));
+    if (r) { fechar(); location.hash = `#/planos/${r.id}`; }
+  };
+  const mostrar = (r, fechar) => {
+    const ocup = (c) => Object.entries(c.ocupacao_pct).map(([k, v]) => `${k} ${fmtNum(v)}%`).join(' · ');
+    montar(saida,
+      r.pendencias.length ? h('div', { class: 'aviso' }, h('strong', null, 'Pendências: '), h('ul', null, r.pendencias.map((x) => h('li', null, x)))) : null,
+      r.candidatos.length ? null : h('p', { class: 'muted' }, 'Ainda não há como montar um arranjo: resolva as pendências acima e tente de novo.'),
+      r.explicacao ? h('div', null, avisoIA(), h('p', null, r.explicacao)) : null,
+      r.candidatos.length ? tabela([
+        { t: 'Arranjo', f: (c) => h('div', null, h('strong', null, `${c.pessoas} pessoa(s), ${c.lotes} lote(s)`),
+          h('div', { class: 'muted' }, `${rotRegra[c.regra] || c.regra} · ${c.meio || 'pessoas carregando'}`),
+          c.origem === 'ia' ? badge('sugerido por IA, calculado pelo sistema', 'b-warn') : null) },
+        { t: 'Prazo (trabalho)', f: (c) => fmtMin(c.makespan_min) },
+        { t: 'Pessoas-hora', f: (c) => fmtNum(c.pessoas_hora) },
+        { t: 'Gargalo', f: (c) => h('div', { title: ocup(c) }, `${c.gargalo.recurso} (${fmtNum(c.gargalo.ocupacao_pct)}%)`, h('div', { class: 'muted' }, ocup(c))) },
+        { t: 'Carga', f: (c) => (c.ergonomia.alertas_seguranca ? badge(`${c.ergonomia.alertas_seguranca} alerta(s)`, 'b-warn') : badge('sem alertas', 'b-ok')) },
+        { t: '', f: (c) => h('button', { class: 'pri sm', onclick: () => escolher(c, fechar) }, 'Escolher') }], r.candidatos, '') : null,
+      r.candidatos.length ? h('p', { class: 'muted' }, `${r.avaliados} arranjos avaliados; mostrados só os que não são piores em tudo que outro. Prazo = tempo de trabalho corrido, sem contar folgas e feriados.`) : null);
+  };
+  const corpo = h('div', null,
+    h('p', { class: 'muted' }, 'O sistema calcula cada arranjo com o tempo padrão dos módulos e os meios cadastrados. Ninguém digita tempo: você compara e escolhe.'),
+    h('div', { class: 'row' }, h('div', null, h('label', null, 'Quantas unidades?'), f.qtd), h('div', null, h('label', null, 'Quando começa?'), f.ini),
+      h('div', null, h('label', null, 'Maior equipe a considerar'), f.max)),
+    estado.avancado ? h('label', null, f.ia, ' Pedir à IA que explique as diferenças e sugira alternativas (o sistema recalcula)') : null,
+    saida);
+  modal(`Arranjo recomendado — ${produtoNome}`, corpo, { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Fechar'),
+    h('button', { class: 'pri', onclick: async (e) => {
+      e.target.disabled = true;
+      const r = await tentar(() => post('/planos/arranjos', { ...corpoReq(), explicar: f.ia.checked }));
+      e.target.disabled = false;
+      if (r) mostrar(r, fechar);
+    } }, 'Calcular arranjos')] });
+}
+
 // ---------------------------------------------------------------- planos
 export async function planos(el) {
   const [ps, prods] = await Promise.all([get(`/planos${qs({ unidade_id: estado.unidadeId })}`), get('/produtos?ativo=true')]);
@@ -158,7 +208,10 @@ export async function planos(el) {
     h('div', { class: 'card' }, h('div', { class: 'row' }, escolha, h('button', { class: 'pri', onclick: () => {
       if (!escolha.value) return toast('Escolha o produto.', true);
       abrirGerar({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
-    } }, 'Novo plano'))),
+    } }, 'Novo plano'), h('button', { onclick: () => {
+      if (!escolha.value) return toast('Escolha o produto.', true);
+      abrirArranjos({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
+    } }, 'Recomendar arranjo'))),
     h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge('Rascunho', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) },

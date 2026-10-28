@@ -15,7 +15,7 @@ import anthropic
 from ...config import get_settings
 from ..modelo_tempo import ModeloTempoIA
 from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, FichaTecnicaIA, IdentificacaoMeio, ListaPerguntas,
-                       PlanoProposta, SugestaoModulo)
+                       PlanoProposta, SugestaoModulo, ExplicacaoArranjos)
 
 NOME = "claude"
 
@@ -118,6 +118,14 @@ def planejar(ctx: dict) -> PlanoProposta:
         "medidas, pesos, distâncias e a ficha técnica dos meios e faz todas as contas (ritmo, tolerâncias, ambiente, jornada). Se faltar "
         "equipamento, local, medida ou ligação para algum passo, liste em 'dados_faltantes' em vez de inventar. Declare premissas e a "
         "confiança. Sexo/estatura/peso corporal NÃO alteram tempo.", ctx, PlanoProposta)
+
+
+def explicar_arranjos(fatos: dict) -> ExplicacaoArranjos:
+    return _chamar(
+        "Explique, em linguagem simples e em poucas frases, os trade-offs entre os arranjos de produção recebidos (prazo, pessoas-hora, "
+        "ocupação, gargalo, carga ergonômica), usando SOMENTE os números recebidos. Você pode sugerir até 3 alternativas (pessoas 1–8, "
+        "lotes 1/2/4, regra plano|critico) para o sistema avaliar. VOCÊ NÃO DEFINE TEMPOS nem coeficientes: o sistema calcula tudo.",
+        fatos, ExplicacaoArranjos)
 
 
 def sugerir_modulo(ctx: dict) -> SugestaoModulo:

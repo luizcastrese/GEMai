@@ -11,7 +11,7 @@ import unicodedata
 
 
 from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, CandidatoMeio, SugestaoModulo, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from .esquemas import (AnaliseTexto, CandidatoMeio, ExplicacaoArranjos, SugestaoModulo, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -381,6 +381,21 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
         faltam = ["Medidas de cada peça (comprimento, largura e espessura)", "Como cada componente se liga aos outros (método e nº de fixadores)"]
     return EstruturaProdutoIA(componentes=comps, ligacoes=[], dados_faltantes=faltam,
                               observacoes="Lista extraída do texto por regras locais: confira nomes e quantidades e complete as medidas.")
+
+
+# ---------------------------------------------------------------- arranjos (explicação local)
+def explicar_arranjos(fatos: dict) -> ExplicacaoArranjos:
+    """Texto a partir dos NÚMEROS calculados pelo sistema (nenhum inventado). Sem IA externa não sugere alternativas."""
+    cs = fatos.get("candidatos") or []
+    if not cs:
+        return ExplicacaoArranjos(texto="Nenhum arranjo viável: complete as pendências do plano.")
+    rapido = min(cs, key=lambda c: c["makespan_min"])
+    barato = min(cs, key=lambda c: c["pessoas_hora"])
+    txt = (f"Mais rápido: {rapido['rotulo']} — {rapido['makespan_min']:g} min de trabalho corrido, {rapido['pessoas_hora']:g} pessoas-hora. "
+           f"Menor esforço: {barato['rotulo']} — {barato['pessoas_hora']:g} pessoas-hora, {barato['makespan_min']:g} min. ")
+    if rapido is not barato:
+        txt += "Mais gente reduz o prazo, mas costuma aumentar as pessoas-hora e a ocupação ociosa; veja o gargalo de cada arranjo."
+    return ExplicacaoArranjos(texto=txt)
 
 
 # ---------------------------------------------------------------- módulo de tempo de uma operação (escolha local)

@@ -229,6 +229,26 @@ def sanear_sugestao_modulo(x: SugestaoModulo) -> SugestaoModulo:
     return SugestaoModulo(modulo=x.modulo if x.modulo in CHAVES_MODULOS else None, justificativa=_limpo(x.justificativa, 400))
 
 
+class AlternativaArranjo(BaseModel):
+    pessoas: int = 1
+    lotes: int = 1
+    regra: Literal["plano", "critico"] = "plano"
+
+
+class ExplicacaoArranjos(BaseModel):
+    """A IA EXPLICA os trade-offs e pode sugerir alternativas DENTRO do espaço de arranjos; não define tempos."""
+
+    texto: str = ""
+    alternativas: list[AlternativaArranjo] = Field(default_factory=list)
+
+
+def sanear_explicacao(e: ExplicacaoArranjos) -> ExplicacaoArranjos:
+    return ExplicacaoArranjos(
+        texto=_limpo(e.texto, 1500),
+        alternativas=[AlternativaArranjo(pessoas=min(max(int(a.pessoas), 1), 8), lotes=min((1, 2, 4), key=lambda x: abs(x - int(a.lotes))), regra=a.regra)
+                      for a in e.alternativas[:3]])
+
+
 # ---------------------------------------------------------------- meios: identificação e ficha técnica
 class CandidatoMeio(BaseModel):
     marca: str = ""

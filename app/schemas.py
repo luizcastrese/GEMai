@@ -1230,3 +1230,41 @@ class CalibrarModulosOut(BaseModel):
     criterios: dict
     modulos: list[SugestaoModuloCalibOut]
     propostas: int
+
+
+# ------------------------------------------------------------------ arranjo recomendado
+class ArranjoIn(In):
+    produto_id: int
+    unidade_id: int
+    quantidade: float = Field(1.0, gt=0, le=100000)
+    nome: Annotated[str, Field(max_length=300)] | None = None
+    inicio: UTC | None = None
+    blocos: list[Annotated[list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]], Field(min_length=2, max_length=2)]] | None = Field(None, max_length=6)
+    so_dias_uteis: bool = True
+    perfil_id: int | None = None
+    pessoas_max: int = Field(4, ge=1, le=8)  # maior equipe a considerar
+    n_melhores: int = Field(5, ge=1, le=10)
+    explicar: bool = False  # a IA explica os trade-offs e pode sugerir alternativas (o sistema as calcula)
+
+
+class EscolhaArranjoIn(In):
+    pessoas: int = Field(ge=1, le=8)
+    lotes: Literal[1, 2, 4] = 1
+    regra: Literal["plano", "critico"] = "plano"
+    meio_id: int | None = None
+
+
+class PlanoDeArranjoIn(ArranjoIn):
+    escolha: EscolhaArranjoIn
+
+
+class ArranjosOut(BaseModel):
+    provedor: str
+    aviso: str = ""
+    avaliados: int
+    candidatos: list[dict]
+    pendencias: list[str]
+    explicacao: str = ""
+    explicacao_provedor: str = ""
+    equipe_minima: int = 1
+    premissas: list[str] = []
