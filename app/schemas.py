@@ -1102,6 +1102,9 @@ class PlanoPassoOut(Out):
     parametros_modulo: dict = {}
     coeficientes: list = []
     tempo_normal_min: float | None = None
+    previsto_normal_min: float | None = None
+    fator_calibracao: float = 1.0
+    amostras_calibracao: int = 0
     recurso_nome: str | None = None
     origem_nome: str | None = None
     destino_nome: str | None = None
@@ -1183,3 +1186,47 @@ class SugestaoModuloOut(BaseModel):
     provedor: str
     aviso: str = ""
     aplicar_com: str = "PATCH /operacoes/{id} com {\"modulo\": ...}: a sugestão só vale depois que uma pessoa a aplica."
+
+
+# ------------------------------------------------------------------ calibração por módulo
+class CalibrarModulosIn(In):
+    unidade_id: int | None = None
+    aplicar: bool = False  # False = prévia (nada é gravado); True = registra PROPOSTAS pendentes (uma pessoa valida depois)
+
+
+class CalibracaoModuloOut(Out):
+    id: int
+    unidade_id: int
+    modulo: str
+    fator: float
+    mediana_bruta: float
+    limitado: bool
+    amostras: int
+    versao: int
+    status: str
+    vigente: bool
+    justificativa: str
+    criado_em: datetime
+    validado_em: datetime | None
+
+
+class SugestaoModuloCalibOut(BaseModel):
+    unidade_id: int
+    modulo: str
+    titulo: str
+    amostras: int
+    minimo: int
+    mediana_bruta: float | None
+    fator_sugerido: float | None
+    limitado: bool
+    status: str  # sugerido | insuficiente
+    vigente: dict | None = None  # {fator, amostras, versao} da calibração validada em uso
+    proposta_id: int | None = None  # id da proposta pendente criada (aplicar=true)
+
+
+class CalibrarModulosOut(BaseModel):
+    aplicado: bool
+    aviso: str
+    criterios: dict
+    modulos: list[SugestaoModuloCalibOut]
+    propostas: int

@@ -187,13 +187,13 @@ def sugerir_modulo(oid: int, ctx: Ctx = Depends(get_ctx)):
 def simular(oid: int, quantidade: float = Query(1, gt=0, le=1e9), produto_id: int | None = None,
             ctx: Ctx = Depends(get_ctx)):
     """Simulação (what-if): tempo planejado desta operação para uma quantidade e produto."""
-    op, _, _ = _operacao(ctx, oid)
+    op, _, proc = _operacao(ctx, oid)
     prod = None
     if produto_id is not None:
         prod = ctx.db.get(Produto, produto_id)
         if not prod or prod.empresa_id != ctx.empresa_id:
             raise HTTPException(404, "Registro não encontrado.")
-    est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, quantidade, prod)
+    est = estimativa.estimar_operacao(ctx.db, ctx.empresa_id, op, quantidade, prod, unidade_id=proc.unidade_id)
     total = None if est.exec is None else round((est.prep or 0) + est.exec, 2)
     return EstimativaOut(fonte=est.fonte, validada=est.validada, quantidade=quantidade,
                          preparacao_min=None if est.exec is None else round(est.prep or 0, 2),

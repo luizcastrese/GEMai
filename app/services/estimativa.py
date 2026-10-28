@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Apontamento, Ordem, OrdemOperacao, Parametro, PerfilMaoDeObra
-from . import modelo_tempo, ritmo, timecalc
+from . import calibracao_modulos, modelo_tempo, ritmo, timecalc
 from .modulos import catalogo, entradas, motor
 
 NAO_NORMALIZADOS_ALERTA = 0.30  # acima disso, o aviso de apontamentos sem pessoa/ritmo é reforçado
@@ -50,6 +50,12 @@ class Estimativa:
     tolerancia_pct: float | None = None  # p = Σ tolerâncias do modelo, em %; None = sem tolerâncias aplicadas
     ritmo_normalizado: bool = False  # ao menos um apontamento foi levado a tempo normal pelo ritmo da pessoa
     amostras_nao_normalizadas: int = 0  # apontamentos sem pessoa/ritmo conhecido (entram com ritmo 100)
+    # Vínculo com o módulo de tempo da operação (qualquer fonte): base da calibração por módulo
+    modulo: str | None = None
+    previsto_normal_modulo: float | None = None  # prep + exec do módulo em ritmo 100, ANTES do fator de calibração
+    fracao_operador: float | None = None
+    fator_calibracao: float = 1.0
+    amostras_calibracao: int = 0
 
     @property
     def total(self) -> float | None:
@@ -166,15 +172,17 @@ class BaseDeTempo:
     origem_validada: bool = True
 
 
-def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso):
-    """(ResultadoModulo, EntradaModulo) da operação que escolheu um módulo; None se não escolheu/inexistente."""
+def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, unidade_id: int | None = None):
+    """(ResultadoModulo, EntradaModulo) da operação que escolheu um módulo; None se não escolheu/inexistente.
+    Aplica a calibração VALIDADA do módulo na unidade, se houver (rotulada `calibrado`)."""
     modulo = catalogo.obter(operacao.modulo) if getattr(operacao, "modulo", None) else None
     if modulo is None:
         return None
     ent, _ = entradas.entrada_da_operacao(db, empresa_id, operacao, quantidade, produto, recurso)
     perfil = db.get(PerfilMaoDeObra, operacao.perfil_id) if operacao.perfil_id else None
     ritmo_pct = perfil.ritmo_pct if perfil is not None and perfil.empresa_id == empresa_id else 100.0
-    return motor.calcular_modulo(modulo, ent, ritmo_pct=ritmo_pct), ent
+    cal = calibracao_modulos.como_dict(calibracao_modulos.fator_vigente(db, empresa_id, unidade_id, modulo.chave))
+    return motor.calcular_modulo(modulo, ent, ritmo_pct=ritmo_pct, calibracao=cal), ent
 
 
 def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, avisos: list[str]) -> BaseDeTempo | None:
@@ -288,7 +296,20 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
         ritmo_normalizado=len(usados) > nao_norm, amostras_nao_normalizadas=nao_norm)
 
 
-def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, produto=None, recurso=None) -> Estimativa:
+def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, produto=None, recurso=None,
+                     unidade_id: int | None = None) -> Estimativa:
+    """`unidade_id` (da ordem/processo) permite usar a calibração validada do módulo naquela unidade."""
+    est = _estimar(db, empresa_id, operacao, quantidade, produto, recurso, unidade_id)
+    res = _resultado_do_modulo(db, empresa_id, operacao, quantidade, produto, recurso, unidade_id)
+    if res is not None and res[0].completo:  # vínculo com o módulo vale para QUALQUER fonte (base da calibração)
+        r = res[0]
+        cal = calibracao_modulos.fator_vigente(db, empresa_id, unidade_id, operacao.modulo)
+        est.modulo, est.previsto_normal_modulo, est.fracao_operador = operacao.modulo, r.normal_base, r.fracao_operador
+        est.fator_calibracao, est.amostras_calibracao = r.fator_calibracao, cal.amostras if cal and r.calibrado else 0
+    return est
+
+
+def _estimar(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, unidade_id: int | None) -> Estimativa:
     s = get_settings()
     params = parametros_vigentes(db, empresa_id, "operacao", operacao.id)
     val = lambda n: params[n].valor_num if n in params else None  # noqa: E731
@@ -302,7 +323,7 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
 
     if amostras and len(amostras) >= s.min_amostras_historico:
         return _pelo_historico(db, empresa_id, operacao, quantidade, produto, recurso, h, lote)
-    res_mod = _resultado_do_modulo(db, empresa_id, operacao, quantidade, produto, recurso)
+    res_mod = _resultado_do_modulo(db, empresa_id, operacao, quantidade, produto, recurso, unidade_id)
     if res_mod is not None:
         r, _ = res_mod
         if r.completo:

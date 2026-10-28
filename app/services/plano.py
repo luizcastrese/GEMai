@@ -17,7 +17,7 @@ from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
                       PlanoTrabalho, Produto, Recurso)
-from . import ergonomia, ia, modelo_tempo
+from . import calibracao_modulos, ergonomia, ia, modelo_tempo
 from .modulos import catalogo, entradas, motor
 from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
@@ -182,7 +182,8 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                                         origem=o.nome if o else None, destino=d.nome if d else None)
         local = (esp_id.get(rec.espaco_id) if rec else None) or d or o
         tol = motor.tolerancias_padrao()  # sem "folga extra" digitada: o ambiente será calculado (Fase 8)
-        r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=ritmo)
+        cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, unidade_id, modulo.chave)  # só calibração VALIDADA
+        r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=ritmo, calibracao=calibracao_modulos.como_dict(cal))
         pessoas = r.pessoas
         falt = list(r.faltantes)
         if modulo.precisa_recurso and rec is None and not any("equipamento" in f for f in falt):
@@ -205,7 +206,8 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
         completo = not falt
         linhas.append({"p": p, "modulo": modulo, "ent": ent, "rec": rec, "o": o, "d": d, "pessoas": pessoas, "tol": tol, "r": r, "falt": falt,
                        "alertas": alertas, "total": r.total if completo else None, "prep": r.prep if completo else None,
-                       "exec": r.exec if completo else None, "normal": r.normal if completo else None})
+                       "exec": r.exec if completo else None, "normal": r.normal if completo else None,
+                       "cal_amostras": cal.amostras if (cal and r.calibrado) else 0})
 
     # agenda
     tz = tz_empresa(ctx.empresa)
@@ -242,7 +244,8 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
             tolerancias=l["tol"], ritmo_pct=ritmo, composicao=r.composicao, tempo_prep_min=l["prep"], tempo_exec_min=l["exec"],
             tempo_padrao_min=l["total"], tempo_normal_min=l["normal"], tempo_agendado_min=round(efetiva, 3) if efetiva is not None else None,
             faltantes=l["falt"], alertas=l["alertas"], observacao=p.observacao, modulo=mod.chave, modulo_versao=mod.versao,
-            parametros_modulo=r.parametros, coeficientes=r.coeficientes,
+            parametros_modulo=r.parametros, coeficientes=r.coeficientes, previsto_normal_min=r.normal_base if l["total"] is not None else None,
+            fracao_operador=r.fracao_operador, fator_calibracao=r.fator_calibracao, amostras_calibracao=l["cal_amostras"],
             inicio_prev=ini.replace(tzinfo=tz).astimezone(timezone.utc) if l["total"] is not None else None,
             fim_prev=fim.replace(tzinfo=tz).astimezone(timezone.utc) if l["total"] is not None else None))
     fim_geral = max((f for (_, f, e) in ag if e is not None), default=None)
@@ -269,16 +272,20 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
 
 
 def premissas_coeficientes(linhas: list[dict]) -> list[str]:
-    """Declara os coeficientes de referência usados (valor, fonte e status), sem repetir."""
+    """Declara os coeficientes usados (valor, fonte e status), sem repetir: genéricos de referência e calibrações validadas."""
     vistos: dict[str, dict] = {}
     for l in linhas:
         for c in l["r"].coeficientes:
             vistos.setdefault(c["chave"], c)
     gen = [c for c in vistos.values() if c["status"] == "referencia_generica"]
+    cal = [c for c in vistos.values() if c["status"] == "calibrado"]
     out = []
     if gen:
         out.append("Coeficientes de referência genéricos do catálogo (confiança baixa, a calibrar com o seu histórico): " +
                    "; ".join(f"{c['chave']} = {c['valor']:g} {c['unidade']}" for c in sorted(gen, key=lambda c: c["chave"])) + ".")
+    if cal:
+        out.append("Módulos CALIBRADOS com o seu histórico (calibração validada por uma pessoa): " +
+                   "; ".join(f"{c['chave'].split(':')[1]} × {c['valor']:g} ({c['fonte']})" for c in sorted(cal, key=lambda c: c["chave"])) + ".")
     return out
 
 
@@ -312,7 +319,9 @@ def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) 
             empresa_id=ctx.empresa_id, ordem_id=o.id, operacao_id=None, sequencia=p.sequencia, etapa_nome=p.grupo or ROTULO_TIPO.get(p.tipo, "Outros"), nome=p.nome,
             recurso_id=p.recurso_id, qtd_planejada=p.qtd_pecas, formula_tipo="fixo", tempo_prep_est_min=p.tempo_prep_min if ok else None,
             tempo_exec_est_min=p.tempo_exec_min if ok else None, fonte_estimativa="plano" if ok else "sem_base", amostras=0,
-            detalhe_estimativa=p.composicao, estimativa_validada=True, status="pendente"))
+            detalhe_estimativa=p.composicao, estimativa_validada=True, status="pendente",
+            plano_passo_id=p.id, modulo=p.modulo or None, previsto_normal_min=p.previsto_normal_min if ok else None,
+            fracao_operador=p.fracao_operador, fator_calibracao=p.fator_calibracao or 1.0))
     plano.ordem_id = o.id
     ctx.db.flush()
     ctx.db.refresh(o)

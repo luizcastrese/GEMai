@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # uma só tarefa; 2 ou mais é mais robusto.
     min_amostras_ritmo: int = 5
     min_operacoes_ritmo: int = 1
+    # Calibração por módulo (fator multiplicativo): amostras aprovadas mínimas de um módulo numa unidade.
+    min_amostras_calibracao: int = 10
     # Se verdadeiro, o modelo de tempo proposto pela IA e ainda não validado já serve de tempo planejado
     # (rotulado como tal). Se falso, só modelos validados por um gestor entram nas estimativas.
     usar_modelo_ia_nao_validado: bool = True

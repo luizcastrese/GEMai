@@ -479,6 +479,11 @@ class PlanoPasso(Base):
     parametros_modulo: Mapped[dict] = mapped_column(JSON, default=dict)  # condições efetivamente usadas
     coeficientes: Mapped[list] = mapped_column(JSON, default=list)  # coeficientes do catálogo usados (valor, fonte, status)
     tempo_normal_min: Mapped[float | None] = mapped_column(Float)  # prep + exec antes das tolerâncias
+    # Para a calibração por módulo: previsão em ritmo 100 e SEM fator de calibração, fração dependente do operador e o fator aplicado
+    previsto_normal_min: Mapped[float | None] = mapped_column(Float)
+    fracao_operador: Mapped[float | None] = mapped_column(Float)
+    fator_calibracao: Mapped[float] = mapped_column(Float, default=1.0)
+    amostras_calibracao: Mapped[int] = mapped_column(Integer, default=0)
     faltantes: Mapped[list] = mapped_column(JSON, default=list)
     alertas: Mapped[list] = mapped_column(JSON, default=list)
     observacao: Mapped[str] = mapped_column(Text, default="")
@@ -486,6 +491,33 @@ class PlanoPasso(Base):
     fim_prev: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     plano: Mapped[PlanoTrabalho] = relationship(back_populates="passos")
+
+
+class CalibracaoModulo(Base):
+    """Fator MULTIPLICATIVO de um módulo de tempo, por empresa/unidade: mediana(tempo normal observado ÷ previsto).
+
+    Nasce `pendente` (sugestão calculada do histórico aprovado); só entra no cálculo depois que uma pessoa a valida
+    (`validado` + `vigente`). Rotulado "calibrado" com o nº de amostras. Nunca por pessoa: é do módulo.
+    """
+
+    __tablename__ = "calibracoes_modulo"
+    __table_args__ = (Index("ix_calib_modulo", "empresa_id", "unidade_id", "modulo"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"))
+    modulo: Mapped[str] = mapped_column(String(30))
+    fator: Mapped[float] = mapped_column(Float)  # já limitado a 0,5–2,0
+    mediana_bruta: Mapped[float] = mapped_column(Float)  # antes do limite
+    limitado: Mapped[bool] = mapped_column(Boolean, default=False)
+    amostras: Mapped[int] = mapped_column(Integer)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="pendente")  # pendente | validado | rejeitado
+    vigente: Mapped[bool] = mapped_column(Boolean, default=False)
+    justificativa: Mapped[str] = mapped_column(Text, default="")
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 # ---------------------------------------------------------------- parâmetros
@@ -577,6 +609,12 @@ class OrdemOperacao(Base):
     iniciada_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
     concluida_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
     concluida_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    # Vínculo com o módulo de tempo (e o passo do plano) que previu esta operação: base da calibração por módulo
+    plano_passo_id: Mapped[int | None] = mapped_column(ForeignKey("plano_passos.id", name="fk_oo_plano_passo"))
+    modulo: Mapped[str | None] = mapped_column(String(30))
+    previsto_normal_min: Mapped[float | None] = mapped_column(Float)  # prep + exec, ritmo 100, sem fator de calibração
+    fracao_operador: Mapped[float | None] = mapped_column(Float)
+    fator_calibracao: Mapped[float] = mapped_column(Float, default=1.0)
 
     ordem: Mapped[Ordem] = relationship(back_populates="operacoes")
 

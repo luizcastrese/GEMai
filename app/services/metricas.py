@@ -57,7 +57,8 @@ def metricas_operacoes(db: Session, ordens: list[Ordem]) -> dict[int, list[dict]
                 est = (oo.tempo_prep_est_min or 0.0) + oo.tempo_exec_est_min
             linhas.append({
                 "ordem_operacao_id": oo.id, "sequencia": oo.sequencia, "etapa": oo.etapa_nome,
-                "operacao": oo.nome, "status": oo.status, "fonte_estimativa": oo.fonte_estimativa,
+                "operacao": oo.nome, "status": oo.status, "fonte_estimativa": oo.fonte_estimativa, "modulo": oo.modulo,
+                "fator_calibracao": oo.fator_calibracao,
                 "estimativa_validada": oo.estimativa_validada, "elementos_modelo": oo.detalhe_estimativa,
                 "estimado_min": est, "realizado_min": realizado, **{f"{k}_min": v for k, v in soma.items()},
                 "espera_fila_min": fila, "qtd_boa": boa, "qtd_refugo": refugo,

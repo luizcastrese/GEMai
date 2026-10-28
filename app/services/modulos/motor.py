@@ -43,6 +43,8 @@ class ResultadoModulo:
     pessoas: int = 1
     fator_calibracao: float = 1.0
     calibrado: bool = False
+    normal_base: float | None = None  # prep + exec em ritmo 100, ANTES do fator de calibração (base da calibração)
+    fracao_operador: float | None = None  # fração do tempo-base que depende do operador (None = não calculável)
 
     @property
     def completo(self) -> bool:
@@ -50,7 +52,11 @@ class ResultadoModulo:
 
 
 def calcular_modulo(modulo: Modulo, entrada: EntradaModulo, *, tolerancias: list[dict] | None = None, ritmo_pct: float = 100.0,
-                    fator_ambiente: float = 1.0, fator_calibracao: float = 1.0, calibrado: bool = False) -> ResultadoModulo:
+                    fator_ambiente: float = 1.0, fator_calibracao: float = 1.0, calibrado: bool = False,
+                    calibracao: dict | None = None) -> ResultadoModulo:
+    """`calibracao` = {fator, amostras, versao} de uma calibração VALIDADA do módulo (rotula o resultado como `calibrado`)."""
+    if calibracao:
+        fator_calibracao, calibrado = float(calibracao["fator"]), True
     mo = modulo.montar(entrada)
     tol = tolerancias if tolerancias is not None else tolerancias_padrao()
     pessoas = max(entrada.pessoas, mo.pessoas_minimas or 1)
@@ -70,12 +76,19 @@ def calcular_modulo(modulo: Modulo, entrada: EntradaModulo, *, tolerancias: list
         return r
     ft, p = mt.fator_tolerancia(tol)
     k = min(max(fator_calibracao, 0.5), 2.0)
+    base100 = calc if ritmo_pct == 100.0 else mt.calcular(mo.elementos, fator_ambiente, ctx, tol, 100.0)
+    r.normal_base = round((base100.prep + base100.exec) / ft, 3)
+    r.fracao_operador = mt.fracao_operador(mo.elementos, ctx).geral
     r.ft, r.tolerancia_pct = ft, round(p * 100, 3)
     r.fator_calibracao, r.calibrado = k, calibrado and k != 1.0
     r.composicao = [{**l, "minutos": round(l["minutos"] * k, 3)} if l.get("minutos") is not None else l for l in calc.elementos]
     r.prep, r.exec = round(calc.prep * k, 3), round(calc.exec * k, 3)
     r.total = round(r.prep + r.exec, 3)
     r.normal = round(r.total / ft, 3)
+    if calibracao and k != 1.0:
+        r.coeficientes.append({"chave": f"calibracao:{modulo.chave}", "valor": round(k, 4), "unidade": "×",
+                               "fonte": f"Calibração validada: mediana de {calibracao['amostras']} amostras aprovadas (v{calibracao['versao']})",
+                               "status": "calibrado", "versao": int(calibracao["versao"])})
     return r
 
 
