@@ -174,7 +174,8 @@ def calibrar_ritmo(dados: CalibrarRitmoIn, ctx: Ctx = Depends(get_ctx)):
         ctx.exige_unidade(dados.unidade_id)
         stmt = stmt.where(Pessoa.unidade_id == dados.unidade_id)
     pessoas = list(ctx.db.scalars(stmt))
-    cal = calibracao_ritmo.calibrar(ctx.db, ctx.empresa_id, pessoas)
+    escopo = {dados.unidade_id} if dados.unidade_id is not None else ctx.unidades  # None = todas da empresa
+    cal = calibracao_ritmo.calibrar(ctx.db, ctx.empresa_id, pessoas, escopo)
     atuais = ritmo.ritmos_das_pessoas(ctx.db, ctx.empresa_id, {p.id for p in pessoas})
     s = get_settings()
     agora = datetime.now(timezone.utc)

@@ -402,3 +402,18 @@ def test_migracao_0006_sobe_e_desce_no_sqlite(tmp_path):
     assert not novas & colunas()
     alembic("upgrade", "head")
     assert novas <= colunas()
+
+
+def test_calibracao_so_enxerga_operacoes_das_unidades_autorizadas(admin, gestor, unidade_id, db_factory):
+    u2 = admin.post("/unidades", {"nome": "Filial"}).json()["id"]
+    op2 = _operacao(admin, u2, nome="Operação da Filial")
+    ids = {n: _pessoa(admin, u2, n)["id"] for n in ("Ana", "Bia")}
+    _historico(db_factory, admin.usuario, op2, u2, [[_n(ids[n], t * 10)] for n, t in {"Ana": 0.8, "Bia": 1.25}.items() for _ in range(6)])
+    # gestor só acessa a unidade 1: não vê a operação (nem o nome) nem conta a operação da Filial
+    r = gestor.post("/pessoas/calibrar-ritmo", {}).json()
+    assert r["operacoes_consideradas"] == 0 and r["operacoes_ignoradas"] == [] and r["pessoas"] == []
+    assert "Filial" not in str(r)
+    # o administrador (sem restrição) enxerga; e escolher a unidade limita ao histórico dela
+    assert admin.post("/pessoas/calibrar-ritmo", {}).json()["operacoes_consideradas"] == 1
+    assert admin.post("/pessoas/calibrar-ritmo", {"unidade_id": unidade_id}).json()["operacoes_consideradas"] == 0
+    assert admin.post("/pessoas/calibrar-ritmo", {"unidade_id": u2}).json()["operacoes_consideradas"] == 1

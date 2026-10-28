@@ -306,11 +306,12 @@ export async function cadastros(el) {
     const itens = await get(`/${aba}${qs({ unidade_id: e.un ? estado.unidadeId : '' })}`);
     const espacos = aba === 'recursos' ? await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`) : [];
     const perfisTodos = aba === 'pessoas' ? await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId })}`) : [];
-    const perfis = perfisTodos.filter((x) => x.ativo);
     itens.forEach((p) => { p._perfil = perfisTodos.find((x) => x.id === p.perfil_id)?.nome; });
     const abrir = (item) => {
       let campos = aba === 'recursos' ? [...e.campos, { k: 'espaco_id', rotulo: 'Em que local fica?', tipo: 'select', num: true, opcoes: [['', '—'], ...espacos.map((x) => [x.id, x.nome])] }] : e.campos;
       if (aba === 'pessoas') {
+        // perfil já atribuído continua selecionável mesmo inativo (senão salvar outra coisa o removeria)
+        const perfis = perfisTodos.filter((x) => x.ativo || x.id === item?.perfil_id);
         if (perfis.length) campos = [...campos, { k: 'perfil_id', rotulo: 'Perfil de mão de obra (referência)', tipo: 'select', num: true, opcoes: [['', '—'], ...perfis.map((x) => [x.id, x.nome])] }];
         campos = campos.map((c) => (c.k === 'ritmo_pct' ? { ...c, ajuda: ritmoAjuda(item) } : c));
       }

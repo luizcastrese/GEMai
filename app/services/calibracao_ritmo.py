@@ -14,6 +14,7 @@ Método (só apontamentos de execução aprovados e não anulados):
   (mais rápida que a equipe ⇒ razão > 1);
 - ritmo sugerido = mediana das razões × 100, limitado a 50–150, exigindo ≥ `min_operacoes_ritmo` operações
   distintas (com 1 operação o resultado depende de uma só tarefa; 2 ou mais é mais robusto).
+Operações e histórico são limitados às unidades do escopo (a unidade escolhida ou as que o usuário acessa).
 A referência inclui as amostras da própria pessoa; com equipes pequenas isso aproxima a razão de 1.
 Quando duas pessoas dividem a mesma ordem_operacao em operações de fórmula `fixo`/`lote`, o tempo de cada uma é
 parcial e a razão subestima o ritmo de quem trabalhou menos tempo na ordem.
@@ -29,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Operacao, OrdemOperacao, Pessoa
+from ..models import Operacao, Ordem, OrdemOperacao, Pessoa
 from . import estimativa, timecalc
 from .modelo_tempo import RITMO_MAX, RITMO_MIN
 
@@ -55,24 +56,27 @@ class Calibracao:
     operacoes_ignoradas: list[str] = field(default_factory=list)
 
 
-def calibrar(db: Session, empresa_id: int, pessoas: list[Pessoa]) -> Calibracao:
+def calibrar(db: Session, empresa_id: int, pessoas: list[Pessoa], unidade_ids: set[int] | None = None) -> Calibracao:
+    """`unidade_ids` limita as operações e o histórico às unidades que o usuário pode ver (None = empresa toda)."""
     s = get_settings()
     alvo = {p.id: p for p in pessoas}
     razoes: dict[int, list[float]] = {i: [] for i in alvo}
     amostras: dict[int, int] = {i: 0 for i in alvo}
     out = Calibracao()
 
-    op_ids = [i for (i,) in db.execute(
-        select(OrdemOperacao.operacao_id).where(
-            OrdemOperacao.empresa_id == empresa_id, OrdemOperacao.status == "concluida",
-            OrdemOperacao.operacao_id.is_not(None)).distinct())]
+    q = (select(OrdemOperacao.operacao_id).join(Ordem, Ordem.id == OrdemOperacao.ordem_id)
+         .where(OrdemOperacao.empresa_id == empresa_id, OrdemOperacao.status == "concluida",
+                OrdemOperacao.operacao_id.is_not(None)).distinct())
+    if unidade_ids is not None:
+        q = q.where(Ordem.unidade_id.in_(unidade_ids or {-1}))
+    op_ids = [i for (i,) in db.execute(q)]
     for op_id in sorted(op_ids):
         op = db.get(Operacao, op_id)
         if op is None or op.empresa_id != empresa_id:
             continue
         params = estimativa.parametros_vigentes(db, empresa_id, "operacao", op.id)
         lote = params["tamanho_lote"].valor_num if "tamanho_lote" in params else None
-        h = estimativa.carregar_historico(db, empresa_id, op.id)
+        h = estimativa.carregar_historico(db, empresa_id, op.id, unidade_ids)
         execucoes = [r for r in h.registros if r.tipo == "execucao"]
         ref_amostras, _ = estimativa.amostras_do_historico(execucoes, h.plano, op.formula_tipo, lote)
         if len(ref_amostras) < s.min_amostras_historico:

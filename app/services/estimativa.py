@@ -78,13 +78,16 @@ class Historico:
     registros: list[Registro]
 
 
-def carregar_historico(db: Session, empresa_id: int, operacao_id: int) -> Historico:
-    ops = db.execute(
-        select(OrdemOperacao.id, OrdemOperacao.qtd_planejada)
-        .join(Ordem, Ordem.id == OrdemOperacao.ordem_id)
-        .where(OrdemOperacao.empresa_id == empresa_id, OrdemOperacao.operacao_id == operacao_id,
-               OrdemOperacao.status == "concluida", Ordem.status != "cancelada")
-    ).all()
+def carregar_historico(db: Session, empresa_id: int, operacao_id: int,
+                       unidade_ids: set[int] | None = None) -> Historico:
+    """Apontamentos aprovados da operação. `unidade_ids` restringe às ordens dessas unidades (None = empresa toda)."""
+    q = (select(OrdemOperacao.id, OrdemOperacao.qtd_planejada)
+         .join(Ordem, Ordem.id == OrdemOperacao.ordem_id)
+         .where(OrdemOperacao.empresa_id == empresa_id, OrdemOperacao.operacao_id == operacao_id,
+                OrdemOperacao.status == "concluida", Ordem.status != "cancelada"))
+    if unidade_ids is not None:
+        q = q.where(Ordem.unidade_id.in_(unidade_ids or {-1}))
+    ops = db.execute(q).all()
     if not ops:
         return Historico({}, [])
     plan = {i: q for i, q in ops}
