@@ -29,6 +29,7 @@ from ..config import get_settings
 from ..models import Apontamento, Ordem, OrdemOperacao, Parametro
 from . import modelo_tempo, ritmo, timecalc
 
+NAO_NORMALIZADOS_ALERTA = 0.30  # acima disso, o aviso de apontamentos sem pessoa/ritmo é reforçado
 DIVERGENCIA_MODELO_HISTORICO = 0.30  # acima disso, avisa que a premissa do modelo provavelmente está errada
 
 
@@ -192,6 +193,9 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
     nao_norm = sum(1 for r in usados if not conhecido(r))
     if nao_norm:
         avisos.append(f"{nao_norm} de {len(usados)} apontamentos sem pessoa/ritmo, não normalizados (ritmo 100).")
+        if nao_norm / len(usados) > NAO_NORMALIZADOS_ALERTA:
+            avisos.append(f"ATENÇÃO: mais de {NAO_NORMALIZADOS_ALERTA:.0%} do histórico não pôde ser normalizado pelo ritmo; "
+                          "informe quem executou nos apontamentos para o tempo normal ficar confiável.")
     amostras, preps = amostras_do_historico(h.registros, h.plano, operacao.formula_tipo, lote, fator)
 
     # 3) tempo normal = mediana das amostras normalizadas

@@ -211,6 +211,7 @@ def test_historico_usa_pessoa_depois_perfil_e_conta_os_nao_normalizados(admin, g
     assert e.tempo_normal == pytest.approx(10.0) and e.amostras == 4
     assert e.amostras_nao_normalizadas == 2 and e.ritmo_normalizado
     assert any("2 de 4 apontamentos sem pessoa/ritmo, não normalizados" in a for a in e.avisos)
+    assert any("mais de 30%" in a for a in e.avisos)  # 50 % sem normalizar: aviso reforçado
 
 
 # ------------------------------------------------------------------ g) fonte, anulados e não aprovados
