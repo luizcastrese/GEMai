@@ -9,16 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .. import modelo_tempo as mt
+from .. import tolerancias as tolerancias_fontes
 from .base import EntradaModulo, Modulo
 from .coeficientes import VERSAO_CATALOGO
 
-FONTE_OIT = "OIT, Introduction to Work Study (valor único, sem distinção por sexo); conferido em fonte secundária"
+FONTE_OIT = tolerancias_fontes.FONTE_OIT
 
 
 def tolerancias_padrao() -> list[dict]:
-    """Tolerâncias constantes (necessidades pessoais e fadiga básica). Ponto de partida até as fontes plugáveis da Fase 8."""
-    return [{"categoria": "necessidades pessoais", "percentual": mt.REFERENCIAS["tolerancia_pessoal_pct"], "fonte": FONTE_OIT},
-            {"categoria": "fadiga básica", "percentual": mt.REFERENCIAS["fadiga_basica_pct"], "fonte": FONTE_OIT}]
+    """Só as tolerâncias constantes (OIT). Com as condições do trabalho (local, perfil, carga), use `tolerancias.calcular`."""
+    return tolerancias_fontes.calcular(tolerancias_fontes.ContextoTolerancia(), apenas=("oit_constantes",)).aplicadas
 
 
 @dataclass

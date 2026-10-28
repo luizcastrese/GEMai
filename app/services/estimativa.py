@@ -28,8 +28,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Apontamento, Ordem, OrdemOperacao, Parametro, PerfilMaoDeObra
-from . import calibracao_modulos, modelo_tempo, ritmo, timecalc
+from ..models import Apontamento, Espaco, Ordem, OrdemOperacao, Parametro, PerfilMaoDeObra
+from . import calibracao_modulos, modelo_tempo, ritmo, timecalc, tolerancias
 from .modulos import catalogo, entradas, motor
 
 NAO_NORMALIZADOS_ALERTA = 0.30  # acima disso, o aviso de apontamentos sem pessoa/ritmo é reforçado
@@ -172,6 +172,15 @@ class BaseDeTempo:
     origem_validada: bool = True
 
 
+def tolerancias_da_operacao(db: Session, empresa_id: int, operacao, peso_kg: float | None, perfil) -> list[dict]:
+    """Tolerâncias (fontes plugáveis) para as condições registradas da operação: locais, perfil, levantamento, gasto, postura."""
+    locais = [e for i in (operacao.espaco_origem_id, operacao.espaco_destino_id) if i
+              and (e := db.get(Espaco, i)) is not None and e.empresa_id == empresa_id]
+    ctx = tolerancias.ContextoTolerancia(locais=locais, perfil=perfil, levantamento=operacao.levantamento, carga_kg=peso_kg or operacao.item_peso_kg,
+                                         gasto_energetico_kcal_min=operacao.gasto_energetico_kcal_min, postura=operacao.postura_trabalho or None)
+    return tolerancias.calcular(ctx).aplicadas
+
+
 def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, unidade_id: int | None = None):
     """(ResultadoModulo, EntradaModulo) da operação que escolheu um módulo; None se não escolheu/inexistente.
     Aplica a calibração VALIDADA do módulo na unidade, se houver (rotulada `calibrado`)."""
@@ -182,7 +191,8 @@ def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: flo
     perfil = db.get(PerfilMaoDeObra, operacao.perfil_id) if operacao.perfil_id else None
     ritmo_pct = perfil.ritmo_pct if perfil is not None and perfil.empresa_id == empresa_id else 100.0
     cal = calibracao_modulos.como_dict(calibracao_modulos.fator_vigente(db, empresa_id, unidade_id, modulo.chave))
-    return motor.calcular_modulo(modulo, ent, ritmo_pct=ritmo_pct, calibracao=cal), ent
+    tol = tolerancias_da_operacao(db, empresa_id, operacao, ent.peso_max_kg, perfil)
+    return motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=ritmo_pct, calibracao=cal), ent
 
 
 def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, avisos: list[str]) -> BaseDeTempo | None:
@@ -194,7 +204,10 @@ def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, pr
         if mo.elementos and not mo.faltantes:
             ctx = modelo_tempo.Contexto(quantidade=ent.quantidade, num_pessoas=max(ent.pessoas, mo.pessoas_minimas or 1),
                                         peso_kg=ent.peso_max_kg, distancia_m=ent.distancia_m)
-            return BaseDeTempo(mo.elementos, 1.0, motor.tolerancias_padrao(), True, ctx, f"módulo '{modulo.titulo}'")
+            perfil = db.get(PerfilMaoDeObra, operacao.perfil_id) if operacao.perfil_id else None
+            perfil = perfil if perfil is not None and perfil.empresa_id == empresa_id else None
+            tol = tolerancias_da_operacao(db, empresa_id, operacao, ent.peso_max_kg, perfil)
+            return BaseDeTempo(mo.elementos, 1.0, tol, True, ctx, f"módulo '{modulo.titulo}'")
         avisos.append(f"Módulo '{modulo.titulo}' incompleto: " + "; ".join(mo.faltantes or ["sem elementos"]) + ".")
     m = modelo_tempo.modelo_ativo(db, empresa_id, operacao.id)
     if m and (m.status_validacao == "validado" or s.usar_modelo_ia_nao_validado):

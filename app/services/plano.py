@@ -18,7 +18,7 @@ from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
                       PlanoTrabalho, Produto, Recurso)
-from . import calibracao_modulos, ergonomia, ia, modelo_tempo
+from . import calibracao_modulos, ergonomia, ia, modelo_tempo, tolerancias
 from .modulos import catalogo, entradas, motor
 from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
@@ -225,7 +225,9 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
                                     distancia_m=distancia, rec=rec, ficha=base.fichas.get(rec.id, {}) if rec else {},
                                     origem=o.nome if o else None, destino=d.nome if d else None)
     local = (base.esp_id.get(rec.espaco_id) if rec else None) or d or o
-    tol = motor.tolerancias_padrao()  # sem "folga extra" digitada: o ambiente será calculado (Fase 8)
+    # tolerâncias por fontes plugáveis (OIT constantes, NIOSH, Murrell, ambiente, postura); nada digitado
+    tr = tolerancias.calcular(tolerancias.ContextoTolerancia(locais=[local], perfil=base.perfil))
+    tol = tr.aplicadas
     cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, base.unidade_id, modulo.chave)  # só calibração VALIDADA
     r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo, calibracao=calibracao_modulos.como_dict(cal))
     pessoas = r.pessoas
@@ -240,13 +242,11 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
             alertas.append({"msg": txt, "detalhe": a, "categoria": cat})
     for a in r.alertas:
         alertas.append({"msg": a, "detalhe": a, "categoria": "seguranca"})
-    if local is not None:
-        if local.ruido_db and local.ruido_db > ergonomia.LIMITE_RUIDO_NR15_DBA:
-            txt, cat = _alerta_simples(f"Ruído de {local.ruido_db:g} dB(A) em '{local.nome}' acima de {ergonomia.LIMITE_RUIDO_NR15_DBA:g} dB(A) (NR-15, 8 h)")
-            alertas.append({"msg": txt, "detalhe": f"Ruído {local.ruido_db:g} dB(A) em '{local.nome}'", "categoria": cat})
-        if local.temperatura_c is not None and (local.temperatura_c > 30 or local.temperatura_c < 12):
-            alertas.append({"msg": f"A temperatura em '{local.nome}' ({local.temperatura_c:g} °C) é extrema: avalie o conforto térmico e informe a tolerância do local, se couber.",
-                            "detalhe": "NR-15/NHO-06 e NR-17: avaliação de calor/frio.", "categoria": "seguranca"})
+    for a in tr.alertas:
+        txt, cat = _alerta_simples(a["msg"]) if a["fonte"] == tolerancias.ambiente.FONTE_RUIDO else (a["msg"], a["categoria"])
+        alertas.append({"msg": txt, "detalhe": a["msg"], "categoria": cat})
+    r.premissas += [x for x in tr.premissas if x not in r.premissas]
+    falt += tr.pendencias
     completo = not falt
     return {"p": p, "modulo": modulo, "ent": ent, "rec": rec, "o": o, "d": d, "pessoas": pessoas, "tol": tol, "r": r, "falt": falt,
             "alertas": alertas, "total": r.total if completo else None, "prep": r.prep if completo else None,

@@ -124,24 +124,15 @@ def alertas_carga(carga_kg: float | None, perfil, duracao: str | None) -> list[s
 
 def avaliar_operacao(op, perfil, espacos: list, carga_item_kg: float | None) -> dict:
     """Resumo ergonômico de uma operação, usado na prontidão, no endpoint e no modelo de tempo."""
+    from . import tolerancias  # import local: as fontes usam as funções deste módulo
+
     n = niosh(op.levantamento, carga_item_kg)
     alertas: list[str] = []
-    tol: list[dict] = []
-    if n.get("completo"):
-        p = tolerancia_por_li(n["li"], n["li_infinito"])
-        if p > 0:
-            tol.append({"categoria": "fadiga por carga (LI)", "percentual": round(p * 100, 2),
-                        "justificativa": f"LI = {n['li']}: acima do recomendado pelo NIOSH.",
-                        "fonte": "premissa do sistema (LI→tolerância); calibrar com medições"})
-        if n["li_infinito"] or n["li"] > 1:
-            alertas.append(f"Índice de levantamento {'∞' if n['li_infinito'] else n['li']} > 1: reprojetar (ajuda mecânica, dividir carga, aproximar da altura de pega) e avaliar via AET.")
+    fontes = tolerancias.calcular(tolerancias.ContextoTolerancia(perfil=perfil, levantamento=op.levantamento, carga_kg=carga_item_kg,
+                                                                 gasto_energetico_kcal_min=op.gasto_energetico_kcal_min), apenas=("niosh", "murrell"))
+    tol = [{**t, "fonte": t["fonte"] if not t.get("premissa") else "premissa do sistema (LI→tolerância); calibrar com medições"} for t in fontes.aplicadas]
+    alertas += [a["msg"] for a in fontes.alertas]
     alertas += alertas_carga((op.levantamento or {}).get("carga_kg") or carga_item_kg, perfil, (op.levantamento or {}).get("duracao"))
-    if perfil is not None and op.gasto_energetico_kcal_min and perfil.limite_energetico_kcal_min:
-        r = murrell_fracao_descanso(op.gasto_energetico_kcal_min, perfil.limite_energetico_kcal_min)
-        if r > 0:
-            tol.append({"categoria": "descanso por gasto energético (Murrell)", "percentual": round(r / (1 + r) * 100, 2),
-                        "justificativa": f"W={op.gasto_energetico_kcal_min:g} kcal/min acima do limite adotado S={perfil.limite_energetico_kcal_min:g}.",
-                        "fonte": "Murrell: R=T(W−S)/(W−1,5)"})
     if perfil is not None and op.altura_trabalho_m and perfil.altura_cotovelo_cm:
         dif = round(op.altura_trabalho_m * 100 - perfil.altura_cotovelo_cm, 1)
         alertas.append(f"Altura de trabalho {abs(dif):g} cm {'acima' if dif > 0 else 'abaixo'} da altura do cotovelo do perfil — "
