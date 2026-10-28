@@ -46,8 +46,8 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
             rec = db.get(Recurso, op.recurso_padrao_id) if op.recurso_padrao_id else None
             if rec is None:
                 add("info", "Sem equipamento/posto padrão (ok se a atividade for manual).", "tecnico")
-            elif not modelo_tempo.capacidade_por_hora(rec.capacidade, rec.capacidade_unidade):
-                add("aviso", f"Informe a capacidade do equipamento '{rec.nome}' (peças por hora) para a IA prever o tempo de máquina.")
+            elif not rec.funcao:
+                add("aviso", f"Diga para que serve '{rec.nome}' e preencha a ficha técnica dele (Contorno físico) para calcular o tempo de máquina.")
             if bool(op.espaco_origem_id) != bool(op.espaco_destino_id):
                 add("aviso", "Informe de onde a peça sai e para onde vai (ou deixe os dois em branco).")
             if op.espaco_origem_id and op.espaco_destino_id and op.distancia_m is None and modelo_tempo.distancia_entre(
@@ -69,10 +69,13 @@ def avaliar(db: Session, empresa_id: int, p: Processo) -> dict:
             for a in erg["alertas"]:
                 txt, cat = _alerta_simples(a)
                 add("atencao" if cat == "seguranca" else "aviso", txt, cat, a)
-            params = estimativa.parametros_vigentes(db, empresa_id, "operacao", op.id)
             m = modelo_tempo.modelo_ativo(db, empresa_id, op.id)
-            if "tempo_unitario_min" not in params and m is None:
-                add("atencao", "Ainda sem previsão de tempo: peça à IA para estimar ou informe o tempo medido.")
+            res_mod = estimativa._resultado_do_modulo(db, empresa_id, op, 1.0, None, rec)
+            if res_mod is not None:
+                for f in res_mod[0].faltantes:
+                    add("atencao", f"Para prever o tempo falta: {f}")
+            elif m is None:
+                add("atencao", "Ainda sem previsão de tempo: escolha o tipo de trabalho (módulo de tempo) desta tarefa; a IA pode sugerir.")
             if m is not None:
                 r = modelo_tempo.calcular(m.elementos, m.fator_ambiente, modelo_tempo.montar_contexto(db, empresa_id, op, 1.0, None, rec),
                                           m.tolerancias, m.ritmo_pct)

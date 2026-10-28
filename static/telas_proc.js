@@ -3,10 +3,8 @@ import { estado } from './estado.js';
 import { avisoIA, confirmar, detalhes, fmtMin, fonteBadge, formulario, h, modal, montar, origemBadge, statusBadge, tabela, tentar, toast, badge, fmtNum, fmtData } from './ui.js';
 import { gerarAnalise } from './ia_view.js';
 
-const PARAMS = {
-  tempo_preparacao_min: 'Tempo de preparação (min)', tempo_unitario_min: 'Tempo por unidade (min)',
-  tamanho_lote: 'Tamanho do lote (un)', perda_percentual: 'Perda esperada (%)',
-};
+// Não há parâmetros de TEMPO: o tempo é calculado (histórico ou módulo de tempo). Só lote e perda.
+const PARAMS = { tamanho_lote: 'Tamanho do lote (un)', perda_percentual: 'Perda esperada (%)' };
 
 // ---------------------------------------------------------------- lista
 export async function lista(el) {
@@ -28,7 +26,7 @@ export async function lista(el) {
 const textoPrevisao = (est) => {
   if (!est || est.fonte === 'sem_base') return h('span', { class: 'prev' }, 'Sem previsão de tempo ainda');
   const rot = { modelo_ia: est.validada ? badge('Previsão da IA confirmada', 'b-ok') : badge('Previsão da IA — falta confirmar', 'b-warn'),
-    parametro: badge('Tempo informado', 'b-pri'), historico: badge('Baseada no histórico real', 'b-ok') }[est.fonte];
+    parametro: badge('Tempo informado (antigo)', 'b-pri'), modulo: badge('Calculada pelo módulo de tempo', 'b-pri'), historico: badge('Baseada no histórico real', 'b-ok') }[est.fonte];
   return h('span', { class: 'prev' }, `Previsão: ${fmtMin(est.total_min)} para ${fmtNum(est.quantidade, 0)} un `, rot);
 };
 
@@ -68,27 +66,12 @@ export async function detalhe(el, id) {
     e.operacoes.map((o) => h('div', { class: 'op' },
       h('div', { class: 'top' }, h('div', null, h('strong', null, o.nome), ' ', o.alerta_ergonomia ? badge('Atenção: esforço físico', 'b-warn') : null, h('div', null, textoPrevisao(previsoes.get(o.id)))),
         h('div', { class: 'inline' },
-          h('button', { class: 'sm', onclick: () => formTempoSimples(o, recarregar) }, 'Já sei o tempo'),
           edit ? [h('button', { class: 'sm', onclick: () => formOperacao(e, o, recursos, recarregar) }, 'Editar'),
             h('button', { class: 'sm dng', onclick: () => confirmar(`Remover "${o.nome}"?`, cmd(() => api('DELETE', `/operacoes/${o.id}`), 'Tarefa removida.')) }, '✕')] : null)),
       estado.avancado ? detalhes('Detalhes técnicos', operacaoView(o, p, edit, recursos, recarregar)) : null))));
 
   montar(el, cab, pront, h('h2', null, 'Etapas e tarefas'), blocos.length ? blocos : h('p', { class: 'muted' }, 'Sem etapas.'),
     edit ? h('p', null, h('button', { onclick: () => formEtapa(null, recarregar, id) }, '+ Etapa')) : null);
-}
-
-// "Já sei o tempo": o usuário informa o tempo medido e ele passa a valer no lugar da estimativa da IA.
-function formTempoSimples(o, aoSalvar) {
-  const f = formulario([{ k: 'unit', rotulo: 'Tempo por unidade (minutos)', tipo: 'number' }, { k: 'prep', rotulo: 'Tempo de preparação por ordem (minutos, opcional)', tipo: 'number', nulo: true }]);
-  modal(`Tempo de "${o.nome}"`, h('div', null, f.el, h('p', { class: 'muted small' }, 'O tempo que você informar passa a valer no lugar da estimativa da IA.')),
-    { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'), h('button', { class: 'pri', onclick: async () => {
-      const v = f.valores();
-      if (!v.unit || v.unit <= 0) return toast('Informe o tempo por unidade.', true);
-      const base = { escopo_tipo: 'operacao', escopo_id: o.id, origem: 'informado', justificativa: 'Informado pelo usuário.' };
-      const ok1 = await tentar(() => post('/parametros', { ...base, nome: 'tempo_unitario_min', valor_num: v.unit }));
-      const ok2 = v.prep ? await tentar(() => post('/parametros', { ...base, nome: 'tempo_preparacao_min', valor_num: v.prep })) : true;
-      if (ok1 && ok2) { toast('Tempo registrado.'); fechar(); aoSalvar(); }
-    } }, 'Salvar')] });
 }
 
 function operacaoView(o, p, edit, recursos, recarregar) {
@@ -106,11 +89,10 @@ function operacaoView(o, p, edit, recursos, recarregar) {
   };
   carregarParams();
   return [
-    h('div', { class: 'top' }, h('div', null, h('strong', null, o.nome), ' ', badge(`Fórmula: ${{ linear: 'preparação + tempo × qtd', lote: 'preparação + tempo × lotes', fixo: 'preparação + tempo fixo' }[o.formula_tipo]}`),
+    h('div', { class: 'top' }, h('div', null, h('strong', null, o.nome), ' ', badge(`Contagem do histórico: ${{ linear: 'por unidade', lote: 'por lote', fixo: 'por execução' }[o.formula_tipo]}`), o.modulo ? ` · módulo: ${o.modulo}` : '',
       nomeRec ? ` · recurso: ${nomeRec}` : '', o.alerta_ergonomia ? ' ' : '', o.alerta_ergonomia ? badge('Avaliar ergonomia', 'b-warn') : null),
       h('div', { class: 'inline' },
         h('button', { class: 'sm', onclick: () => formParametro(o, carregarParams) }, 'Definir parâmetro'),
-        !edit && p.status === 'ativo' ? h('button', { class: 'sm', title: 'Usa a mediana dos apontamentos aprovados', onclick: async () => { if (await tentar(() => post(`/operacoes/${o.id}/parametros/atualizar-historico`), 'Parâmetros atualizados pelo histórico.')) carregarParams(); } }, 'Atualizar pelo histórico') : null,
         edit ? [h('button', { class: 'sm', onclick: () => formOperacao(null, o, recursos, recarregar) }, 'Editar'),
           h('button', { class: 'sm dng', onclick: () => confirmar(`Remover a operação "${o.nome}"?`, async () => { if (await tentar(() => api('DELETE', `/operacoes/${o.id}`), 'Operação removida.') !== undefined) recarregar(); }) }, '✕')] : null)),
     o.campos_extras.length ? h('div', { class: 'muted small' }, `Campos de apontamento: ${o.campos_extras.map((c) => `${c.nome} (${c.tipo}${c.obrigatorio ? ', obrigatório' : ''})`).join(', ')}`) : null,
@@ -131,6 +113,7 @@ function formEtapa(e, aoSalvar, processoId) {
 
 async function formOperacao(etapa, op, recursos, aoSalvar) {
   const esp = await get(`/espacos${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+  const modulos = await get('/modulos');
   const optEsp = [['', '—'], ...esp.map((x) => [x.id, x.nome])];
   // Essencial: o que qualquer pessoa sabe responder.
   const basico = formulario([
@@ -144,6 +127,29 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
     { k: 'unidade_medida', rotulo: 'Contar em quê?', dica: 'ex.: peças, chapas, kg', padrao: 'un' },
     { k: 'inicio_marco', rotulo: 'Quando a tarefa COMEÇA?', dica: 'ex.: quando pega a primeira chapa' },
     { k: 'fim_marco', rotulo: 'Quando ela TERMINA?', dica: 'ex.: quando solta a última peça cortada' }], op || {});
+
+  // Tipo de trabalho = módulo do catálogo. O TEMPO é calculado a partir dele e das condições; ninguém o digita.
+  const par0 = op?.modulo_parametros || {};
+  const selModulo = h('select', { 'aria-label': 'Tipo de trabalho' }, [h('option', { value: '' }, 'Ainda não sei (usar só o histórico)'), ...modulos.map((m) => h('option', { value: m.chave, selected: op?.modulo === m.chave }, m.titulo))]);
+  const inFuros = h('input', { type: 'number', min: '0', step: '1', value: par0.furos_por_peca ?? '' });
+  const inBordas = h('input', { type: 'number', min: '0', step: 'any', value: par0.bordas_m_por_peca ?? '' });
+  const inPecas = h('input', { type: 'number', min: '0', step: 'any', value: par0.pecas_por_unidade ?? '' });
+  const inLig = h('textarea', { placeholder: 'uma por linha: método|nº de fixadores (ex.: parafuso|8)' }, (par0.ligacoes || []).map((l) => `${l.metodo}|${l.fixadores}`).join('\n'));
+  const condicoes = h('div', null,
+    h('div', { 'data-m': 'furacao' }, h('label', null, 'Furos por peça'), inFuros),
+    h('div', { 'data-m': 'bordo' }, h('label', null, 'Metros de borda por peça'), inBordas),
+    h('div', { 'data-m': 'montagem' }, h('label', null, 'Peças ou conjuntos posicionados por unidade'), inPecas, h('label', null, 'Ligações (método e nº de fixadores)'), inLig));
+  const mostrar = () => condicoes.querySelectorAll('[data-m]').forEach((d) => { d.style.display = d.dataset.m === selModulo.value ? '' : 'none'; });
+  selModulo.addEventListener('change', mostrar); mostrar();
+  const sugerir = h('button', { class: 'ia sm', onclick: async () => {
+    if (!op) return toast('Salve a tarefa primeiro; depois peça a sugestão.', true);
+    const r = await tentar(() => post(`/operacoes/${op.id}/modulo/sugerir`, {}));
+    if (!r) return;
+    if (r.modulo) { selModulo.value = r.modulo; mostrar(); }
+    toast(r.modulo ? `Sugestão: ${r.titulo}. ${r.faltantes.length ? `Falta: ${r.faltantes.join('; ')}.` : 'Confira e salve.'}` : r.justificativa, !r.modulo);
+  } }, 'Sugerir com a IA');
+  const blocoModulo = h('div', { class: 'card' }, h('label', null, 'Que tipo de trabalho é? (o sistema calcula o tempo a partir disso)'), selModulo, ' ', sugerir,
+    h('p', { class: 'muted small' }, 'O tempo nunca é digitado: sai do histórico medido ou do módulo escolhido, das medidas da peça, das distâncias e da ficha técnica do equipamento.'), condicoes);
 
   // Modo especialista: o restante (fatores técnicos, ergonomia, campos extras).
   let avancado = null;
@@ -167,7 +173,7 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
       { k: 'lev_freq_por_min', rotulo: 'Frequência (levantamentos/min)', tipo: 'number', nulo: true },
       { k: 'lev_duracao', rotulo: 'Duração do trabalho com levantamento', tipo: 'select', opcoes: [['', '—'], ['ate_1h', 'Até 1 h'], ['1_2h', '1 a 2 h'], ['2_8h', '2 a 8 h']] },
       { k: 'lev_pega', rotulo: 'Qualidade da pega', tipo: 'select', opcoes: [['', '—'], ['boa', 'Boa'], ['regular', 'Regular'], ['ruim', 'Ruim']] },
-      { k: 'formula_tipo', rotulo: 'Cálculo do tempo manual/parâmetro', tipo: 'select', opcoes: [['linear', 'Linear'], ['lote', 'Por lote'], ['fixo', 'Fixo']] },
+      { k: 'formula_tipo', rotulo: 'Como contar o histórico (por unidade, lote ou execução)', tipo: 'select', opcoes: [['linear', 'Linear'], ['lote', 'Por lote'], ['fixo', 'Fixo']] },
       { k: 'campos', rotulo: 'Campos extras de apontamento (nome|numero/texto/booleano|unidade|obrigatorio)', tipo: 'textarea' },
       { k: 'e_rep', rotulo: 'Ergonomia: repetitividade', tipo: 'select', opcoes: niveis }, { k: 'e_esf', rotulo: 'Esforço físico', tipo: 'select', opcoes: niveis },
       { k: 'e_pos', rotulo: 'Postura', tipo: 'select', opcoes: niveis }, { k: 'e_des', rotulo: 'Deslocamento', tipo: 'select', opcoes: niveis },
@@ -178,12 +184,20 @@ async function formOperacao(etapa, op, recursos, aoSalvar) {
   }
   const corpoModal = h('div', null,
     h('p', { class: 'muted small' }, 'Responda o que souber. A IA usa estas respostas para prever o tempo; o que faltar ela avisa depois.'),
-    basico.el, avancado ? detalhes('Opções de especialista', avancado.el) : null);
+    basico.el, blocoModulo, avancado ? detalhes('Opções de especialista', avancado.el) : null);
   modal(op ? 'Editar tarefa' : 'Nova tarefa', corpoModal, { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async () => {
       const b = basico.valores();
       if (!b.nome) return toast('Diga o que é feito nesta tarefa.', true);
       const corpo = { ...b, num_pessoas: Math.max(1, Math.round(b.num_pessoas || 1)), unidade_medida: b.unidade_medida || 'un' };
+      corpo.modulo = selModulo.value || null;
+      const mp = {};
+      if (inFuros.value !== '') mp.furos_por_peca = Math.round(Number(inFuros.value));
+      if (inBordas.value !== '') mp.bordas_m_por_peca = Number(inBordas.value);
+      if (inPecas.value !== '') mp.pecas_por_unidade = Number(inPecas.value);
+      const ligs = inLig.value.split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const [metodo, fix] = l.split('|').map((x) => (x || '').trim()); return { metodo, fixadores: Math.round(Number(fix) || 0) }; });
+      if (ligs.length) mp.ligacoes = ligs;
+      corpo.modulo_parametros = mp;
       if (avancado) {
         const v = avancado.valores();
         const levBruto = { carga_kg: v.lev_carga_kg, h_cm: v.lev_h_cm, v_cm: v.lev_v_cm, d_cm: v.lev_d_cm, a_graus: v.lev_a_graus, freq_por_min: v.lev_freq_por_min, duracao: v.lev_duracao, pega: v.lev_pega };
@@ -219,12 +233,11 @@ function formParametro(o, aoSalvar) {
 const ENT = {
   recursos: { rot: 'Recursos', un: true, campos: [
     { k: 'nome', rotulo: 'Nome (ex.: Máquina 01)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['maquina', 'Máquina'], ['posto', 'Posto'], ['ferramenta', 'Ferramenta'], ['instalacao', 'Instalação']] },
-    { k: 'processos_relacionados', rotulo: 'Processos relacionados', tipo: 'lista' }, { k: 'capacidade', rotulo: 'Capacidade', tipo: 'number', nulo: true },
-    { k: 'capacidade_unidade', rotulo: 'Unidade da capacidade (use un/h ou un/min para o gêmeo digital)', padrao: 'un/h' }, { k: 'equipes_habilitadas', rotulo: 'Equipes habilitadas', tipo: 'lista' },
+    { k: 'processos_relacionados', rotulo: 'Processos relacionados', tipo: 'lista' },
+    { k: 'equipes_habilitadas', rotulo: 'Equipes habilitadas', tipo: 'lista' },
     { k: 'local_posto', rotulo: 'Local / posto' }, { k: 'horas_disponiveis_dia', rotulo: 'Horas disponíveis por dia útil', tipo: 'number', padrao: 8 },
     { k: 'ultima_manutencao', rotulo: 'Última manutenção', tipo: 'date', nulo: true }, { k: 'proxima_manutencao', rotulo: 'Próxima manutenção', tipo: 'date', nulo: true }],
-    cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Capacidade', f: (r) => (r.capacidade ? `${r.capacidade} ${r.capacidade_unidade}` : '—') },
-      { t: 'Tempo médio (calculado)', f: (r) => (r.tempo_medio_min ? `${fmtNum(r.tempo_medio_min, 2)} min/un` : '—') },
+    cols: [{ t: 'Nome', f: (r) => r.nome }, { t: 'Tipo', f: (r) => r.tipo }, { t: 'Tempo médio (calculado)', f: (r) => (r.tempo_medio_min ? `${fmtNum(r.tempo_medio_min, 2)} min/un` : '—') },
       { t: 'Preparação média', f: (r) => (r.tempo_preparacao_medio_min ? `${fmtNum(r.tempo_preparacao_medio_min)} min` : '—') }, { t: 'Próx. manutenção', f: (r) => r.proxima_manutencao || '—' }] },
   espacos: { rot: 'Espaços (contorno físico)', un: true, campos: [
     { k: 'nome', rotulo: 'Nome (ex.: Estoque de chapas)' }, { k: 'tipo', rotulo: 'Tipo', tipo: 'select', opcoes: [['area', 'Área'], ['posto', 'Posto'], ['estoque', 'Estoque'], ['expedicao', 'Expedição']] },
@@ -259,13 +272,13 @@ const ENT = {
 
 // Campos e colunas que só aparecem no modo especialista.
 const AVANCADO = {
-  recursos: ['processos_relacionados', 'equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao', 'capacidade_unidade'],
+  recursos: ['processos_relacionados', 'equipes_habilitadas', 'local_posto', 'horas_disponiveis_dia', 'ultima_manutencao', 'proxima_manutencao'],
   espacos: ['pe_direito_m', 'piso', 'temperatura_c', 'umidade_pct', 'ruido_db', 'iluminancia_lux', 'observacoes'],
   pessoas: ['habilitacoes', 'ritmo_pct'], produtos: ['comprimento_m', 'largura_m', 'altura_m'],
 };
 const COLS_SIMPLES = { recursos: 3, espacos: 3, pessoas: 3, 'perfis-mao-de-obra': 6 };
 const ROTULOS = { recursos: 'Equipamentos', espacos: 'Locais', pessoas: 'Equipe', materiais: 'Materiais', produtos: 'Produtos e serviços', 'perfis-mao-de-obra': 'Perfis de mão de obra' };
-const AJUSTES = { recursos: { capacidade: 'Quantas peças por hora faz? (opcional, ajuda a IA a prever o tempo)' }, espacos: { nome: 'Nome do local (ex.: Estoque de chapas)' } };
+const AJUSTES = { espacos: { nome: 'Nome do local (ex.: Estoque de chapas)' } };
 
 const ORIGEM_RITMO = { informado: 'informado', calibrado: 'calibrado pela equipe', perfil: 'do perfil', padrao: 'padrão, sem ajuste', pessoa: 'informado' };
 const ritmoTexto = (r) => (r.ritmo_efetivo == null ? '—' : `${fmtNum(r.ritmo_efetivo, 1)}% (${ORIGEM_RITMO[r.ritmo_efetivo_origem === 'pessoa' ? r.ritmo_origem : r.ritmo_efetivo_origem] || r.ritmo_efetivo_origem})`);
@@ -333,7 +346,7 @@ export async function cadastros(el) {
       aba === 'espacos' ? await painelDistancias(itens, desenhar) : null,
       h('p', { class: 'muted small' }, 'Itens não são excluídos para preservar o histórico; desative o que não for mais usado.'));
   };
-  montar(el, h('h1', null, 'Equipamentos e locais'), h('p', { class: 'muted' }, 'Cadastre o que existe na sua operação. Quanto mais a IA souber (capacidades, locais, distâncias, pesos), melhor ela prevê o tempo.'), abas, area);
+  montar(el, h('h1', null, 'Equipamentos e locais'), h('p', { class: 'muted' }, 'Cadastre o que existe na sua operação. O tempo é calculado a partir dos locais, distâncias, pesos e da ficha técnica de cada equipamento (em Contorno físico), nunca digitado.'), abas, area);
   await desenhar();
 }
 

@@ -71,12 +71,13 @@ def entrada_do_passo(modulo, passo, *, comps: list[dict], ligs: list[dict], unid
     return e
 
 
-def entrada_da_operacao(db: Session, empresa_id: int, operacao, quantidade: float, produto=None, recurso=None) -> tuple[EntradaModulo, object | None]:
+def entrada_da_operacao(db: Session, empresa_id: int, operacao, quantidade: float, produto=None, recurso=None,
+                        modulo: str | None = None) -> tuple[EntradaModulo, object | None]:
     """Condições de uma OPERAÇÃO de processo que escolheu um módulo. Medidas e pesos: o produto da ordem prevalece sobre o
     item típico da operação (como em `modelo_tempo.montar_contexto`). Devolve (entrada, recurso usado)."""
     from ...models import Recurso
     from ..modelo_tempo import distancia_entre
-    modulo = operacao.modulo
+    modulo = modulo or operacao.modulo  # `modulo` explícito = hipótese (sugestão ainda não aplicada)
     par = operacao.modulo_parametros or {}
     rec = recurso
     if rec is None and operacao.recurso_padrao_id:

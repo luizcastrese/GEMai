@@ -241,3 +241,43 @@ def test_migracao_0007_sobe_e_desce_no_sqlite(tmp_path):
     assert "modulo" not in colunas("plano_passos") and "modulo_parametros" not in colunas("operacoes")
     alembic("upgrade", "head")
     assert "modulo" in colunas("plano_passos")
+
+
+# ------------------------------------------------------------------ Fase 5: a IA sugere o módulo; a pessoa aplica
+def test_ia_sugere_modulo_sem_gravar_e_lista_o_que_falta(gestor, unidade_id):
+    op = _op_com_modulo(gestor, unidade_id, item_peso_kg=5)
+    r = gestor.post(f"/operacoes/{op['id']}/modulo/sugerir", {})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["modulo"] == "movimentacao" and d["titulo"] and d["provedor"] == "heuristica"  # "Levar…" é movimentação
+    assert any("distância" in f for f in d["faltantes"])  # as condições que faltam; nenhum tempo na resposta
+    assert set(d) == {"modulo", "titulo", "justificativa", "faltantes", "provedor", "aviso", "aplicar_com"}  # nenhum campo de tempo
+    assert gestor.get(f"/processos/{gestor.get('/processos').json()[0]['id']}").json()["etapas"][0]["operacoes"][0]["modulo"] is None  # nada gravado
+    assert gestor.patch(f"/operacoes/{op['id']}", {"modulo": d["modulo"], "distancia_m": 30}).json()["modulo"] == "movimentacao"
+    assert gestor.get(f"/operacoes/{op['id']}/estimativa?quantidade=10").json()["fonte"] == "modulo"
+    assert {m["chave"] for m in gestor.get("/modulos").json()} == set(catalogo.CHAVES)
+
+
+def test_ia_externa_so_escolhe_chave_do_catalogo(gestor, unidade_id, monkeypatch):
+    from app.services import ia
+    monkeypatch.setattr(ia, "provedor_ativo", lambda empresa: "claude")
+    monkeypatch.setattr(ia.claude, "sugerir_modulo", lambda ctx: es.SugestaoModulo.model_validate(
+        {"modulo": "corte", "justificativa": "corte de chapas\x00" + "x" * 900, "a_min": 5, "tempo_min": 9}))
+    op = _op_com_modulo(gestor, unidade_id)
+    d = gestor.post(f"/operacoes/{op['id']}/modulo/sugerir", {}).json()
+    assert d["modulo"] == "corte" and len(d["justificativa"]) == 400 and "\x00" not in d["justificativa"] and d["provedor"].startswith("claude")
+    monkeypatch.setattr(ia.claude, "sugerir_modulo", lambda ctx: es.SugestaoModulo(modulo=None))
+    assert gestor.post(f"/operacoes/{op['id']}/modulo/sugerir", {}).json()["modulo"] is None
+    with pytest.raises(Exception):
+        es.SugestaoModulo.model_validate({"modulo": "executar_codigo"})
+
+
+def test_entradas_de_tempo_obsoletas_estao_marcadas(gestor, unidade_id):
+    """Rotas/campos que digitavam tempo seguem na API (dados antigos), mas marcados como obsoletos no OpenAPI."""
+    esquema = gestor.c.get("/openapi.json").json() if gestor.c.get("/openapi.json").status_code == 200 else None
+    if esquema is None:  # em produção o /docs fica desligado; aqui o ambiente é de desenvolvimento
+        pytest.skip("OpenAPI indisponível")
+    caminhos = esquema["paths"]
+    for rota, metodo in (("/api/v1/referencias-tempo", "put"), ("/api/v1/operacoes/{oid}/modelo-tempo/gerar", "post"),
+                         ("/api/v1/operacoes/{oid}/modelo-tempo", "post"), ("/api/v1/operacoes/{oid}/parametros/atualizar-historico", "post")):
+        assert caminhos[rota][metodo].get("deprecated") is True, rota

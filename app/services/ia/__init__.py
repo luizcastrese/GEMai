@@ -12,7 +12,7 @@ from ...models import Empresa
 from ..modelo_tempo import ModeloTempoIA, sanear_modelo
 from . import claude, heuristica
 from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, FichaTecnicaIA, IdentificacaoMeio, ListaPerguntas,
-                       PerguntaIA, PlanoProposta, sanear_identificacao, sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
+                       PerguntaIA, PlanoProposta, SugestaoModulo, sanear_sugestao_modulo, sanear_identificacao, sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
 
 log = logging.getLogger("erp.ia")
 
@@ -81,3 +81,8 @@ def identificar_meio(empresa: Empresa, ctx: dict, imagem: tuple[bytes, str] | No
 def buscar_ficha(empresa: Empresa, ctx: dict) -> tuple[FichaTecnicaIA, str, str]:
     """Busca de ficha técnica. Só o provedor externo pesquisa na web; o local devolve 'não encontrada'."""
     return _executar(empresa, "buscar_ficha", ctx)
+
+
+def sugerir_modulo(empresa: Empresa, ctx: dict) -> tuple[SugestaoModulo, str, str]:
+    r, prov, aviso = _executar(empresa, "sugerir_modulo", ctx)
+    return sanear_sugestao_modulo(r), prov, aviso

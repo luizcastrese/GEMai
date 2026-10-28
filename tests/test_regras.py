@@ -100,6 +100,7 @@ def test_aviso_de_habilitacao(gestor, unidade_id):
 # ------------------------------------------------------------------ versionamento
 def test_versionamento_de_processo(gestor, unidade_id):
     pid, ops = montar_processo(gestor, unidade_id)
+    assert gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": ops[0], "nome": "tamanho_lote", "valor_num": 10}).status_code == 201
     ordem = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 1}).json()
     # processo ativo não aceita edição estrutural
     et = gestor.get(f"/processos/{pid}").json()["etapas"][0]["id"]
@@ -109,10 +110,10 @@ def test_versionamento_de_processo(gestor, unidade_id):
     v2 = gestor.post(f"/processos/{pid}/nova-versao").json()
     assert v2["versao"] == 2 and v2["status"] == "rascunho" and v2["codigo"] == gestor.get(f"/processos/{pid}").json()["codigo"]
     assert gestor.post(f"/processos/{pid}/nova-versao").status_code == 409  # já há rascunho
-    # parâmetros validados foram copiados
-    novo_op = v2["etapas"][0]["operacoes"][0]["id"]
-    ps = gestor.get(f"/parametros?escopo_tipo=operacao&escopo_id={novo_op}").json()
-    assert {p["nome"] for p in ps} == {"tempo_unitario_min", "tempo_preparacao_min"}
+    # parâmetros validados e o módulo de tempo foram copiados
+    novo_op = v2["etapas"][0]["operacoes"][0]
+    ps = gestor.get(f"/parametros?escopo_tipo=operacao&escopo_id={novo_op['id']}").json()
+    assert {p["nome"] for p in ps} == {"tamanho_lote"} and novo_op["modulo"] == "conferencia"
     nova_et = gestor.post(f"/processos/{v2['id']}/etapas", {"nome": "Acabamento"}).json()
     gestor.post(f"/etapas/{nova_et['id']}/operacoes", {"nome": "Lixar"})
     # ordem antiga mantém seu roteiro; a versão 1 vira 'substituido'
@@ -245,7 +246,7 @@ def test_relatorio_e_outros_tipos(gestor, unidade_id):
 # ------------------------------------------------------------------ auditoria e cadastros
 def test_auditoria_registra_mudancas_de_parametro(admin, gestor, unidade_id):
     pid, ops = montar_processo(gestor, unidade_id)
-    gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": ops[0], "nome": "tempo_unitario_min",
+    gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": ops[0], "nome": "tamanho_lote",
                                 "valor_num": 5, "justificativa": "Medição em campo"})
     ev = admin.get("/auditoria?entidade=parametro").json()
     ult = ev[0]

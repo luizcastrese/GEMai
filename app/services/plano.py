@@ -16,7 +16,7 @@ from sqlalchemy import select
 from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
-                      PlanoTrabalho, Produto, Recurso, ReferenciaTempo)
+                      PlanoTrabalho, Produto, Recurso)
 from . import ergonomia, ia, modelo_tempo
 from .modulos import catalogo, entradas, motor
 from .dashboard import tz_empresa
@@ -29,15 +29,6 @@ LIMITE_JORNADA_MIN = 8 * 60  # CLT art. 58 (jornada normal de 8 h/dia). Conferir
 
 
 # ------------------------------------------------------------------ entradas
-def referencias(db, empresa_id: int) -> tuple[dict[str, float], list[str]]:
-    refs = dict(modelo_tempo.REFERENCIAS_MONTAGEM)
-    informadas = []
-    for r in db.scalars(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == empresa_id)):
-        refs[r.chave] = r.minutos
-        informadas.append(r.chave)
-    return refs, informadas
-
-
 def estimar_peso(c: Componente) -> tuple[float | None, str | None]:
     if c.peso_kg is not None:
         return c.peso_kg, "informado"
@@ -91,9 +82,9 @@ def _trabalhado_no_dia(dt: datetime, blocos) -> float:
     return total
 
 
-def agendar(inicio: datetime, blocos, uteis: bool, duracoes: list[float | None], fadiga_pct_hora: float):
+def agendar(inicio: datetime, blocos, uteis: bool, duracoes: list[float | None]):
     """[(inicio, fim, duracao_efetiva_min | None)] por passo. Passo sem duração não avança o relógio.
-    Fadiga acumulada (opcional, informada pelo usuário): a duração cresce com as horas já trabalhadas no dia."""
+    Não há fadiga acumulada digitada: a fadiga por turno só entrará no cálculo quando for aprendida dos dados."""
     cursor = _inicio_util(inicio, blocos, uteis)
     saida = []
     for d in duracoes:
@@ -101,8 +92,7 @@ def agendar(inicio: datetime, blocos, uteis: bool, duracoes: list[float | None],
             saida.append((cursor, cursor, None))
             continue
         inicio_passo = cursor
-        horas = _trabalhado_no_dia(inicio_passo, blocos) / 60
-        efetiva = d * (1 + fadiga_pct_hora / 100 * horas)
+        efetiva = d
         restante, t = efetiva, inicio_passo
         while restante > 1e-9:
             t = _inicio_util(t, blocos, uteis)
@@ -191,10 +181,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                                         distancia_m=distancia, rec=rec, ficha=fichas.get(rec.id, {}) if rec else {},
                                         origem=o.nome if o else None, destino=d.nome if d else None)
         local = (esp_id.get(rec.espaco_id) if rec else None) or d or o
-        tol = motor.tolerancias_padrao()
-        if local is not None and (local.tolerancia_ambiente_pct or 0) > 0:  # DEPRECATED (Fase 5): informada pelo usuário
-            tol.append({"categoria": f"ambiente ({local.nome})", "percentual": local.tolerancia_ambiente_pct,
-                        "fonte": "informada pelo usuário para este local"})
+        tol = motor.tolerancias_padrao()  # sem "folga extra" digitada: o ambiente será calculado (Fase 8)
         r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=ritmo)
         pessoas = r.pessoas
         falt = list(r.faltantes)
@@ -224,7 +211,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     tz = tz_empresa(ctx.empresa)
     inicio_cfg = cfg.get("inicio")
     inicio_local = (inicio_cfg.astimezone(tz).replace(tzinfo=None) if inicio_cfg else datetime.now(timezone.utc).astimezone(tz).replace(tzinfo=None))
-    ag = agendar(inicio_local, blocos, cfg.get("so_dias_uteis", True), [l["total"] for l in linhas], float(cfg.get("fadiga_pct_hora") or 0))
+    ag = agendar(inicio_local, blocos, cfg.get("so_dias_uteis", True), [l["total"] for l in linhas])
 
     if plano is None:
         plano = PlanoTrabalho(empresa_id=ctx.empresa_id, unidade_id=unidade_id, produto_id=produto.id, criado_por=ctx.usuario.id,
@@ -264,8 +251,10 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
+    obsoleto = ["O campo 'fadiga % por hora' é obsoleto e foi ignorado: a fadiga por turno só entra no cálculo quando for aprendida dos dados."] \
+        if cfg.get("fadiga_ignorada") else []
     plano.premissas = list(dict.fromkeys(proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
-                                         + ([aviso] if aviso else [])))
+                                         + obsoleto + ([aviso] if aviso else [])))
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),

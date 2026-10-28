@@ -11,7 +11,7 @@ import unicodedata
 
 
 from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, CandidatoMeio, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from .esquemas import (AnaliseTexto, CandidatoMeio, SugestaoModulo, ComponenteIA, FichaTecnicaIA, IdentificacaoMeio, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -20,7 +20,7 @@ BASE = {
     "Processos": ["Quais são as etapas do processo, na ordem em que acontecem?",
                   "Existem caminhos alternativos ou etapas que só ocorrem em alguns casos?"],
     "Recursos": ["Quais máquinas, ferramentas, equipamentos e instalações são utilizados?",
-                 "Para cada máquina, quantas peças ou unidades ela faz por hora, mais ou menos?"],
+                 "Para cada máquina, qual a marca e o modelo (para buscar a ficha técnica) e para que ela serve?"],
     "Pessoas": ["Quem executa cada etapa e quantas pessoas participam? Há diferença entre operadores?"],
     "Materiais": ["O que entra em cada etapa e em que quantidade? Existem perdas ou refugos?",
                   "Quanto pesa, em média, cada peça ou material que as pessoas carregam?"],
@@ -37,7 +37,7 @@ BASE = {
 # Perguntas de aprofundamento disparadas por palavras nas respostas/descrição.
 GATILHOS = [
     (r"m[aá]quina|cnc|equipamento|forno|serra|prensa|esteira", "Recursos",
-     "Para cada máquina citada: qual a capacidade (unidades/hora) e quanto tempo leva a preparação (setup)?"),
+     "Para cada máquina citada: qual a marca e o modelo e para que ela serve? (a ficha técnica traz as características; o tempo é calculado)"),
     (r"perda|refugo|desperd[ií]cio|sobra", "Materiais",
      "Qual é a porcentagem aproximada de perda ou refugo e em qual etapa ela mais ocorre?"),
     (r"espera|fila|aguard|parad", "Tempo",
@@ -168,12 +168,7 @@ def estruturar(ctx: dict) -> EstruturaProposta:
         etapas.append(EtapaIA(
             nome=n, operacoes=[OperacaoIA(
                 nome=n, recurso=None,
-                parametros=[
-                    ParametroIA(nome="tempo_preparacao_min", unidade="min",
-                                justificativa="A medir: tempo de preparação informado/medido pela empresa."),
-                    ParametroIA(nome="tempo_unitario_min", unidade="min/un",
-                                justificativa="A medir: tempo de execução por unidade."),
-                ],
+                parametros=[ParametroIA(nome="perda_percentual", unidade="%", justificativa="A medir: perda/refugo esperado.")],
                 inicio_marco=f"Quando a primeira unidade de '{n}' é iniciada",
                 fim_marco=f"Quando a última unidade de '{n}' é concluída e liberada para a próxima etapa")]))
     base_texto = _norm(" ".join([ctx.get("descricao", "")] + [q.get("resposta") or "" for q in qa]))
@@ -210,11 +205,7 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         els.append(ElementoTempo(nome=f"Preparação de {rec['nome']}", tipo="preparacao", metodo="fixo", a_min=prep,
                                  justificativa="Valor de referência genérico; meça o setup real da sua operação."))
         prem.append(f"Preparação de {prep:g} min por ordem é uma referência genérica, não um dado da empresa.")
-        if rec.get("capacidade_un_h"):
-            els.append(ElementoTempo(nome=f"Processamento em {rec['nome']}", tipo="processamento", metodo="capacidade_recurso",
-                                     depende_operador=False, justificativa="Usa a capacidade informada do equipamento (tempo de máquina)."))
-        else:
-            faltam.append(f"Capacidade (un/h) do equipamento '{rec['nome']}'")
+        faltam.append(f"Tempo de máquina de '{rec['nome']}': escolha um módulo de tempo para a operação e preencha a ficha técnica do equipamento")
     if (org or dst) and not (org and dst and org.get('nome') == dst.get('nome') and not dist):
         if dist is not None:
             itens = max(int(REFERENCIAS["carga_manual_max_kg"] * pessoas // peso), 1) if peso else 1
@@ -239,7 +230,7 @@ def modelar(ctx: dict) -> ModeloTempoIA:
         prem.append("Manuseio: 0,15 min + 0,012 min/kg por unidade (referência genérica).")
         if mov:
             faltam.append(f"Índices de movimento (MOST) para o tipo '{mov}'")
-    elif not rec or not rec.get("capacidade_un_h"):
+    elif not rec:
         faltam.append("Peso e dimensões do item manuseado, ou o tipo de movimento")
     if not els:
         faltam.append("Equipamento/posto ou espaços e item físico da operação")
@@ -390,6 +381,24 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
         faltam = ["Medidas de cada peça (comprimento, largura e espessura)", "Como cada componente se liga aos outros (método e nº de fixadores)"]
     return EstruturaProdutoIA(componentes=comps, ligacoes=[], dados_faltantes=faltam,
                               observacoes="Lista extraída do texto por regras locais: confira nomes e quantidades e complete as medidas.")
+
+
+# ---------------------------------------------------------------- módulo de tempo de uma operação (escolha local)
+_PALAVRAS_MODULO = (("corte", "cort", "serra", "seccion", "esquadrej"), ("bordo", "bord", "colagem de borda"), ("furacao", "fur"),
+                    ("movimentacao", "transport", "mover", "levar", "carreg", "deslocar", "movimentar", "buscar"),
+                    ("conferencia", "conferi", "inspec", "qualidade", "revis"), ("montagem", "mont", "fixar", "parafus", "encaix"))
+
+
+def sugerir_modulo(ctx: dict) -> SugestaoModulo:
+    """Escolhe o módulo por palavras-chave do nome/descrição. Não produz tempo nem número algum."""
+    nome = _norm(ctx.get("nome", ""))
+    primeira = nome.split()[0] if nome.split() else ""  # o verbo da tarefa ("Levar…", "Cortar…") manda mais que o resto
+    n = f"{nome} {_norm(ctx.get('descricao', ''))}"
+    for alvo in (primeira, n):
+        for chave, *palavras in _PALAVRAS_MODULO:
+            if any(p in alvo for p in palavras):
+                return SugestaoModulo(modulo=chave, justificativa=f"O nome/descrição lembra '{chave}' (regra local por palavra-chave): confirme.")
+    return SugestaoModulo(modulo=None, justificativa="Não reconheci o tipo de trabalho: escolha o módulo manualmente.")
 
 
 # ---------------------------------------------------------------- meios (identificação local)

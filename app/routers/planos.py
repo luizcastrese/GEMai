@@ -164,8 +164,8 @@ def aplicar_estrutura(pid: int, dados: AplicarEstruturaIn, ctx: Ctx = Depends(ge
     return _estrutura(ctx, p)
 
 
-# ------------------------------------------------------------------ referências de tempo
-@router.get("/referencias-tempo", response_model=list[ReferenciaOut])
+# ------------------------------------------------------------------ referências de tempo (DEPRECATED: não alimentam mais o cálculo)
+@router.get("/referencias-tempo", response_model=list[ReferenciaOut], deprecated=True)
 def listar_referencias(ctx: Ctx = Depends(get_ctx)):
     informadas = {r.chave: r.minutos for r in ctx.db.scalars(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id))}
     out = []
@@ -177,7 +177,7 @@ def listar_referencias(ctx: Ctx = Depends(get_ctx)):
     return out
 
 
-@router.put("/referencias-tempo", response_model=ReferenciaOut)
+@router.put("/referencias-tempo", response_model=ReferenciaOut, deprecated=True)
 def definir_referencia(dados: ReferenciaIn, ctx: Ctx = Depends(get_ctx)):
     r = ctx.db.scalar(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id, ReferenciaTempo.chave == dados.chave))
     antes = audit.snap(r) if r else None
@@ -192,7 +192,7 @@ def definir_referencia(dados: ReferenciaIn, ctx: Ctx = Depends(get_ctx)):
     return ReferenciaOut(chave=r.chave, minutos=r.minutos, padrao_minutos=modelo_tempo.REFERENCIAS_MONTAGEM.get(r.chave), informada=True)
 
 
-@router.delete("/referencias-tempo/{chave}", status_code=204)
+@router.delete("/referencias-tempo/{chave}", status_code=204, deprecated=True)
 def restaurar_referencia(chave: str, ctx: Ctx = Depends(get_ctx)):
     r = ctx.db.scalar(select(ReferenciaTempo).where(ReferenciaTempo.empresa_id == ctx.empresa_id, ReferenciaTempo.chave == chave))
     if r:
@@ -227,7 +227,7 @@ def _plano(ctx: Ctx, pid: int) -> PlanoTrabalho:
 
 def _cfg(dados: PlanoGerarIn) -> dict:
     return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
-            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_pct_hora": dados.fadiga_pct_hora}
+            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_ignorada": bool(dados.fadiga_pct_hora)}
 
 
 @router.post("/planos", response_model=PlanoOut, status_code=201)

@@ -13,12 +13,11 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
-from .. import audit
 from ..config import get_settings
 from ..deps import Ctx, get_ctx
 from ..models import Parametro, Recurso
 from ..ratelimit import limite_ia
-from ..schemas import (BuscarFichaIn, BuscarFichaOut, FichaMeioOut, IdentificarMeioIn, IdentificarMeioOut, In, ParametroOut)
+from ..schemas import (BuscarFichaIn, BuscarFichaOut, FichaMeioOut, IdentificarMeioIn, IdentificarMeioOut, ParametroOut)
 from ..services import ia, imagem
 from ..services.ia.esquemas import FichaTecnicaIA, sanear_ficha
 from ..services.modulos import ficha as catalogo_ficha

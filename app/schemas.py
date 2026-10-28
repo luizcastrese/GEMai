@@ -600,7 +600,7 @@ class EspacoIn(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
-    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30, deprecated=True, description="OBSOLETO: não entra mais no cálculo.")
     observacoes: Texto = ""
 
 
@@ -615,7 +615,7 @@ class EspacoUpdate(In):
     umidade_pct: float | None = Field(None, ge=0, le=100)
     ruido_db: float | None = Field(None, ge=0, le=200)
     iluminancia_lux: float | None = Field(None, ge=0, le=200000)
-    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30)
+    tolerancia_ambiente_pct: float | None = Field(None, ge=0, le=30, deprecated=True, description="OBSOLETO: não entra mais no cálculo.")
     observacoes: Texto | None = None
     ativo: bool | None = None
 
@@ -1069,7 +1069,7 @@ class PlanoGerarIn(In):
     so_dias_uteis: bool = True
     pessoas: int = Field(1, ge=1, le=50)
     perfil_id: int | None = None
-    fadiga_pct_hora: float = Field(0.0, ge=0, le=10)
+    fadiga_pct_hora: float = Field(0.0, ge=0, le=10, deprecated=True, description="OBSOLETO: ignorado (a fadiga por turno só entra quando aprendida dos dados).")
 
 
 class PlanoPassoOut(Out):
@@ -1173,3 +1173,13 @@ class FichaMeioOut(BaseModel):
     parametros: list[dict]
     pendencias: list[str]
     busca_disponivel: bool
+
+
+class SugestaoModuloOut(BaseModel):
+    modulo: str | None
+    titulo: str | None = None
+    justificativa: str = ""
+    faltantes: list[str] = []  # o que ainda falta para o módulo sugerido calcular o tempo (condições, não tempos)
+    provedor: str
+    aviso: str = ""
+    aplicar_com: str = "PATCH /operacoes/{id} com {\"modulo\": ...}: a sugestão só vale depois que uma pessoa a aplica."

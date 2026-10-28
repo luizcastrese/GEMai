@@ -127,7 +127,6 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     m1: entrada('time', bl[0][0]), m2: entrada('time', bl[0][1]), t1: entrada('time', bl[1][0]), t2: entrada('time', bl[1][1]),
     uteis: h('input', { type: 'checkbox', checked: cfg.so_dias_uteis ?? true }),
     perfil: h('select', null, h('option', { value: '' }, 'Padrão'), perfis.map((x) => h('option', { value: x.id }, x.nome))),
-    fadiga: entrada('number', cfg.fadiga_pct_hora ?? 0, { min: '0', max: '10', step: 'any' }),
   };
   if (cfg.perfil_id) f.perfil.value = cfg.perfil_id;
   const corpo = h('div', null,
@@ -135,14 +134,13 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', null, f.uteis, ' Trabalhar só de segunda a sexta'),
-    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Perfil de mão de obra (ritmo do operador)'), f.perfil,
-      h('label', null, 'Perda de rendimento por hora trabalhada no dia (%) — opcional, informe só se tiver medido'), f.fadiga) : null);
+    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Perfil de mão de obra (ritmo do operador)'), f.perfil) : null);
   modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async (e) => {
       const m = [[f.m1.value, f.m2.value], [f.t1.value, f.t2.value]].filter((b) => b[0] && b[1]);
       if (!m.length) return toast('Informe ao menos um bloco de horário.', true);
       const corpoReq = { produto_id: produtoId, unidade_id: estado.unidadeId, quantidade: Number(f.qtd.value) || 1, inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null,
-        blocos: m, so_dias_uteis: f.uteis.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value), fadiga_pct_hora: Number(f.fadiga.value) || 0 };
+        blocos: m, so_dias_uteis: f.uteis.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value) };
       e.target.disabled = true;
       const r = await tentar(() => (plano ? post(`/planos/${plano.id}/recalcular`, corpoReq) : post('/planos', corpoReq)));
       e.target.disabled = false;
@@ -215,7 +213,7 @@ export async function planoDetalhe(el, id) {
   montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/planos' }, '← Planos de trabalho')),
     h('h1', null, p.nome), h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
       badge(`Confiança: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''), badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado por regras locais', 'b-ia')),
-    (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa. Tempos de montagem e conferência partem de referências genéricas até você informar os seus (Contorno físico) ou medir a produção. Quando houver apontamentos reais, compare com o previsto.'),
+    (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa calculada a partir do produto, dos meios cadastrados (ficha técnica) e de coeficientes de referência genéricos, ainda não calibrados com a sua produção. Quando houver apontamentos reais, compare com o previsto.'),
     h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Pessoas-hora', `${fmtNum(t.horas_homem, 1)} h`),
       kpi('Começa', t.inicio ? fmtData(t.inicio) : '—', 'peq'), kpi('Termina', t.fim ? fmtData(t.fim) : '—', 'peq'), kpi('Dias de trabalho', t.dias || '—')),
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),

@@ -12,13 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 
 from .. import audit
-from ..constants import PARAMETROS_PADRAO
+from ..constants import PARAMETROS_PADRAO, PARAMETROS_TEMPO_OBSOLETOS
 from ..deps import Ctx, get_ctx
 from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
 from ..services.modulos import ficha as ficha_catalogo
-from ..services import estimativa, timecalc
+from ..services import estimativa
 from ..services.dashboard import alerta_ergonomia
 
 router = APIRouter(tags=["processos"])
@@ -222,8 +222,8 @@ def publicar(pid: int, ctx: Ctx = Depends(get_ctx)):
     avisos = []
     for e in p.etapas:
         for op in e.operacoes:
-            if "tempo_unitario_min" not in estimativa.parametros_vigentes(ctx.db, ctx.empresa_id, "operacao", op.id):
-                avisos.append(f"'{op.nome}' sem tempo unitário validado: a estimativa dependerá do histórico.")
+            if not op.modulo:
+                avisos.append(f"'{op.nome}' sem módulo de tempo: a estimativa dependerá do histórico (escolha o tipo de trabalho).")
     anterior = ctx.db.scalars(select(Processo).where(
         Processo.empresa_id == ctx.empresa_id, Processo.codigo == p.codigo, Processo.status == "ativo"))
     for a in anterior:
@@ -418,6 +418,8 @@ def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(get_ctx)):
     uni = _unidade_do_escopo(ctx, dados.escopo_tipo, dados.escopo_id)
     if dados.valor_num is None and dados.valor_texto is None:
         raise HTTPException(422, "Informe valor_num ou valor_texto.")
+    if dados.nome in PARAMETROS_TEMPO_OBSOLETOS:
+        raise HTTPException(422, "Tempo digitado é obsoleto: o tempo é calculado pelo sistema (histórico ou módulo de tempo).")
     campos = dados.model_dump(exclude={"origem"})
     if not campos["unidade"] and campos["nome"] in PARAMETROS_PADRAO:
         campos["unidade"] = PARAMETROS_PADRAO[campos["nome"]][0]
@@ -474,34 +476,10 @@ def rejeitar_parametro(pid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
     return p
 
 
-@router.post("/operacoes/{oid}/parametros/atualizar-historico", response_model=list[ParametroOut])
+@router.post("/operacoes/{oid}/parametros/atualizar-historico", deprecated=True, status_code=410)
 def atualizar_parametros_do_historico(oid: int, ctx: Ctx = Depends(get_ctx)):
-    """Recalcula tempos da operação a partir do histórico APROVADO e grava como nova versão
-    (origem 'calculado'), validada pelo gestor que executou a ação."""
-    op, _, p = _operacao(ctx, oid)
-    from ..config import get_settings
-    minimo = get_settings().min_amostras_historico
-    params = estimativa.parametros_vigentes(ctx.db, ctx.empresa_id, "operacao", op.id)
-    lote = params["tamanho_lote"].valor_num if "tamanho_lote" in params else None
-    amostras, preps = estimativa.historico_operacao(ctx.db, ctx.empresa_id, op.id, op.formula_tipo, lote)
-    criados = []
-    if len(amostras) < minimo:
-        raise HTTPException(409, f"Histórico aprovado insuficiente ({len(amostras)}/{minimo} amostras).")
-    novos = [("tempo_unitario_min", timecalc.mediana(amostras), "min/un", len(amostras))]
-    if len(preps) >= minimo:
-        novos.append(("tempo_preparacao_min", timecalc.mediana(preps), "min", len(preps)))
-    for nome, valor, un, n in novos:
-        atual = params.get(nome)
-        if atual and atual.valor_num is not None and abs(atual.valor_num - valor) < 1e-9:
-            continue
-        pr = _nova_versao_parametro(
-            ctx, p.unidade_id,
-            {"escopo_tipo": "operacao", "escopo_id": op.id, "nome": nome, "valor_num": round(valor, 4),
-             "valor_texto": None, "unidade": un,
-             "justificativa": f"Mediana de {n} amostras aprovadas do histórico."},
-            origem="calculado", status="validado", vigente=True)
-        ctx.auditar("parametro.atualizar_historico", "parametro", pr.id, audit.snap(atual) if atual else None,
-                    audit.snap(pr))
-        criados.append(pr)
-    ctx.db.commit()
-    return criados
+    """DEPRECATED. Gravava a mediana bruta do histórico como "tempo por unidade". O tempo não é mais um parâmetro
+    digitado nem derivado em parâmetro: o histórico aprovado já é a fonte principal (normalizado pelo ritmo e com as
+    tolerâncias do módulo/modelo)."""
+    _operacao(ctx, oid)
+    raise HTTPException(410, "Obsoleto: o histórico aprovado já é a fonte principal do tempo; não há parâmetro de tempo a atualizar.")

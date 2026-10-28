@@ -2,6 +2,8 @@
 e saneada (limites de tamanho) antes de ser gravada: a IA nunca grava diretamente no ERP."""
 from typing import Literal
 
+from ...constants import PARAMETROS_TEMPO_OBSOLETOS
+
 from pydantic import BaseModel, Field
 
 from ..modelo_tempo import METODOS_LIGACAO
@@ -121,7 +123,7 @@ def sanear_estrutura(e: EstruturaProposta) -> EstruturaProposta:
                     continue
                 params = [ParametroIA(nome=_t(x.nome, 80).lower().replace(" ", "_"), unidade=_t(x.unidade, 30),
                                       valor=x.valor, justificativa=_t(x.justificativa, 500))
-                          for x in op.parametros[:MAX_PARAMS] if _t(x.nome, 80)]
+                          for x in op.parametros[:MAX_PARAMS] if _t(x.nome, 80) and _t(x.nome, 80).lower().replace(" ", "_") not in PARAMETROS_TEMPO_OBSOLETOS]
                 ops.append(OperacaoIA(
                     nome=_t(op.nome, 200), descricao=_t(op.descricao, 2000), recurso=_t(op.recurso, 200) or None,
                     formula_tipo=op.formula_tipo, unidade_medida=_t(op.unidade_medida, 30) or "un",
@@ -214,6 +216,17 @@ class PassoIA(BaseModel):
     espaco_destino: str | None = None
     pessoas: int = 1
     observacao: str = ""
+
+
+class SugestaoModulo(BaseModel):
+    """A IA só ESCOLHE um módulo do catálogo fechado (ou nenhum). Sem tempos, taxas ou coeficientes."""
+
+    modulo: ChaveModulo | None = None
+    justificativa: str = ""
+
+
+def sanear_sugestao_modulo(x: SugestaoModulo) -> SugestaoModulo:
+    return SugestaoModulo(modulo=x.modulo if x.modulo in CHAVES_MODULOS else None, justificativa=_limpo(x.justificativa, 400))
 
 
 # ---------------------------------------------------------------- meios: identificação e ficha técnica

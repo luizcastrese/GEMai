@@ -1,7 +1,8 @@
+import pytest
 """Fluxo completo do documento: descrição → IA → estrutura → ordem → apontamento → análise."""
 from datetime import date, datetime, timedelta, timezone
 
-from tests.conftest import montar_processo
+from tests.conftest import FT, TEMPO_UNIDADE_MIN, montar_processo
 
 
 def test_implantacao_com_ia_ate_ordem(admin, gestor, unidade_id):
@@ -63,13 +64,13 @@ def test_implantacao_com_ia_ate_ordem(admin, gestor, unidade_id):
 
 
 def test_ciclo_de_producao_e_analise(admin, gestor, operador, unidade_id):
-    pid, ops = montar_processo(gestor, unidade_id, tempo_unit=2.0, tempo_prep=10.0)
+    pid, ops = montar_processo(gestor, unidade_id)
     hoje = date.today()
     ordem = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10,
                                     "cliente": "C", "prazo": (hoje + timedelta(days=3)).isoformat()}).json()
-    # estimativa: 2 operações × (10 + 2*10) = 60
-    assert ordem["tempo_estimado_min"] == 60 and ordem["status"] == "planejada"
-    assert {o["fonte_estimativa"] for o in ordem["operacoes"]} == {"parametro"}
+    # estimativa: 2 operações × 10 un × 5 min (módulo conferência) × FT = 2 × 54,945 (tempo padrão; nada digitado)
+    assert ordem["tempo_estimado_min"] == pytest.approx(2 * 10 * TEMPO_UNIDADE_MIN, abs=0.01) and ordem["status"] == "planejada"
+    assert {o["fonte_estimativa"] for o in ordem["operacoes"]} == {"modulo"}
     oid = ordem["id"]
     op1, op2 = [o["id"] for o in ordem["operacoes"]]
 
@@ -113,16 +114,17 @@ def test_ciclo_de_producao_e_analise(admin, gestor, operador, unidade_id):
 
     an = gestor.get(f"/ordens/{oid}/analise").json()
     s = an["resumo"]
-    assert s["estimado_min"] == 60 and s["refugo"] == 1 and s["retrabalho_min"] == 5
+    assert s["estimado_min"] == pytest.approx(2 * 10 * TEMPO_UNIDADE_MIN, abs=0.1) and s["refugo"] == 1 and s["retrabalho_min"] == 5
     op2m = next(o for o in an["operacoes"] if o["ordem_operacao_id"] == op2)
-    assert op2m["realizado_min"] == 45 and op2m["estimado_min"] == 30 and op2m["desvio_min"] == 15
-    assert op2m["desvio_pct"] == 50
+    # o planejado agora é tempo PADRÃO (inclui tolerâncias): 45 min realizados ficam abaixo dos 54,9 min previstos
+    assert op2m["realizado_min"] == 45 and op2m["estimado_min"] == pytest.approx(10 * TEMPO_UNIDADE_MIN, abs=0.1)
+    assert op2m["desvio_min"] == pytest.approx(45 - 10 * TEMPO_UNIDADE_MIN, abs=0.1) and op2m["desvio_pct"] == pytest.approx((45 / (10 * TEMPO_UNIDADE_MIN) - 1) * 100, abs=0.1)
     dash = gestor.get("/dashboard").json()
     assert dash["ordens"]["concluidas_no_periodo"] == 1 and dash["qualidade"]["refugo"] == 1
     assert dash["retrabalho"]["tempo_min"] == 5
 
-    # histórico só vale depois da aprovação
-    assert gestor.post(f"/operacoes/{ops[1]}/parametros/atualizar-historico").status_code == 409
+    # histórico só vale depois da aprovação; "atualizar parâmetros pelo histórico" é obsoleto (não há parâmetro de tempo)
+    assert gestor.post(f"/operacoes/{ops[1]}/parametros/atualizar-historico").status_code == 410
     for x in gestor.get(f"/apontamentos?ordem_id={oid}").json():
         if x["fim"]:
             assert admin.post(f"/apontamentos/{x['id']}/aprovar").status_code == 200  # outra pessoa da equipe
@@ -130,9 +132,9 @@ def test_ciclo_de_producao_e_analise(admin, gestor, operador, unidade_id):
 
 
 def test_historico_aprovado_melhora_estimativa(admin, gestor, unidade_id):
-    pid, ops = montar_processo(gestor, unidade_id, tempo_unit=2.0, tempo_prep=0.0)
+    pid, ops = montar_processo(gestor, unidade_id)
     agora = datetime.now(timezone.utc)
-    # 3 ordens concluídas em que a operação 1 levou 3 min/un (e não os 2 informados)
+    # 3 ordens concluídas em que a operação 1 levou 3 min/un (o módulo previa 5 min/un × FT)
     for i in range(3):
         o = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
         gestor.post(f"/ordens/{o['id']}/liberar")
@@ -144,17 +146,16 @@ def test_historico_aprovado_melhora_estimativa(admin, gestor, unidade_id):
         if i < 2:
             admin.post(f"/apontamentos/{a['id']}/aprovar")
     nova = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
-    assert nova["operacoes"][0]["fonte_estimativa"] == "parametro"  # só 2 aprovadas (<3)
+    assert nova["operacoes"][0]["fonte_estimativa"] == "modulo"  # só 2 aprovadas (<3)
     # terceira aprovação libera o histórico
     ap = [x for x in gestor.get("/apontamentos?status=registrado").json()]
     admin.post(f"/apontamentos/{ap[0]['id']}/aprovar")
     nova = gestor.post("/ordens", {"unidade_id": unidade_id, "processo_id": pid, "quantidade": 10}).json()
     assert nova["operacoes"][0]["fonte_estimativa"] == "historico"
-    assert nova["operacoes"][0]["tempo_exec_est_min"] == 30  # 3 min/un × 10
-    # a operação 2 continua só com parâmetro
-    assert nova["operacoes"][1]["fonte_estimativa"] == "parametro"
-    # recalibração explícita grava nova versão do parâmetro, rastreável
-    novos = gestor.post(f"/operacoes/{ops[0]}/parametros/atualizar-historico").json()
-    assert novos[0]["origem"] == "calculado" and novos[0]["valor_num"] == 3 and novos[0]["versao"] == 2
-    hist = gestor.get(f"/parametros?escopo_tipo=operacao&escopo_id={ops[0]}&historico=true").json()
-    assert [p["vigente"] for p in hist if p["nome"] == "tempo_unitario_min"] == [True, False]
+    # 3 min/un × 10 un = 30 min de tempo normal; as tolerâncias do módulo o levam ao tempo padrão (30 × FT)
+    assert nova["operacoes"][0]["tempo_exec_est_min"] == pytest.approx(30 * FT, abs=0.01)
+    # a operação 2 continua só com o módulo
+    assert nova["operacoes"][1]["fonte_estimativa"] == "modulo"
+    # não há mais "parâmetro de tempo": a rotina antiga de recalibração está obsoleta
+    assert gestor.post(f"/operacoes/{ops[0]}/parametros/atualizar-historico").status_code == 410
+    assert gestor.post("/parametros", {"escopo_tipo": "operacao", "escopo_id": ops[0], "nome": "tempo_unitario_min", "valor_num": 3}).status_code == 422

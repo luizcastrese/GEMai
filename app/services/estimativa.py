@@ -6,11 +6,13 @@ Prioridade da base de cálculo (sempre explicitada em `fonte`):
                   do tempo que depende do operador), a mediana das amostras é o tempo normal e as tolerâncias do
                   modelo (FT) o transformam em tempo padrão. Sem modelo, não há tolerância a aplicar: o resultado é
                   tempo normal, e isso vem avisado;
-2. `parametro`  – parâmetros vigentes e validados por uma pessoa (informados/medidos/calculados);
-3. `modelo_ia`  – modelo de tempo (elementos + contorno físico) proposto pela IA e calculado pelo
-                  sistema; vem rotulado como validado ou não (`validada`);
-4. `sem_base`   – nada disponível ou dados físicos faltando: o sistema não chuta.
-Dado medido/validado por pessoa sempre prevalece sobre a estimativa da IA.
+2. `modulo`    – módulo do catálogo escolhido para a operação: o tempo sai de CONDIÇÕES (medidas, distância, ficha técnica
+                  validada do meio) com coeficientes de referência rotulados; ninguém digita tempo;
+3. `modelo_ia`  – (DEPRECATED) modelo de tempo antigo (elementos) já gravado; segue calculando, mas não se criam mais
+                  modelos com tempos digitados: a IA agora escolhe módulos;
+4. `sem_base`   – nada disponível ou dados faltando: o sistema não chuta.
+`parametro` (tempo por unidade/preparação digitado) deixou de ser fonte: o tempo é saída do motor, não entrada. Parâmetros
+antigos continuam gravados, mas são ignorados (e isso é avisado). Fica `parametro` só em ordens antigas (rótulo histórico).
 
 Atenção à leitura de planejado × realizado: o "realizado" continua sendo a soma BRUTA dos apontamentos, mas o
 planejado `historico` agora é tempo padrão (inclui tolerâncias). O desvio, portanto, deixa de medir só "erro de
@@ -194,7 +196,7 @@ def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, pr
 
 
 def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, h: Historico,
-                    lote: float | None, prep_param: float | None) -> Estimativa:
+                    lote: float | None) -> Estimativa:
     """Histórico aprovado → tempo normal (ritmo) → tempo padrão (tolerâncias do modelo).
 
     Por apontamento: normal = duração · (f · ritmo/100 + (1 − f)), com f a fração do tempo que depende do operador
@@ -243,10 +245,9 @@ def _pelo_historico(db: Session, empresa_id: int, operacao, quantidade: float, p
     # 3) tempo normal = mediana das amostras normalizadas
     unit_normal = timecalc.mediana(amostras)
     prep_do_historico = len(preps) >= s.min_amostras_historico
-    prep_normal = timecalc.mediana(preps) if prep_do_historico else prep_param
+    prep_normal = timecalc.mediana(preps) if prep_do_historico else None
     if not prep_do_historico:
-        avisos.append("Preparação sem amostras suficientes no histórico: " + (
-            "usado o parâmetro validado, sem tolerâncias." if prep_param is not None else "não incluída no tempo."))
+        avisos.append("Preparação sem amostras suficientes no histórico: não incluída no tempo.")
 
     # 4) tolerâncias do módulo/modelo → tempo padrão
     tolerancias = list(base.tolerancias or []) if base else []
@@ -293,13 +294,14 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
     val = lambda n: params[n].valor_num if n in params else None  # noqa: E731
     lote = val("tamanho_lote")
     aviso: list[str] = []
+    if "tempo_unitario_min" in params or "tempo_preparacao_min" in params:
+        aviso.append("Tempo digitado (parâmetro) é obsoleto e foi ignorado: o tempo vem do histórico ou do módulo de tempo.")
     h = carregar_historico(db, empresa_id, operacao.id)
     # amostras brutas: só decidem se há histórico suficiente (a normalização não muda a contagem)
     amostras, preps = amostras_do_historico(h.registros, h.plano, operacao.formula_tipo, lote)
 
     if amostras and len(amostras) >= s.min_amostras_historico:
-        return _pelo_historico(db, empresa_id, operacao, quantidade, produto, recurso, h, lote,
-                               val("tempo_preparacao_min"))
+        return _pelo_historico(db, empresa_id, operacao, quantidade, produto, recurso, h, lote)
     res_mod = _resultado_do_modulo(db, empresa_id, operacao, quantidade, produto, recurso)
     if res_mod is not None:
         r, _ = res_mod
@@ -314,17 +316,7 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
             return Estimativa(prep=r.prep, exec=r.exec, fonte="modulo", amostras=len(amostras), avisos=aviso + r.alertas,
                               detalhe=r.composicao, tempo_normal=r.normal, tolerancia_pct=r.tolerancia_pct)
         aviso.append(f"Módulo '{r.titulo}' incompleto: " + "; ".join(r.faltantes) + ".")
-    if val("tempo_unitario_min") is not None:
-        # Parâmetro validado por pessoa: comportamento inalterado (tempo informado, sem tolerâncias do modelo).
-        if amostras:
-            aviso.append(f"Histórico insuficiente ({len(amostras)}/{s.min_amostras_historico} amostras aprovadas).")
-        prep = val("tempo_preparacao_min")
-        if len(preps) >= s.min_amostras_historico:
-            prep = timecalc.mediana(preps)
-        p, e = timecalc.estimar(operacao.formula_tipo, quantidade, prep, val("tempo_unitario_min"), lote)
-        return Estimativa(prep=p, exec=e, fonte="parametro", amostras=len(amostras), avisos=aviso)
-
-    # sem histórico nem parâmetro: tenta o modelo de tempo (gêmeo digital)
+    # sem histórico nem módulo: tenta o modelo de tempo ANTIGO (DEPRECATED; já gravado, não criado mais com tempos digitados)
     m = modelo_tempo.modelo_ativo(db, empresa_id, operacao.id)
     if m and (m.status_validacao == "validado" or s.usar_modelo_ia_nao_validado):
         ctx = modelo_tempo.montar_contexto(db, empresa_id, operacao, quantidade, produto, recurso)
@@ -341,5 +333,5 @@ def estimar_operacao(db: Session, empresa_id: int, operacao, quantidade: float, 
         aviso.append("Modelo de tempo incompleto: " + "; ".join(r.faltantes or ["modelo sem elementos"]))
         return Estimativa(prep=None, exec=None, fonte="sem_base", amostras=len(amostras), avisos=aviso,
                           detalhe=r.elementos, validada=False)
-    aviso.append("Sem parâmetro validado, histórico suficiente ou modelo de tempo: tempo não estimado.")
+    aviso.append("Sem histórico suficiente nem módulo de tempo: escolha o tipo de trabalho (módulo) da operação para prever o tempo.")
     return Estimativa(prep=None, exec=None, fonte="sem_base", amostras=len(amostras), avisos=aviso)

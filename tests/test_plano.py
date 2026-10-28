@@ -155,16 +155,16 @@ def test_referencia_de_tempo_digitada_nao_alimenta_mais_o_calculo(admin, unidade
     assert admin.c.put("/api/v1/referencias-tempo", headers=admin.h, json={"chave": "x y", "minutos": 1}).status_code == 422
 
 
-def test_tolerancia_do_ambiente_e_alertas_do_local(admin, unidade_id):
+def test_ambiente_gera_alertas_mas_nao_ha_folga_digitada(admin, unidade_id):
     est, cor, mon = _cadastrar_contorno(admin, unidade_id)
     pid, _, _ = _mesa(admin)
     base = next(s for s in _gerar(admin, pid, unidade_id)["passos"] if s["tipo"] == "corte")["tempo_padrao_min"]
+    # "folga extra (%)" do local é obsoleta: ainda é aceita na API, mas NÃO entra no cálculo
     assert admin.patch(f"/espacos/{cor['id']}", {"tolerancia_ambiente_pct": 2, "ruido_db": 92, "temperatura_c": 34}).status_code == 200
     p = _gerar(admin, pid, unidade_id)
     corte = next(s for s in p["passos"] if s["tipo"] == "corte")
-    assert corte["tempo_padrao_min"] == pytest.approx((5 + 15.6 / 30) / 0.89, abs=0.01)    # 5 % + 4 % + 2 %
-    assert corte["tempo_padrao_min"] > base
-    assert any("ambiente (Corte)" in t["categoria"] for t in corte["tolerancias"])
+    assert corte["tempo_padrao_min"] == pytest.approx(base) == pytest.approx((5 + 15.6 / 30) / 0.91, abs=0.01)  # só 5 % + 4 %
+    assert not any("ambiente" in t["categoria"] for t in corte["tolerancias"])
     msgs = " ".join(a["msg"] for a in corte["alertas"])
     assert "ruído" in msgs and "temperatura" in msgs and all(a["categoria"] == "seguranca" for a in corte["alertas"])
 
@@ -208,26 +208,29 @@ def test_mais_pessoas_quando_a_carga_passa_do_limite_manual(admin, unidade_id):
 def test_agenda_pula_almoco_e_fim_de_semana():
     blocos = [(datetime(2000, 1, 1, 8).time(), datetime(2000, 1, 1, 12).time()), (datetime(2000, 1, 1, 13).time(), datetime(2000, 1, 1, 17).time())]
     # sexta 16:30: 60 min → 30 min na sexta + 30 min na segunda; o seguinte (sem tempo) não anda; o último segue da segunda
-    ag = svc.agendar(datetime(2026, 10, 16, 16, 30), blocos, True, [60, None, 30], 0)
+    ag = svc.agendar(datetime(2026, 10, 16, 16, 30), blocos, True, [60, None, 30])
     assert ag[0][0] == datetime(2026, 10, 16, 16, 30) and ag[0][1] == datetime(2026, 10, 19, 8, 30)
     assert ag[1][0] == ag[1][1] == datetime(2026, 10, 19, 8, 30) and ag[1][2] is None
     assert ag[2][0] == datetime(2026, 10, 19, 8, 30) and ag[2][1] == datetime(2026, 10, 19, 9, 0)
     # atravessa o almoço
-    ag = svc.agendar(datetime(2026, 10, 14, 11, 0), blocos, True, [90], 0)
+    ag = svc.agendar(datetime(2026, 10, 14, 11), blocos, True, [90])
     assert ag[0][1] == datetime(2026, 10, 14, 13, 30)
     # incluindo fim de semana quando solicitado
-    ag = svc.agendar(datetime(2026, 10, 17, 9, 0), blocos, False, [30], 0)
+    ag = svc.agendar(datetime(2026, 10, 17, 9), blocos, False, [30])
     assert ag[0][1] == datetime(2026, 10, 17, 9, 30)
     # início fora do expediente vai para a próxima abertura
-    assert svc.agendar(datetime(2026, 10, 14, 18, 0), blocos, True, [10], 0)[0][0] == datetime(2026, 10, 15, 8, 0)
+    assert svc.agendar(datetime(2026, 10, 14, 18), blocos, True, [10])[0][0] == datetime(2026, 10, 15, 8, 0)
 
 
-def test_fadiga_acumulada_informada_alonga_a_duracao():
-    blocos = [(datetime(2000, 1, 1, 8).time(), datetime(2000, 1, 1, 12).time()), (datetime(2000, 1, 1, 13).time(), datetime(2000, 1, 1, 17).time())]
-    # 13:00 → 4 h já trabalhadas no dia; 5 %/h → +20 %
-    ag = svc.agendar(datetime(2026, 10, 14, 13, 0), blocos, True, [60], 5.0)
-    assert ag[0][2] == pytest.approx(72.0) and ag[0][1] == datetime(2026, 10, 14, 14, 12)
-    assert svc.agendar(datetime(2026, 10, 14, 13, 0), blocos, True, [60], 0)[0][2] == 60
+def test_fadiga_digitada_nao_existe_mais_e_e_ignorada(admin, unidade_id):
+    """O campo antigo "fadiga % por hora" é obsoleto: não altera a duração e o plano avisa que o ignorou."""
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    sem = _gerar(admin, pid, unidade_id)
+    com = _gerar(admin, pid, unidade_id, fadiga_pct_hora=8)
+    assert [x["tempo_agendado_min"] for x in com["passos"]] == [x["tempo_agendado_min"] for x in sem["passos"]]
+    assert all(x["tempo_agendado_min"] == x["tempo_padrao_min"] for x in com["passos"])
+    assert any("fadiga" in x and "obsoleto" in x for x in com["premissas"]) and not any("obsoleto" in x for x in sem["premissas"])
 
 
 def test_plano_agendado_respeita_os_blocos_da_jornada(admin, unidade_id):
