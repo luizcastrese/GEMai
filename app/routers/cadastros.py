@@ -3,6 +3,8 @@
 Não há DELETE: itens são desativados (`ativo=false`) para preservar o histórico.
 """
 from typing import Callable, Type
+import base64
+import binascii
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -11,9 +13,10 @@ from sqlalchemy.exc import IntegrityError
 from .. import audit
 from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Distancia, Espaco, Material, Pessoa, PerfilMaoDeObra, Produto, Recurso, Usuario
-from ..schemas import (DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, PerfilIn, PerfilOut, PerfilUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
+from ..ratelimit import limite_ia
+from ..schemas import (EstimarCapacidadeIn, EstimarCapacidadeOut, DistanciaIn, DistanciaOut, EspacoIn, EspacoOut, EspacoUpdate, PerfilIn, PerfilOut, PerfilUpdate, MaterialIn, MaterialOut, MaterialUpdate, PessoaIn, PessoaOut, PessoaUpdate,
                        ProdutoIn, ProdutoOut, ProdutoUpdate, RecursoIn, RecursoOut, RecursoUpdate)
-from ..services import timecalc
+from ..services import ia, timecalc
 
 router = APIRouter(tags=["cadastros"])
 
@@ -138,6 +141,35 @@ crud("perfis-mao-de-obra", PerfilMaoDeObra, PerfilIn, PerfilUpdate, PerfilOut, "
 crud("pessoas", Pessoa, PessoaIn, PessoaUpdate, PessoaOut, "pessoa", por_unidade=True, validar=_validar_pessoa)
 crud("materiais", Material, MaterialIn, MaterialUpdate, MaterialOut, "material", por_unidade=False)
 crud("produtos", Produto, ProdutoIn, ProdutoUpdate, ProdutoOut, "produto", por_unidade=False)
+
+
+# ---------------------------------------------------------------- capacidade do equipamento (IA propõe)
+_MAGIC = {"image/jpeg": (b"\xff\xd8\xff",), "image/png": (b"\x89PNG\r\n\x1a\n",), "image/webp": (b"RIFF",)}
+
+
+@router.post("/recursos/{rid}/estimar-capacidade", response_model=EstimarCapacidadeOut)
+def estimar_capacidade(rid: int, dados: EstimarCapacidadeIn, ctx: Ctx = Depends(get_ctx)):
+    """A IA PROPÕE quantas peças por hora o equipamento faz (por descrição e/ou foto). Nada é salvo:
+    o usuário confere e grava (origem 'ia') ou informa a própria medição (origem 'medido')."""
+    r = ctx.obter(Recurso, rid)
+    imagem = None
+    if dados.imagem_base64:
+        try:
+            bruto = base64.b64decode(dados.imagem_base64, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(422, "Imagem inválida.")
+        if not dados.imagem_tipo or not bruto.startswith(_MAGIC[dados.imagem_tipo]) or len(bruto) > 650_000:
+            raise HTTPException(422, "Envie uma foto JPEG, PNG ou WebP de até ~600 KB.")
+        imagem = (dados.imagem_tipo, dados.imagem_base64)
+    if not dados.descricao.strip() and imagem is None:
+        raise HTTPException(422, "Descreva o equipamento (marca, modelo, para que serve) ou envie uma foto.")
+    limite_ia.checar(f"{ctx.empresa_id}")
+    contexto = {"equipamento": r.nome, "funcao": r.funcao, "descricao": dados.descricao.strip(), "segmento": ctx.empresa.segmento}
+    est, prov, aviso = ia.estimar_capacidade(ctx.empresa, contexto, imagem)
+    ctx.auditar("recurso.estimar_capacidade", "recurso", r.id, None,
+                {"provedor": prov, "pecas_por_hora": est.pecas_por_hora, "com_imagem": imagem is not None})
+    ctx.db.commit()
+    return EstimarCapacidadeOut(provedor=prov, aviso=aviso, **est.model_dump())
 
 
 # ---------------------------------------------------------------- distâncias entre espaços

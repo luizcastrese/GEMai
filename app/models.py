@@ -211,6 +211,7 @@ class Recurso(Base):
     processos_relacionados: Mapped[list] = mapped_column(JSON, default=list)
     capacidade: Mapped[float | None] = mapped_column(Float)
     capacidade_unidade: Mapped[str] = mapped_column(String(40), default="un/h")
+    capacidade_origem: Mapped[str] = mapped_column(String(10), default="")  # ""|medido|ia
     equipes_habilitadas: Mapped[list] = mapped_column(JSON, default=list)
     local_posto: Mapped[str] = mapped_column(String(200), default="")
     horas_disponiveis_dia: Mapped[float] = mapped_column(Float, default=8.0)

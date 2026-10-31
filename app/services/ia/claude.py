@@ -13,7 +13,7 @@ import anthropic
 
 from ...config import get_settings
 from ..modelo_tempo import ModeloTempoIA
-from .esquemas import AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, ListaPerguntas, PlanoProposta
+from .esquemas import AnaliseTexto, CapacidadeIA, EstruturaProdutoIA, EstruturaProposta, ListaPerguntas, PlanoProposta
 
 NOME = "claude"
 
@@ -42,10 +42,13 @@ def _cliente() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=s.anthropic_api_key, timeout=s.ia_timeout_segundos, max_retries=2)
 
 
-def _chamar(tarefa: str, dados: dict, saida):
+def _chamar(tarefa: str, dados: dict, saida, imagem: tuple[str, str] | None = None):
     s = get_settings()
     conteudo = (f"Tarefa: {tarefa}\n\n<dados_empresa>\n"
                 f"{json.dumps(dados, ensure_ascii=False, default=str)}\n</dados_empresa>")
+    if imagem:  # (media_type, base64): a foto também é DADO, nunca instrução
+        conteudo = [{"type": "image", "source": {"type": "base64", "media_type": imagem[0], "data": imagem[1]}},
+                    {"type": "text", "text": conteudo}]
     resp = _cliente().messages.parse(
         model=s.ia_modelo, max_tokens=16000, system=_SISTEMA,
         messages=[{"role": "user", "content": conteudo}], output_format=saida)
@@ -98,6 +101,16 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
         "furos e metros de borda quando informados) e como se LIGAM (componente, ligado a, método entre parafuso/cavilha/minifix/dobradica/"
         "corredica/cola/prego/encaixe/puxador/outro e nº de fixadores). Use SOMENTE o que o texto informar: medidas, pesos e fixadores que "
         "faltarem ficam vazios e entram em 'dados_faltantes'.", ctx, EstruturaProdutoIA)
+
+
+def estimar_capacidade(ctx: dict, imagem: tuple[str, str] | None = None) -> CapacidadeIA:
+    return _chamar(
+        "Estime quantas PEÇAS POR HORA este equipamento processa na função indicada, a partir da descrição (marca, modelo, potência, "
+        "tipo) e/ou da foto. Esta é a única tarefa em que você PODE estimar um número, usando conhecimento técnico geral do tipo de "
+        "máquina, mas: se não der para identificar o tipo de equipamento, deixe 'pecas_por_hora' vazio e peça o que falta em "
+        "'dados_faltantes'. Informe uma faixa (minimo/maximo) realista de uso em oficina pequena, declare as premissas (tamanho "
+        "da peça, material, nível de operador) e use confiança 'baixa' salvo modelo identificado com clareza ('media'). "
+        "Nunca use 'alta'. O usuário poderá substituir pela medição real.", ctx, CapacidadeIA, imagem)
 
 
 def planejar(ctx: dict) -> PlanoProposta:

@@ -1,25 +1,31 @@
 import { get, qs } from './api.js';
 import { estado } from './estado.js';
-import { fmtPct, h, kpi, montar, tentar } from './ui.js';
+import { fmtData, fmtMin, h, montar, statusBadge, tabela } from './ui.js';
 
-// Tela inicial: o que precisa de atenção agora, em linguagem comum.
+// Tela inicial: o caminho em 3 passos até o tempo padrão do trabalho.
+// 1. Produto (o que fazer) → 2. Oficina (máquinas e espaço) → 3. Plano de trabalho (roteiro + tempo padrão).
 export async function inicio(el) {
-  const [r, d] = await Promise.all([get(`/inicio${qs({ unidade_id: estado.unidadeId })}`), tentar(() => get(`/dashboard${qs({ unidade_id: estado.unidadeId })}`))]);
-  const n = r.numeros || {};
-  const eff = d?.planejado_x_realizado?.eficiencia_pct;
-  const real = eff ? Math.round((100 / eff - 1) * 100) : null;
+  const [produtos, c, planos] = await Promise.all([
+    get('/produtos?ativo=true'), get(`/contorno${qs({ unidade_id: estado.unidadeId })}`), get(`/planos${qs({ unidade_id: estado.unidadeId })}`)]);
+  const prods = produtos.filter((p) => p.tipo === 'produto');
+  const oficinaOk = c.locais.length > 0 && c.pendentes === 0;
+  const passo = (n, titulo, texto, feito, href, rotulo, extra) => h('div', { class: `card passo${feito ? ' feito' : ''}` },
+    h('div', { class: 'num' }, feito ? '✓' : n),
+    h('div', { class: 'corpo' }, h('h3', null, titulo), h('p', { class: 'muted' }, texto), extra ? h('p', { class: 'small' }, extra) : null),
+    h('a', { class: `btn${feito ? '' : ' pri'}`, href }, rotulo));
+
   montar(el, h('h1', null, `Olá, ${estado.usuario.nome.split(' ')[0]}`),
-    h('h2', null, 'O que precisa da sua atenção'),
-    r.acoes.length ? r.acoes.map((a) => h('div', { class: `card acao ${a.nivel}` }, h('div', { class: 't' }, a.titulo),
-      h('a', { class: 'btn', href: a.link }, a.codigo === 'configurar' ? 'Começar' : 'Ver')))
-      : h('div', { class: 'card ok-box' }, h('strong', null, '✓ Tudo em dia.'), ' Nada pendente agora.'),
-    h('div', { class: 'grid g4' },
-      kpi('Ordens em andamento', n.ordens_abertas ?? 0),
-      kpi('Ordens atrasadas', n.atrasadas ?? 0, n.atrasadas ? 'bad' : 'good'),
-      kpi('Paradas em aberto', n.paradas_abertas ?? 0, n.paradas_abertas ? 'bad' : ''),
-      kpi('Retrabalho (últimos 30 dias)', fmtPct(d?.retrabalho?.pct_do_tempo_de_trabalho)),
-      real === null ? null : kpi('Tempo real × previsto', real === 0 ? 'No previsto' : `${real > 0 ? '+' : ''}${real}%`, real > 10 ? 'bad' : '')),
-    h('h2', null, 'Atalhos'),
-    h('div', { class: 'inline' }, h('a', { class: 'btn big', href: '#/planos' }, 'Planos de trabalho'), h('a', { class: 'btn big', href: '#/ordens' }, 'Ordens de produção'), h('a', { class: 'btn big', href: '#/fila' }, 'Minha fila'), h('a', { class: 'btn big', href: '#/contorno' }, 'Contorno físico'),
-      h('a', { class: 'btn big', href: '#/implantacao' }, 'Configurar com a IA')));
+    h('p', { class: 'muted' }, 'Quanto tempo leva para fazer este produto? Em três passos o sistema monta o roteiro e calcula o tempo padrão, para você aceitar prazos sabendo o que está prometendo.'),
+    passo(1, 'O produto', 'Diga o que vai fazer: escreva em texto livre ou liste as peças e como se juntam.', prods.length > 0, '#/produtos',
+      prods.length ? 'Ver produtos' : 'Cadastrar produto', prods.length ? `${prods.length} produto(s) cadastrado(s).` : null),
+    passo(2, 'A oficina', 'Onde as coisas ficam, a distância entre os locais e as máquinas. Não sabe quanto a máquina produz por hora? A IA estima por descrição ou foto.',
+      oficinaOk, '#/contorno', oficinaOk ? 'Ver oficina' : 'Preencher oficina',
+      c.pendentes ? `Faltam ${c.pendentes} informação(ões): ${c.faltando.slice(0, 2).join('; ')}${c.faltando.length > 2 ? '…' : ''}` : null),
+    passo(3, 'O plano de trabalho', 'Com o produto e a oficina, o sistema propõe o roteiro e calcula o tempo padrão por unidade e o prazo realista.',
+      planos.length > 0, '#/planos', planos.length ? 'Ver planos' : 'Gerar o primeiro plano', null),
+    planos.length ? h('div', null, h('h2', null, 'Planos recentes'), h('div', { class: 'card' }, tabela([
+      { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
+      { t: 'Tempo padrão por unidade', f: (p) => (p.totais.completo || p.totais.tempo_padrao_min ? fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) : '—') },
+      { t: 'Termina', f: (p) => fmtData(p.totais.fim) }, { t: 'Situação', f: (p) => (p.status === 'rascunho' ? 'Para conferir' : statusBadge(p.status)) }],
+      planos.slice(0, 5)))) : null);
 }

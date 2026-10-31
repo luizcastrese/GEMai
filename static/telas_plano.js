@@ -119,7 +119,7 @@ const isoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).to
 export async function abrirGerar({ produtoId, produtoNome, plano }) {
   const cfg = plano?.config || {};
   const bl = cfg.blocos || [['08:00', '12:00'], ['13:00', '17:00']];
-  const perfis = estado.avancado ? await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`) : [];
+  const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
   const f = {
     qtd: entrada('number', plano?.quantidade ?? 1, { min: '0', step: 'any' }),
     ini: entrada('datetime-local', cfg.inicio ? isoLocal(new Date(cfg.inicio)) : isoLocal(new Date())),
@@ -135,8 +135,9 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', null, f.uteis, ' Trabalhar só de segunda a sexta'),
-    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Perfil de mão de obra (ritmo do operador)'), f.perfil,
-      h('label', null, 'Perda de rendimento por hora trabalhada no dia (%) — opcional, informe só se tiver medido'), f.fadiga) : null);
+    h('h3', null, 'Quem vai fazer'),
+    perfis.length ? h('div', null, h('label', null, 'Perfil da pessoa (ritmo e limites de carga)'), f.perfil, h('div', { class: 'muted small' }, '"Padrão" usa ritmo normal. Perfis são cadastrados em Configurações › Cadastros avançados (com detalhes técnicos ligados).')) : h('p', { class: 'muted small' }, 'Sem perfil cadastrado: o sistema usa o ritmo normal (100%) e os limites de carga padrão.'),
+    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Perda de rendimento por hora trabalhada no dia (%) — opcional, informe só se tiver medido'), f.fadiga) : null);
   modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async (e) => {
       const m = [[f.m1.value, f.m2.value], [f.t1.value, f.t2.value]].filter((b) => b[0] && b[1]);
@@ -156,7 +157,7 @@ export async function planos(el) {
   const nome = (id) => prods.find((x) => x.id === id)?.nome ?? '—';
   const escolha = h('select', null, h('option', { value: '' }, 'Escolha o produto…'), prods.filter((x) => x.tipo === 'produto').map((x) => h('option', { value: x.id }, x.nome)));
   montar(el, h('h1', null, 'Planos de trabalho'),
-    h('p', { class: 'muted' }, 'Cada plano é uma sugestão calculada a partir do produto e do contorno físico. Só vale depois que você confirmar.'),
+    h('p', { class: 'muted' }, 'Cada plano é calculado a partir do produto, da oficina e de quem vai fazer. O número que importa é o tempo padrão por unidade. Só vale depois que você confirmar.'),
     h('div', { class: 'card' }, h('div', { class: 'row' }, escolha, h('button', { class: 'pri', onclick: () => {
       if (!escolha.value) return toast('Escolha o produto.', true);
       abrirGerar({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
@@ -164,7 +165,7 @@ export async function planos(el) {
     h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge('Rascunho', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) },
-      { t: 'Tempo de trabalho', f: (p) => fmtMin(p.totais.tempo_padrao_min) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
+      { t: 'Tempo padrão por unidade', f: (p) => fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
       { t: 'Pendências', f: (p) => (p.totais.completo ? badge('Completo', 'b-ok') : badge('Incompleto', 'b-warn')) },
       { t: 'Ordem', f: (p) => (p.ordem_id ? h('a', { href: `#/ordens/${p.ordem_id}` }, 'Ver ordem') : '—') }], ps, 'Nenhum plano ainda. Escolha um produto acima.')));
 }
@@ -204,7 +205,7 @@ export async function planoDetalhe(el, id) {
       : 'Este plano tem pendências (passos sem tempo). Confirmar mesmo assim? Esses passos ficarão "sem base" na ordem.', async () => {
       if (await tentar(() => post(`/planos/${id}/confirmar`), 'Plano confirmado.')) recarregar();
     }, 'Confirmar plano') }, 'Confirmar plano') : null,
-    p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem de produção') : null,
+    estado.avancado && p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem de produção') : null,
     p.ordem_id ? h('a', { class: 'btn big', href: `#/ordens/${p.ordem_id}` }, 'Abrir a ordem') : null,
     p.status === 'rascunho' ? h('button', { onclick: () => abrirGerar({ produtoId: p.produto_id, produtoNome: p.produto_nome, plano: p }) }, 'Recalcular') : null,
     h('button', { onclick: () => window.print() }, 'Imprimir'),
@@ -215,10 +216,15 @@ export async function planoDetalhe(el, id) {
     h('h1', null, p.nome), h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
       badge(`Confiança: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''), badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado por regras locais', 'b-ia')),
     (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa. Tempos de montagem e conferência partem de referências genéricas até você informar os seus (Contorno físico) ou medir a produção. Quando houver apontamentos reais, compare com o previsto.'),
+    h('div', { class: 'hero' },
+      h('div', { class: 'sub' }, t.completo ? 'Tempo padrão por unidade' : 'Tempo padrão por unidade (parcial: faltam dados)'),
+      h('div', { class: 'big' }, t.tempo_padrao_min ? fmtMin(t.tempo_padrao_min / (p.quantidade || 1)) : '—'),
+      h('div', { class: 'sub' }, `${fmtNum(p.quantidade, 2)} unidade(s) = ${fmtMin(t.tempo_padrao_min)} de trabalho · termina ${t.fim ? fmtData(t.fim) : '—'} (${t.dias || '—'} dia(s) de trabalho)`),
+      t.completo ? null : h('div', { class: 'small warn-l' }, 'Passos sem tempo não entram na conta: o prazo real será maior. Complete o que falta abaixo e recalcule.')),
     h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Pessoas-hora', `${fmtNum(t.horas_homem, 1)} h`),
       kpi('Começa', t.inicio ? fmtData(t.inicio) : '—', 'peq'), kpi('Termina', t.fim ? fmtData(t.fim) : '—', 'peq'), kpi('Dias de trabalho', t.dias || '—')),
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
-      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher no Contorno físico'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
+      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher a Oficina'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
         p.status === 'rascunho' ? h('span', { class: 'muted small' }, 'Depois, use "Recalcular".') : null)) : null,
     unicos.length ? h('div', { class: 'card' }, h('h3', null, 'Atenção'), h('ul', null, unicos.map((a) => h('li', { class: a.categoria === 'seguranca' ? 'seg-l' : '' }, a.msg)))) : null,
     h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['#', 'Passo', 'Começa', 'Termina', 'Tempo', ''].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),

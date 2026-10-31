@@ -9,6 +9,21 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 - Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
 - **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
 
+## Fluxo principal (foco do TCC): do produto ao tempo padrão
+
+O problema atacado: o profissional faz o produto de forma heurística, não tem **tempo padrão** e acaba aceitando prazos sem saber quanto o trabalho leva.
+O caminho principal da interface tem só três passos (menu: *Início · 1. Produtos · 2. Oficina · 3. Planos de trabalho · Configurações*):
+
+1. **Produto:** o que será feito (texto livre interpretado pela IA, ou lista de peças e ligações).
+2. **Oficina:** locais, distância entre eles e máquinas. **Quem não sabe quantas peças a máquina faz por hora** clica em *"Não sei: a IA estima"*,
+   descreve o equipamento (marca, modelo, potência) e/ou envia uma **foto**; a IA **propõe** um valor com faixa, premissas e confiança (nunca "alta"),
+   e o usuário confere antes de gravar. Quem consegue **cronometrar** digita o valor, que fica rotulado como *medido*. Valor da IA fica rotulado
+   *estimado pela IA* e entra nas premissas do plano. Sem IA externa habilitada, o sistema só aproveita um número escrito pelo usuário (não inventa).
+3. **Plano de trabalho:** a IA monta o roteiro a partir do produto, da oficina e de quem vai fazer (nº de pessoas e perfil); o sistema calcula e mostra,
+   em destaque, o **tempo padrão por unidade** e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
+
+Ordens, fila, conferência de registros, processos e análises continuam no sistema, mas só aparecem no menu com **"Mostrar detalhes técnicos"** ligado (fase 2: medir o real para melhorar o padrão).
+
 ## Experiência do usuário: um só tipo de usuário, simples por padrão
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
