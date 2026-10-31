@@ -1,6 +1,6 @@
 import { api, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
-import { detalhes, fmtNum, h, montar, tentar, toast } from './ui.js';
+import { avisoIA, badge, detalhes, fmtNum, h, modal, montar, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const opcoes = (lista, vazio) => [h('option', { value: '' }, vazio), ...lista.map((x) => h('option', { value: x.id }, x.nome))];
@@ -16,21 +16,77 @@ const REF_ROTULOS = { 'conferencia_final': 'Conferência final de cada unidade',
   'fixador:dobradica': 'Instalar 1 dobradiça', 'fixador:corredica': 'Instalar 1 corrediça', 'fixador:cola': 'Colar 1 junção', 'fixador:prego': 'Pregar 1 prego', 'fixador:encaixe': 'Fazer 1 encaixe',
   'fixador:puxador': 'Instalar 1 puxador', 'fixador:outro': 'Outro tipo de fixação (1 un.)' };
 
+// Capacidade da máquina: o usuário mede e informa, OU a IA estima a partir de descrição/foto (ele confere antes de valer).
+function celulaCapacidade(r, recarregar, salvar) {
+  const i = h('input', { type: 'number', min: '0', step: 'any', value: r.pecas_por_hora ?? '', placeholder: 'não sei' });
+  i.addEventListener('change', () => salvar(() => patch(`/recursos/${r.id}`, { capacidade: num(i.value), capacidade_unidade: 'un/h', capacidade_origem: i.value === '' ? '' : 'medido' })));
+  const origem = r.pecas_por_hora == null ? null : r.capacidade_origem === 'ia' ? badge('estimado pela IA', 'b-ia') : r.capacidade_origem === 'medido' ? badge('medido', 'b-ok') : null;
+  return h('div', null, i, h('div', { class: 'inline' }, origem,
+    h('button', { class: 'sm ia', onclick: () => estimarComIA(r, recarregar) }, r.pecas_por_hora == null ? 'Não sei: a IA estima' : 'Reestimar com a IA')));
+}
+
+// Reduz a foto no navegador (o servidor aceita até ~600 KB) e devolve {tipo, base64}.
+async function prepararFoto(arquivo) {
+  const bmp = await createImageBitmap(arquivo);
+  const f = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(bmp.width * f); cv.height = Math.round(bmp.height * f);
+  cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+  for (const q of [0.8, 0.6, 0.4]) {
+    const url = cv.toDataURL('image/jpeg', q);
+    const b64 = url.slice(url.indexOf(',') + 1);
+    if (b64.length * 0.75 < 600000) return { tipo: 'image/jpeg', base64: b64 };
+  }
+  throw new Error('Foto muito grande. Tente outra.');
+}
+
+function estimarComIA(r, recarregar) {
+  const desc = h('textarea', { placeholder: 'Ex.: Seccionadora Fulano 3200, motor 5 cv, corta chapas de MDF de 18 mm' });
+  const arq = h('input', { type: 'file', accept: 'image/*', capture: 'environment' });
+  const area = h('div');
+  const rodar = async (btn) => {
+    let foto = null;
+    if (arq.files[0]) { try { foto = await prepararFoto(arq.files[0]); } catch (e) { return toast(e.message || 'Não consegui ler a foto.', true); } }
+    if (!desc.value.trim() && !foto) return toast('Descreva a máquina ou envie uma foto.', true);
+    btn.disabled = true;
+    const e = await tentar(() => post(`/recursos/${r.id}/estimar-capacidade`, { descricao: desc.value.trim(), imagem_base64: foto?.base64, imagem_tipo: foto?.tipo }));
+    btn.disabled = false;
+    if (!e) return;
+    const valor = h('input', { type: 'number', min: '0', step: 'any', value: e.pecas_por_hora ?? '' });
+    montar(area, avisoIA('É uma estimativa, não uma medição. Confira se faz sentido para a sua oficina; se puder cronometrar depois, substitua pelo valor medido.'),
+      e.pecas_por_hora == null ? h('div', { class: 'aviso' }, 'A IA não conseguiu estimar com o que foi enviado.')
+        : h('div', null, h('strong', null, `Cerca de ${fmtNum(e.pecas_por_hora, 0)} peças por hora`),
+          e.minimo != null && e.maximo != null && e.maximo > e.minimo ? ` (entre ${fmtNum(e.minimo, 0)} e ${fmtNum(e.maximo, 0)})` : '', ` · confiança ${e.confianca}`),
+      e.premissas.length ? h('ul', null, e.premissas.map((x) => h('li', { class: 'small' }, x))) : null,
+      e.dados_faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para estimar melhor, informe: '), h('ul', null, e.dados_faltantes.map((x) => h('li', null, x)))) : null,
+      e.aviso ? h('p', { class: 'muted small' }, e.aviso) : null,
+      e.pecas_por_hora == null ? null : h('div', null, h('label', null, 'Valor a usar (você pode ajustar)'), valor,
+        h('button', { class: 'pri', onclick: async () => {
+          if (valor.value === '' || Number(valor.value) <= 0) return toast('Informe um valor maior que zero.', true);
+          if (await tentar(() => patch(`/recursos/${r.id}`, { capacidade: Number(valor.value), capacidade_unidade: 'un/h', capacidade_origem: 'ia' }), 'Salvo como estimativa da IA.')) { fecharModal(); recarregar(); }
+        } }, 'Usar este valor')));
+  };
+  const fecharModal = modal(`A IA estima — ${r.nome}`, h('div', null,
+    h('p', { class: 'muted' }, 'Você não precisa saber quantas peças a máquina faz por hora. Conte o que souber (marca, modelo, potência, o que ela faz) e/ou envie uma foto.'),
+    h('label', null, 'Descrição'), desc, h('label', null, 'Foto da máquina ou da plaqueta (opcional)'), arq, area),
+  { acoes: (fechar) => [h('button', { onclick: fechar }, 'Fechar'), h('button', { class: 'ia', onclick: (ev) => rodar(ev.target) }, 'Estimar')] });
+}
+
 // Contorno físico MÍNIMO: onde as coisas ficam, a que distância, quanto cada máquina produz e quanto pesa a peça.
 export async function contorno(el) {
   let refAberto = false;
   const uid = estado.unidadeId;
   const topo = h('div'); const secoes = h('div');
-  montar(el, h('h1', null, 'Contorno físico'),
-    h('p', { class: 'muted' }, 'Só o essencial para a IA prever o tempo: onde as coisas ficam, a que distância, quanto cada máquina faz por hora e quanto pesa cada peça. Tudo é salvo ao preencher.'),
+  montar(el, h('h1', null, 'Oficina'),
+    h('p', { class: 'muted' }, 'Onde as coisas ficam, a que distância e quais máquinas você tem. Se não souber quanto cada máquina produz por hora, a IA estima por descrição ou foto. Tudo é salvo ao preencher.'),
     topo, secoes);
 
   const progresso = async () => {
     const c = await get(`/contorno${qs({ unidade_id: uid })}`);
     const barra = h('div', { class: 'bar' }, h('i')); barra.firstChild.style.width = `${c.progresso_pct}%`;
     montar(topo, h('div', { class: c.completo ? 'card ok-box' : 'card' },
-      c.completo ? h('div', null, h('strong', null, '✓ Contorno físico completo.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), ' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos'))
-        : h('div', null, h('strong', null, `${c.progresso_pct}% preenchido`), c.tarefas.length ? ` — faltam ${c.pendentes} informação(ões):` : ' — crie um processo primeiro (Configurar com a IA).',
+      c.completo ? h('div', null, h('strong', null, '✓ Oficina completa.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), estado.avancado ? [' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos')] : null)
+        : h('div', null, h('strong', null, `${c.progresso_pct}% preenchido`), c.tarefas.length || c.pendentes ? ` — faltam ${c.pendentes} informação(ões):` : ' — cadastre os locais, as distâncias e as máquinas.',
           c.faltando.length ? h('ul', null, c.faltando.slice(0, 6).map((f) => h('li', null, f)), c.faltando.length > 6 ? h('li', { class: 'muted' }, `e mais ${c.faltando.length - 6}…`) : null) : null),
       barra));
     return c;
@@ -73,8 +129,7 @@ export async function contorno(el) {
       equip.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Equipamento', 'Para que serve?', 'Quantas peças por hora faz?', 'Em que local fica?'].map((t) => h('th', null, t)))),
         h('tbody', null, equip.map((r) => h('tr', null, h('td', null, r.nome, r.usado || r.funcao ? '' : h('span', { class: 'muted small' }, ' (não usado em tarefas)')),
           h('td', null, (() => { const f = h('select', { 'aria-label': 'Para que serve', onchange: async (e) => { if (await tentar(() => patch(`/recursos/${r.id}`, { funcao: e.target.value }))) desenhar(); } }, FUNCOES.map(([v, t]) => h('option', { value: v }, t))); f.value = r.funcao || ''; return f; })()),
-          h('td', null, (() => { const i = h('input', { type: 'number', min: '0', step: 'any', value: r.pecas_por_hora ?? '', placeholder: 'ex.: 60' });
-            i.addEventListener('change', () => salvar(() => patch(`/recursos/${r.id}`, { capacidade: num(i.value), capacidade_unidade: 'un/h' }))); return i; })()),
+          h('td', null, celulaCapacidade(r, () => desenhar(), salvar)),
           h('td', null, seletor(locais, r.espaco_id, '—', async (v) => { if (await tentar(() => patch(`/recursos/${r.id}`, { espaco_id: v }))) desenhar(); })))))))
         : h('p', { class: 'muted' }, 'Nenhum equipamento. Deixe vazio se o trabalho for todo manual.'),
       h('div', { class: 'row' }, novoEq, h('button', { onclick: async () => {

@@ -166,7 +166,7 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
                          "furos": c.furos, "bordas_m": c.bordas_m} for c in comps],
         "ligacoes": [{"componente": por_id[l.componente_id].nome, "ligado_a": por_id[l.ligado_a_id].nome if l.ligado_a_id in por_id else None,
                       "metodo": l.metodo, "fixadores": l.fixadores} for l in ligs if l.componente_id in por_id],
-        "recursos": [{"nome": r.nome, "funcao": r.funcao, "capacidade_un_h": modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade),
+        "recursos": [{"nome": r.nome, "funcao": r.funcao, "capacidade_origem": r.capacidade_origem or "informada", "capacidade_un_h": modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade),
                       "espaco": esp_id[r.espaco_id].nome if r.espaco_id in esp_id else None} for r in recursos],
         "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db,
                      "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct} for e in espacos],
@@ -258,7 +258,9 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
-    plano.premissas = proposta.premissas + ([aviso] if aviso else [])
+    estimadas = sorted({r.nome for r in recursos if r.capacidade_origem == "ia" and r.capacidade})
+    nota_cap = [f"Capacidade estimada pela IA (não medida) em: {', '.join(estimadas)}. Substitua por uma medição para ganhar confiança."] if estimadas else []
+    plano.premissas = nota_cap + proposta.premissas + ([aviso] if aviso else [])
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),

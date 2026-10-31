@@ -78,3 +78,6 @@ tr.semtempo td{background:#fffaf0}
 .ref{align-items:center}.ref .l{flex:2 1 260px}.ref input{flex:0 1 130px}
 .nw{flex-wrap:nowrap}.tw input.n{width:76px;min-width:0}.tw td.pk input{width:104px}
 .kpi.peq .v{font-size:1.1rem}
+.passo{display:flex;align-items:center;gap:1rem}.passo .num{flex:none;width:2.4rem;height:2.4rem;border-radius:50%;background:#e8eefc;color:#1f5fbf;display:grid;place-items:center;font-weight:700;font-size:1.1rem}
+.passo.feito .num{background:#dff3e4;color:#1d7a3a}.passo .corpo{flex:1}.passo h3{margin:0 0 .2rem}.passo p{margin:.15rem 0}
+.hero{background:#f3f7ff;border:1px solid #c9d9f5;border-radius:10px;padding:1.1rem 1.3rem;margin:.8rem 0}.hero .big{font-size:2.2rem;font-weight:700;color:#1f5fbf;line-height:1.1}.hero .sub{color:#445}

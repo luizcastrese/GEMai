@@ -194,6 +194,16 @@ class EstruturaProdutoIA(BaseModel):
     observacoes: str = ""
 
 
+class CapacidadeIA(BaseModel):
+    """Estimativa de produção por hora de um equipamento. Só preencher com base no que foi descrito ou visível."""
+    pecas_por_hora: float | None = None
+    minimo: float | None = None
+    maximo: float | None = None
+    confianca: Literal["baixa", "media"] = "baixa"
+    premissas: list[str] = Field(default_factory=list)
+    dados_faltantes: list[str] = Field(default_factory=list)
+
+
 class PassoIA(BaseModel):
     nome: str
     tipo: Literal["movimentacao", "corte", "furacao", "bordo", "montagem", "inspecao", "outro"] = "outro"
@@ -253,3 +263,16 @@ def sanear_plano(p: PlanoProposta) -> PlanoProposta:
     return PlanoProposta(passos=passos, premissas=[_t(x, 400) for x in p.premissas[:30] if _t(x, 400)],
                          dados_faltantes=[_t(x, 300) for x in p.dados_faltantes[:30] if _t(x, 300)],
                          confianca=p.confianca, justificativa=_t(p.justificativa, 3000))
+
+
+def sanear_capacidade(c: CapacidadeIA) -> CapacidadeIA:
+    def n(v):
+        return None if v is None or v != v or v <= 0 else min(float(v), 100000.0)
+    pph, mn, mx = n(c.pecas_por_hora), n(c.minimo), n(c.maximo)
+    if pph is None:
+        mn = mx = None
+    else:
+        mn, mx = min(mn or pph, pph), max(mx or pph, pph)
+    return CapacidadeIA(pecas_por_hora=pph, minimo=mn, maximo=mx, confianca="baixa" if pph is None else c.confianca,
+                        premissas=[_t(x, 400) for x in c.premissas[:15] if _t(x, 400)],
+                        dados_faltantes=[_t(x, 300) for x in c.dados_faltantes[:15] if _t(x, 300)])

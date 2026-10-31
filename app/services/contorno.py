@@ -89,7 +89,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
             if cap is None:
                 faltando.append(f"Quantas peças por hora faz '{r.nome}'")
         equipamentos.append({"id": r.id, "nome": r.nome, "capacidade": r.capacidade, "capacidade_unidade": r.capacidade_unidade,
-                             "pecas_por_hora": cap, "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao})
+                             "pecas_por_hora": cap, "capacidade_origem": r.capacidade_origem, "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao})
     pendentes = len(faltando)
     return {
         "locais": [{"id": e.id, "nome": e.nome, "tipo": e.tipo, "tolerancia_ambiente_pct": e.tolerancia_ambiente_pct,

@@ -12,7 +12,7 @@ import unicodedata
 import math
 
 from ..modelo_tempo import MOVIMENTOS_MOST, REFERENCIAS, TMU_MIN, ElementoTempo, ModeloTempoIA, ToleranciaTempo
-from .esquemas import (AnaliseTexto, ComponenteIA, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
+from .esquemas import (AnaliseTexto, CapacidadeIA, ComponenteIA, EspacoIA, EstruturaProdutoIA, EstruturaProposta, PassoIA, PlanoProposta, EtapaIA, ListaPerguntas, MaterialIA,
                        OperacaoIA, ParametroIA, PerguntaIA, PontoInvestigacao, ProcessoIA, RecursoIA)
 
 NOME = "heuristica"
@@ -391,6 +391,18 @@ def interpretar_produto(ctx: dict) -> EstruturaProdutoIA:
         faltam = ["Medidas de cada peça (comprimento, largura e espessura)", "Como cada componente se liga aos outros (método e nº de fixadores)"]
     return EstruturaProdutoIA(componentes=comps, ligacoes=[], dados_faltantes=faltam,
                               observacoes="Lista extraída do texto por regras locais: confira nomes e quantidades e complete as medidas.")
+
+
+def estimar_capacidade(ctx: dict, imagem=None) -> CapacidadeIA:
+    """Sem IA externa não há como estimar por modelo ou foto: só aproveita um número que o usuário escreveu."""
+    texto = _norm(ctx.get("descricao", ""))
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:pecas?|pcs?|un|unidades?)?\s*(?:/|por|a cada)\s*(?:h|hora)", texto)
+    faltam = ["Marca e modelo do equipamento", "Tamanho e material típicos da peça", "Ou uma medição: quantas peças ele fez em uma hora de trabalho"]
+    if not m:
+        return CapacidadeIA(premissas=["Sem IA externa habilitada, o sistema não estima capacidade por modelo ou foto."], dados_faltantes=faltam)
+    v = float(m.group(1).replace(",", "."))
+    return CapacidadeIA(pecas_por_hora=v, minimo=v, maximo=v, confianca="baixa",
+                        premissas=[f"Valor extraído do texto informado ({v:g} peças/hora); confira se é realista."], dados_faltantes=[])
 
 
 # ---------------------------------------------------------------- plano de trabalho (heurística local)
