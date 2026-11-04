@@ -99,7 +99,7 @@ export async function contorno(el) {
 
     // ---- 1. locais
     const novoLocal = h('input', { placeholder: 'ex.: Estoque de chapas' });
-    const sLocais = h('div', { class: 'card' }, h('h2', null, '1. Locais por onde a peça passa'),
+    const sLocais = h('div', { class: 'card', id: 'oficina-locais' }, h('h2', null, '1. Locais por onde a peça passa'),
       locais.length ? locais.map((l) => h('div', { class: 'row' }, h('input', { value: l.nome, onchange: (e) => salvar(() => patch(`/espacos/${l.id}`, { nome: e.target.value })) }),
         (() => { const t = h('select', { 'aria-label': 'Tipo do local', onchange: async (e) => { if (await tentar(() => patch(`/espacos/${l.id}`, { tipo: e.target.value }))) desenhar(); } },
           TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r))); t.value = l.tipo; return t; })(),
@@ -112,7 +112,7 @@ export async function contorno(el) {
 
     // ---- 2. distâncias
     const [oSel, dSel, metros] = [h('select', null, opcoes(locais, 'De…')), h('select', null, opcoes(locais, 'Até…')), h('input', { type: 'number', min: '0', step: 'any', placeholder: 'metros' })];
-    const sDist = h('div', { class: 'card' }, h('h2', null, '2. Distância entre os locais (em metros)'),
+    const sDist = h('div', { class: 'card', id: 'oficina-distancias' }, h('h2', null, '2. Distância entre os locais (em metros)'),
       c.distancias.length ? c.distancias.map((d) => h('div', { class: 'row' }, h('div', null, `${d.origem} ↔ ${d.destino}`),
         (() => { const i = h('input', { type: 'number', min: '0', step: 'any', value: d.metros ?? '', placeholder: 'metros' });
           i.addEventListener('change', () => { if (i.value !== '') salvar(() => api('PUT', '/distancias', { origem_id: d.origem_id, destino_id: d.destino_id, metros: Number(i.value) })); }); return i; })()))
@@ -125,7 +125,7 @@ export async function contorno(el) {
 
     // ---- 3. equipamentos
     const novoEq = h('input', { placeholder: 'ex.: Seccionadora' });
-    const sEq = h('div', { class: 'card' }, h('h2', null, '3. Máquinas e equipamentos'),
+    const sEq = h('div', { class: 'card', id: 'oficina-equipamentos' }, h('h2', null, '3. Máquinas e equipamentos'),
       equip.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Equipamento', 'Para que serve?', 'Quantas peças por hora faz?', 'Em que local fica?'].map((t) => h('th', null, t)))),
         h('tbody', null, equip.map((r) => h('tr', null, h('td', null, r.nome, r.usado || r.funcao ? '' : h('span', { class: 'muted small' }, ' (não usado em tarefas)')),
           h('td', null, (() => { const f = h('select', { 'aria-label': 'Para que serve', onchange: async (e) => { if (await tentar(() => patch(`/recursos/${r.id}`, { funcao: e.target.value }))) desenhar(); } }, FUNCOES.map(([v, t]) => h('option', { value: v }, t))); f.value = r.funcao || ''; return f; })()),
@@ -138,7 +138,7 @@ export async function contorno(el) {
       } }, '+ Adicionar equipamento')));
 
     // ---- 4. tarefas
-    const sTar = !c.tarefas.length ? null : h('div', { class: 'card' }, h('h2', null, '4. Cada tarefa'),
+    const sTar = !c.tarefas.length ? null : h('div', { class: 'card', id: 'oficina-tarefas' }, h('h2', null, '4. Cada tarefa'),
       c.tarefas.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Tarefa', 'Equipamento', 'De onde sai?', 'Para onde vai?', 'Peso da peça (kg)'].map((t) => h('th', null, t)))),
         h('tbody', null, c.tarefas.map((t) => h('tr', null, h('td', null, t.nome, h('div', { class: 'muted small' }, t.processo)),
           h('td', null, seletor(equip, t.recurso_padrao_id, 'Manual', (v) => salvar(() => patch(`/operacoes/${t.operacao_id}`, { recurso_padrao_id: v })))),
@@ -176,6 +176,10 @@ export async function contorno(el) {
             h('div', null, h('label', null, rot), (() => { const i = h('input', { type: 'number', step: 'any', value: v ?? '' }); i.addEventListener('change', () => salvar(() => patch(`/espacos/${l.id}`, { [k]: num(i.value) }))); return i; })()))))
           : h('p', { class: 'muted' }, 'Cadastre os locais primeiro.')));
     montar(secoes, sLocais, sDist, sEq, sTar, sPecas, sRef, sAmb);
+    // veio de "Faltam dados da oficina": leva direto ao bloco certo (uma vez só)
+    const alvo = estado.foco && document.getElementById(`oficina-${estado.foco}`);
+    estado.foco = null;
+    if (alvo) { alvo.classList.add('destaque'); alvo.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   };
   await desenhar();
 }

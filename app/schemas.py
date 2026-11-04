@@ -1066,6 +1066,27 @@ class PlanoOut(Out):
     passos: list[PlanoPassoOut] | None = None
 
 
+class PrazoIn(In):
+    prazo: date
+    quantidade: float | None = Field(None, gt=0, le=100000)
+    inicio: UTC | None = None
+
+
+class PrazoOut(Out):
+    veredito: Literal["cabe", "nao_cabe", "incerto"]
+    prazo: date
+    quantidade: float
+    aproximado: bool
+    completo: bool
+    inicio: datetime
+    termina_em: datetime
+    folga_dias: int
+    ultimo_dia_para_comecar: date | None
+    tempo_por_unidade_min: float
+    tempo_total_min: float
+    pessoas: int
+
+
 class PlanoOrdemIn(In):
     cliente: Nome | None = None
     prazo: date | None = None

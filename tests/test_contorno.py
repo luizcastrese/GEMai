@@ -97,3 +97,22 @@ def test_ia_pergunta_o_contorno_minimo_e_cria_os_locais(gestor, unidade_id):
     rec = gestor.post(f"/unidades/{unidade_id}/diagnostico/estruturar").json()
     nomes = [e["nome"] for e in rec["conteudo"]["espacos"]]
     assert nomes == ["Estoque", "Bancada de corte", "Montagem"]  # item com número (distância) não vira local
+
+
+def test_caminho_produto_exige_capacidade_das_maquinas_e_diz_em_que_secao_resolver(gestor, unidade_id):
+    """Quem só usa produtos → plano (sem processos) também tem a oficina incompleta se a máquina não tem "peças por hora"."""
+    est = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Estoque", "tipo": "estoque"}).json()
+    cor = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Corte", "tipo": "area"}).json()
+    mon = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Montagem", "tipo": "montagem"}).json()
+    gestor.post("/recursos", {"unidade_id": unidade_id, "nome": "Seccionadora", "funcao": "corte", "espaco_id": cor["id"]})
+    p = gestor.post("/produtos", {"nome": "Mesa"}).json()
+    gestor.post(f"/produtos/{p['id']}/componentes", {"nome": "Tampo", "quantidade": 1})
+    r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
+    secoes = {x["secao"] for x in r["pendencias"]}
+    assert r["completo"] is False and secoes == {"distancias", "equipamentos"}
+    assert [x["texto"] for x in r["pendencias"]] == r["faltando"]
+    for o, d in ((est, cor), (cor, mon)):
+        gestor.c.put("/api/v1/distancias", headers=gestor.h, json={"origem_id": o["id"], "destino_id": d["id"], "metros": 10})
+    gestor.patch(f"/recursos/{gestor.get('/recursos').json()[0]['id']}", {"capacidade": 30, "capacidade_unidade": "un/h"})
+    r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
+    assert r["pendentes"] == 0 and r["pendencias"] == [] and r["completo"] is True

@@ -28,19 +28,25 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
                       .where(Operacao.empresa_id == empresa_id, Processo.unidade_id.in_(unidade_ids),
                              Processo.status.in_(("rascunho", "ativo")))
                       .order_by(Processo.id, Etapa.sequencia, Operacao.sequencia)).all()
-    tarefas, faltando = [], []
+    tarefas, faltando, pendencias = [], [], []
+
+    def falta(secao: str, texto: str) -> None:
+        """`secao` diz em que bloco da tela da Oficina o usuário resolve (locais, distancias, equipamentos, tarefas)."""
+        faltando.append(texto)
+        pendencias.append({"secao": secao, "texto": texto})
+
     pares: dict[tuple[int, int], dict] = {}
     equip_usados: set[int] = set()
     total = 0
     if not locais:
-        faltando.append("Cadastre os locais por onde a peça passa (ex.: estoque, bancada, montagem).")
+        falta("locais", "Cadastre os locais por onde a peça passa (ex.: estoque, bancada, montagem).")
         total += 1
     for op, et, pr in rows:
         pend = []
         total += 1  # peso da peça
         if op.item_peso_kg is None:
             pend.append("peso da peça")
-            faltando.append(f"Peso da peça em '{op.nome}'")
+            falta("tarefas", f"Peso da peça em '{op.nome}'")
         if op.recurso_padrao_id:
             equip_usados.add(op.recurso_padrao_id)
         o, d = op.espaco_origem_id, op.espaco_destino_id
@@ -53,7 +59,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
         elif bool(o) != bool(d):
             total += 1
             pend.append("de onde sai e para onde vai")
-            faltando.append(f"De onde a peça sai e para onde vai em '{op.nome}'")
+            falta("tarefas", f"De onde a peça sai e para onde vai em '{op.nome}'")
         tarefas.append({"operacao_id": op.id, "processo_id": pr.id, "processo": pr.nome, "status": pr.status,
                         "nome": op.nome if et.nome == op.nome else f"{et.nome} › {op.nome}",
                         "recurso_padrao_id": op.recurso_padrao_id, "espaco_origem_id": o, "espaco_destino_id": d,
@@ -69,6 +75,8 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
             return e.id if e else None
         rota = [local_de("estoque"), local_de(funcao="corte"), local_de(funcao="bordo"), local_de(funcao="furacao"), local_de("montagem")]
         rota = [x for x in rota if x]
+        # o plano usa os equipamentos de corte, borda e furação: sem "peças por hora" o passo fica sem tempo
+        equip_usados |= {r.id for r in equip.values() if r.funcao in ("corte", "bordo", "furacao")}
         for a, b in zip(rota, rota[1:]):
             if a == b:
                 continue
@@ -79,7 +87,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
     for par in pares.values():
         total += 1
         if par["metros"] is None:
-            faltando.append(f"Distância entre {par['origem']} e {par['destino']}")
+            falta("distancias", f"Distância entre {par['origem']} e {par['destino']}")
     equipamentos = []
     for r in equip.values():
         cap = modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade)
@@ -87,7 +95,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
         if usado:
             total += 1
             if cap is None:
-                faltando.append(f"Quantas peças por hora faz '{r.nome}'")
+                falta("equipamentos", f"Quantas peças por hora faz '{r.nome}'")
         equipamentos.append({"id": r.id, "nome": r.nome, "capacidade": r.capacidade, "capacidade_unidade": r.capacidade_unidade,
                              "pecas_por_hora": cap, "capacidade_origem": r.capacidade_origem, "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao})
     pendentes = len(faltando)
@@ -97,7 +105,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
         "equipamentos": sorted(equipamentos, key=lambda x: x["nome"]),
         "pecas": [{"id": p.id, "nome": p.nome, "peso_kg": p.peso_kg} for p in pecas],
         "tarefas": tarefas, "distancias": sorted(pares.values(), key=lambda x: (x["origem"], x["destino"])),
-        "faltando": faltando, "pendentes": pendentes, "total": max(total, 1),
+        "faltando": faltando, "pendencias": pendencias, "pendentes": pendentes, "total": max(total, 1),
         "completo": pendentes == 0 and (bool(rows) or usa_produtos),
         "progresso_pct": round(100 * (max(total, 1) - pendentes) / max(total, 1)) if rows or locais or usa_produtos else 0,
     }
