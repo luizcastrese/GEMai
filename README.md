@@ -9,6 +9,28 @@ ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitu
 - Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
 - **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
 
+## Fluxo principal (foco do TCC): do produto ao tempo padrão
+
+O problema atacado: o profissional faz o produto de forma heurística, não tem **tempo padrão** e acaba aceitando prazos sem saber quanto o trabalho leva.
+O caminho principal da interface tem só três passos (menu: *Início · 1. Produtos · 2. Oficina · 3. Planos de trabalho · Configurações*):
+
+1. **Produto:** o que será feito (texto livre interpretado pela IA, ou lista de peças e ligações).
+2. **Oficina:** locais, distância entre eles e máquinas, em **passo a passo** (locais → máquinas → ritmo opcional → distâncias → pronto) ou numa tela avançada só.
+   O tempo de máquina vem da **ficha técnica** (avanço, velocidade…), nunca de uma taxa digitada. **Quem quiser registrar quantas peças a máquina faz por hora**
+   (medição ou estimativa) clica em *"Não sei: a IA estima"*, descreve o equipamento e/ou envia uma **foto**; a IA **propõe** um valor com faixa, premissas e
+   confiança (nunca "alta"), e o usuário confere antes de gravar. Valor da IA fica rotulado *estimado pela IA* e entra nas premissas do plano (não alimenta o motor).
+   Sem IA externa habilitada, o sistema só aproveita um número escrito pelo usuário (não inventa).
+3. **Plano de trabalho:** a IA escolhe módulos do catálogo; o sistema calcula e mostra, em destaque, o **tempo padrão por unidade** e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
+
+Dois apoios no caminho principal:
+- **Antes de gerar o plano**, o sistema confere a oficina. Se faltar dado (distância, ficha técnica de uma máquina que o plano usa, locais), mostra a lista e
+  leva direto ao bloco certo da tela *Oficina* (destacado), em vez de gerar um plano parcial. "Gerar mesmo assim" continua possível: os passos sem dado ficam "sem tempo", nunca zero.
+- **"Posso prometer esta data?"** (tela do plano, `POST /planos/{id}/prazo`): informe quantidade e prazo pedido; o sistema usa os tempos e a jornada do plano (sem IA, sem gravar nada)
+  e responde **cabe / não cabe / não dá para garantir**, quando termina e **até que dia dá para começar**. Plano com passos sem tempo nunca recebe "cabe". Com quantidade diferente da do plano,
+  só o tempo de execução é escalado (preparo fixo): é **estimativa proporcional**, declarada na tela.
+
+Ordens, fila, conferência de registros, processos e análises continuam no sistema, mas só aparecem no menu com **"Mostrar detalhes técnicos"** ligado (fase 2: medir o real para melhorar o padrão).
+
 ## Experiência do usuário: um só tipo de usuário, simples por padrão
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.

@@ -1,4 +1,4 @@
-"""Contorno físico mínimo: locais, distâncias, peças por hora e peso — o suficiente para a IA prever o tempo."""
+"""Contorno físico mínimo: locais, distâncias, ficha técnica e peso — o suficiente para a IA prever o tempo."""
 from tests.conftest import registrar
 
 
@@ -101,3 +101,24 @@ def test_ia_pergunta_o_contorno_minimo_e_cria_os_locais(gestor, unidade_id):
     rec = gestor.post(f"/unidades/{unidade_id}/diagnostico/estruturar").json()
     nomes = [e["nome"] for e in rec["conteudo"]["espacos"]]
     assert nomes == ["Estoque", "Bancada de corte", "Montagem"]  # item com número (distância) não vira local
+
+
+def test_caminho_produto_exige_ficha_das_maquinas_e_diz_em_que_secao_resolver(gestor, unidade_id):
+    """Quem só usa produtos → plano (sem processos) também tem a oficina incompleta se a máquina não tem ficha técnica."""
+    est = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Estoque", "tipo": "estoque"}).json()
+    cor = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Corte", "tipo": "area"}).json()
+    mon = gestor.post("/espacos", {"unidade_id": unidade_id, "nome": "Montagem", "tipo": "montagem"}).json()
+    rec = gestor.post("/recursos", {"unidade_id": unidade_id, "nome": "Seccionadora", "funcao": "corte", "espaco_id": cor["id"]}).json()
+    p = gestor.post("/produtos", {"nome": "Mesa"}).json()
+    gestor.post(f"/produtos/{p['id']}/componentes", {"nome": "Tampo", "quantidade": 1})
+    r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
+    secoes = {x["secao"] for x in r["pendencias"]}
+    assert r["completo"] is False and secoes == {"distancias", "equipamentos"}
+    assert [x["texto"] for x in r["pendencias"]] == r["faltando"]
+    assert any("Ficha técnica de 'Seccionadora'" in x["texto"] for x in r["pendencias"])
+    for o, d in ((est, cor), (cor, mon)):
+        gestor.c.put("/api/v1/distancias", headers=gestor.h, json={"origem_id": o["id"], "destino_id": d["id"], "metros": 10})
+    for nome, v in (("avanco_corte_m_min", 30), ("espessura_max_corte_mm", 40)):
+        assert gestor.post("/parametros", {"escopo_tipo": "recurso", "escopo_id": rec["id"], "nome": nome, "valor_num": v}).status_code == 201
+    r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
+    assert r["pendentes"] == 0 and r["pendencias"] == [] and r["completo"] is True

@@ -202,6 +202,7 @@ def propor(base: Base, quantidade: float):
                          "furos": c["furos"], "bordas_m": c["bordas_m"]} for c in base.comps_d],
         "ligacoes": base.ligs_d,
         "recursos": [{"nome": r.nome, "funcao": r.funcao, "tipo": r.tipo, "ficha_tecnica": sorted(base.fichas[r.id]),
+                      "capacidade_origem": r.capacidade_origem or "",
                       "espaco": base.esp_id[r.espaco_id].nome if r.espaco_id in base.esp_id else None} for r in base.recursos],
         "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in base.espacos],
         "distancias": base.distancias, "pessoas": base.pessoas_cfg, "modulos": catalogo.resumo_para_ia(),
@@ -309,7 +310,9 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
     obsoleto = ["O campo 'fadiga % por hora' é obsoleto e foi ignorado: a fadiga por turno só entra no cálculo quando for aprendida dos dados."] \
         if cfg.get("fadiga_ignorada") else []
-    plano.premissas = list(dict.fromkeys(proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
+    estimadas = sorted({r.nome for r in base.recursos if r.capacidade_origem == "ia" and r.capacidade})
+    nota_cap = [f"Capacidade estimada pela IA (não medida) em: {', '.join(estimadas)}. Substitua por uma medição para ganhar confiança."] if estimadas else []
+    plano.premissas = list(dict.fromkeys(nota_cap + proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
                                          + obsoleto + (extras_premissas or []) + ([aviso] if aviso else [])))
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(base.blocos)
@@ -358,6 +361,57 @@ def hierarquia_do_plano(produto_nome: str, plano: PlanoTrabalho) -> dict:
                "tempo_prep_min": p.tempo_prep_min, "tempo_exec_min": p.tempo_exec_min, "tempo_padrao_min": p.tempo_padrao_min,
                "faltantes": p.faltantes} for p in plano.passos]
     return motor.hierarquia(produto_nome, plano.quantidade, passos)
+
+
+# ------------------------------------------------------------------ "dá para entregar até…?"
+def _simular_fim(inicio: datetime, blocos, uteis: bool, duracoes: list[float]) -> datetime:
+    return agendar(inicio, blocos, uteis, duracoes)[-1][1]
+
+
+def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | None, inicio: datetime | None) -> dict:
+    """Responde "cabe no prazo?" reaproveitando os tempos do plano e a jornada dele (sem chamar a IA nem gravar nada).
+
+    Com outra quantidade, escala só o tempo de execução (o preparo não muda): é uma ESTIMATIVA proporcional,
+    declarada como `aproximado`. Passos sem tempo não entram na conta: se o plano está incompleto, o sistema
+    nunca diz "cabe" (o prazo real seria maior) — só pode dizer "não cabe" ou "incerto".
+    """
+    cfg = plano.config or {}
+    blocos = _blocos(cfg)
+    uteis = bool(cfg.get("so_dias_uteis", True))
+    tz = tz_empresa(ctx.empresa)
+    qtd = quantidade or plano.quantidade
+    fator = qtd / plano.quantidade if plano.quantidade else 1.0
+    comtempo = [p for p in plano.passos if p.tempo_padrao_min is not None]
+    if not comtempo:
+        raise HTTPException(422, "Este plano ainda não tem nenhum passo com tempo calculado. Complete os dados e recalcule.")
+    duracoes = [(p.tempo_prep_min or 0.0) + (p.tempo_exec_min or 0.0) * fator for p in comtempo]
+    por_unidade = sum(duracoes) / qtd
+
+    agora = datetime.now(timezone.utc).astimezone(tz).replace(tzinfo=None)
+    ini_local = inicio.astimezone(tz).replace(tzinfo=None) if inicio else agora
+    limite = datetime.combine(prazo, blocos[-1][1])  # fim do último bloco do dia combinado
+    ag = agendar(ini_local, blocos, uteis, duracoes)
+    fim, ini_real = ag[-1][1], ag[0][0]
+
+    # último dia em que ainda dá para começar (olhando para trás a partir do prazo)
+    ultimo_inicio = None
+    for k in range(0, 120):
+        dia = prazo - timedelta(days=k)
+        if _simular_fim(datetime.combine(dia, blocos[0][0]), blocos, uteis, duracoes) <= limite:
+            ultimo_inicio = dia
+            break
+
+    completo = bool(plano.totais.get("completo")) and len(comtempo) == len(plano.passos)
+    cabe_no_calculo = fim <= limite
+    veredito = "nao_cabe" if not cabe_no_calculo else ("cabe" if completo else "incerto")
+    aprox = abs(fator - 1.0) > 1e-9
+    utc = lambda d: d.replace(tzinfo=tz).astimezone(timezone.utc)  # noqa: E731
+    return {
+        "veredito": veredito, "prazo": prazo, "quantidade": qtd, "aproximado": aprox, "completo": completo,
+        "inicio": utc(ini_real), "termina_em": utc(fim), "folga_dias": (limite.date() - fim.date()).days,
+        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2),
+        "tempo_total_min": round(sum(duracoes), 2), "pessoas": int(cfg.get("pessoas") or 1),
+    }
 
 
 # ------------------------------------------------------------------ plano → ordem de produção

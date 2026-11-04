@@ -401,6 +401,7 @@ class RecursoIn(In):
     processos_relacionados: list[Curto] = Field(default_factory=list, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] = "un/h"
+    capacidade_origem: Literal["", "medido", "ia"] = ""
     equipes_habilitadas: list[Curto] = Field(default_factory=list, max_length=50)
     local_posto: Curto = ""
     horas_disponiveis_dia: float = Field(8.0, gt=0, le=24)
@@ -419,6 +420,7 @@ class RecursoUpdate(In):
     processos_relacionados: list[Curto] | None = Field(None, max_length=50)
     capacidade: float | None = Field(None, ge=0)
     capacidade_unidade: Annotated[str, Field(max_length=40)] | None = None
+    capacidade_origem: Literal["", "medido", "ia"] | None = None
     equipes_habilitadas: list[Curto] | None = Field(None, max_length=50)
     local_posto: Curto | None = None
     horas_disponiveis_dia: float | None = Field(None, gt=0, le=24)
@@ -440,6 +442,7 @@ class RecursoOut(Out):
     processos_relacionados: list
     capacidade: float | None
     capacidade_unidade: str
+    capacidade_origem: str = ""
     equipes_habilitadas: list
     local_posto: str
     horas_disponiveis_dia: float
@@ -1027,6 +1030,24 @@ class EstruturaOut(Out):
     ligacoes: list[LigacaoOut]
 
 
+class EstimarCapacidadeIn(In):
+    """O usuário descreve a máquina (modelo, potência, o que faz) e/ou envia uma foto; a IA PROPÕE uma capacidade."""
+    descricao: Annotated[str, Field(max_length=2000)] = ""
+    imagem_base64: Annotated[str, Field(max_length=900_000)] | None = None
+    imagem_tipo: Literal["image/jpeg", "image/png", "image/webp"] | None = None
+
+
+class EstimarCapacidadeOut(Out):
+    pecas_por_hora: float | None
+    minimo: float | None
+    maximo: float | None
+    confianca: str
+    premissas: list[str]
+    dados_faltantes: list[str]
+    provedor: str
+    aviso: str = ""
+
+
 class InterpretarProdutoIn(In):
     descricao: Annotated[str, Field(min_length=3, max_length=4000)]
     substituir: bool = False
@@ -1130,6 +1151,27 @@ class PlanoOut(Out):
     confirmado_em: datetime | None
     passos: list[PlanoPassoOut] | None = None
     hierarquia: dict | None = None  # produto → grupo → módulo → elementos (normal, tolerâncias, padrão, preparação)
+
+
+class PrazoIn(In):
+    prazo: date
+    quantidade: float | None = Field(None, gt=0, le=100000)
+    inicio: UTC | None = None
+
+
+class PrazoOut(Out):
+    veredito: Literal["cabe", "nao_cabe", "incerto"]
+    prazo: date
+    quantidade: float
+    aproximado: bool
+    completo: bool
+    inicio: datetime
+    termina_em: datetime
+    folga_dias: int
+    ultimo_dia_para_comecar: date | None
+    tempo_por_unidade_min: float
+    tempo_total_min: float
+    pessoas: int
 
 
 class PlanoOrdemIn(In):

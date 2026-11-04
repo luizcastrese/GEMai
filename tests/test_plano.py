@@ -376,3 +376,58 @@ def test_usuario_restrito_a_outra_unidade_nao_ve_o_plano(admin, unidade_id):
     restrito = criar_usuario(admin, "filial@a.com", [outra["id"]])
     assert restrito.get(f"/planos/{p['id']}").status_code == 404
     assert restrito.post("/planos", {"produto_id": pid, "unidade_id": unidade_id}).status_code == 404
+
+
+# ------------------------------------------------------------------ "cabe até esta data?"
+def test_prazo_diz_se_cabe_quando_deve_comecar_e_nao_grava_nada(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    p = _gerar(admin, pid, unidade_id)  # 2 un., começa quarta 14/10/2026 às 08:00 (−03:00)
+    antes = admin.get(f"/planos/{p['id']}").json()
+    inicio = "2026-10-14T08:00:00-03:00"
+
+    ok = admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-14", "inicio": inicio}).json()
+    assert ok["veredito"] == "cabe" and ok["completo"] and not ok["aproximado"] and ok["ultimo_dia_para_comecar"] == "2026-10-14"
+    assert ok["tempo_total_min"] == pytest.approx(p["totais"]["tempo_padrao_min"], abs=0.01)
+    assert ok["tempo_por_unidade_min"] == pytest.approx(p["totais"]["tempo_padrao_min"] / 2, abs=0.01)
+    assert datetime.fromisoformat(ok["termina_em"]) == datetime.fromisoformat(p["totais"]["fim"])  # mesmo cálculo da agenda do plano
+
+    # 3.000 unidades: não cabe em 2 dias, e o sistema avisa que o número é proporcional
+    grande = admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-15", "inicio": inicio, "quantidade": 3000}).json()
+    assert grande["veredito"] == "nao_cabe" and grande["aproximado"] and grande["folga_dias"] < 0
+    assert grande["ultimo_dia_para_comecar"] is None or grande["ultimo_dia_para_comecar"] < "2026-10-14"
+    assert grande["tempo_por_unidade_min"] < ok["tempo_por_unidade_min"]  # o preparo se dilui em mais peças
+
+    # começar depois do prazo também não cabe
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-14", "inicio": "2026-10-16T08:00:00-03:00"}).json()["veredito"] == "nao_cabe"
+    # fim de semana: só dia útil, então começar na sexta de manhã ainda entrega no sábado
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-17", "inicio": "2026-10-16T08:00:00-03:00"}).json()["veredito"] == "cabe"
+    assert admin.get(f"/planos/{p['id']}").json() == antes  # só calcula
+
+
+def test_prazo_nunca_promete_com_plano_incompleto(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id, ficha=False)  # corte sem ficha técnica → passo sem tempo
+    pid, _, _ = _mesa(admin)
+    p = _gerar(admin, pid, unidade_id)
+    r = admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-12-31", "inicio": "2026-10-14T08:00:00-03:00"}).json()
+    assert r["completo"] is False and r["veredito"] == "incerto"  # folgado, mas faltam dados: não diz "cabe"
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-14", "inicio": "2026-10-14T16:59:00-03:00", "quantidade": 3000}).json()["veredito"] == "nao_cabe"
+
+
+def test_prazo_valida_entrada_e_respeita_cancelamento(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    p = _gerar(admin, pid, unidade_id)
+    assert admin.post(f"/planos/{p['id']}/prazo", {}).status_code == 422
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-20", "quantidade": 0}).status_code == 422
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-20", "empresa_id": 9}).status_code == 422  # extra="forbid"
+    admin.post(f"/planos/{p['id']}/cancelar")
+    assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-20"}).status_code == 409
+
+
+def test_prazo_de_outra_empresa_responde_404(client, admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    p = _gerar(admin, pid, unidade_id)
+    outro = registrar(client, nome="Empresa B", email="b@exemplo.com")
+    assert outro.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-20"}).status_code == 404
