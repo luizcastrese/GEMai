@@ -67,6 +67,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box
 textarea{min-height:90px;resize:vertical}input[type=checkbox]{width:auto;min-height:0;accent-color:var(--pri)}
 .row{display:flex;gap:.8rem;flex-wrap:wrap;align-items:flex-end}.row>*{flex:1 1 150px}.row>button,.row>.btn{flex:0 0 auto}
 .inline{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.card>.row{margin:.55rem 0}
 
 /* ---------- selos e avisos ---------- */
 .badge{display:inline-block;padding:.12rem .65rem;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--soft);color:var(--tx2);white-space:nowrap}
@@ -142,6 +143,31 @@ tr.semtempo td{background:#fffaf0}
 .veredito.cabe{background:#eefaf2;border-color:#cdeedb}.veredito.nao_cabe{background:#fdf1ef;border-color:#f5cdc8}.veredito.incerto{background:#fff6e5;border-color:#f5dfae}
 .veredito .t{font-size:1.25rem;font-weight:650;margin:0 0 .25rem}.veredito.cabe .t{color:var(--ok)}.veredito.nao_cabe .t{color:var(--err)}.veredito.incerto .t{color:var(--warn)}
 .veredito p{margin:.2rem 0}
+
+/* ---------- passo a passo (Oficina) ---------- */
+.passos{list-style:none;display:flex;gap:.25rem;padding:0;margin:0 0 1.4rem;overflow-x:auto}
+.passos li{flex:1 1 0;min-width:68px}
+.passos button{display:flex;flex-direction:column;align-items:center;gap:.4rem;width:100%;border:0;background:none;padding:.4rem .2rem;min-height:0;color:var(--mut)}
+.passos button:hover{background:none;color:var(--tx)}
+.bolha{width:2.1rem;height:2.1rem;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--bd2);background:#fff;font-weight:650;transition:background var(--t),border-color var(--t),box-shadow var(--t),color var(--t)}
+.passos .on .bolha{background:var(--pri);border-color:var(--pri);color:#fff;box-shadow:0 0 0 4px rgba(43,89,217,.14)}
+.passos .ok .bolha{background:var(--ok-s);border-color:var(--ok-s);color:var(--ok)}
+.passos .rot{font-size:.84rem;font-weight:560}.passos .on .rot{color:var(--tx)}
+.pergunta{animation:entra .3s var(--ease) both;padding:1.6rem 1.7rem}
+.pergunta>h2:first-child{font-size:1.45rem;margin-bottom:.3rem}
+.chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:.8rem 0 1.1rem}
+.chip{border-radius:999px;border-style:dashed;border-color:#c3d2f6;background:var(--pri-s);color:var(--pri)}
+.chip:hover{background:#e2eafc;border-color:var(--pri)}
+.itens{display:flex;flex-direction:column;gap:.7rem;margin:.9rem 0}
+.item{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.item>input{flex:1 1 200px;width:auto}.item>select{flex:0 1 220px;width:auto}
+.item.maq{flex-direction:column;align-items:stretch;border:1px solid var(--bd);border-radius:12px;padding:1rem 1.1rem;background:#fcfdff;gap:.6rem}
+.linha{display:flex;gap:.6rem;align-items:center;justify-content:space-between}.linha input{flex:1;width:auto}
+.pilulas{display:flex;flex-wrap:wrap;gap:.4rem}
+.pilula{border-radius:999px;min-height:38px;padding:.2rem 1rem;font-weight:500}
+.pilula.on{background:var(--pri);border-color:var(--pri);color:#fff}.pilula.on:hover{background:var(--pri-d)}
+.assist-nav{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-top:1.2rem}
+@media(max-width:560px){.assist-nav{flex-direction:column-reverse;align-items:stretch;text-align:center}.assist-nav button{width:100%}.passos .rot{font-size:.72rem}}
 
 /* ---------- movimento: cada tela entra suave, em cascata ---------- */
 main>div:last-child>*{animation:entra .4s var(--ease) both}

@@ -73,12 +73,12 @@ function estimarComIA(r, recarregar) {
 }
 
 // Contorno físico MÍNIMO: onde as coisas ficam, a que distância, quanto cada máquina produz e quanto pesa a peça.
-export async function contorno(el) {
+export async function contornoAvancado(el) {
   let refAberto = false;
   const uid = estado.unidadeId;
   const topo = h('div'); const secoes = h('div');
-  montar(el, h('h1', null, 'Oficina'),
-    h('p', { class: 'muted' }, 'Onde as coisas ficam, a que distância e quais máquinas você tem. Se não souber quanto cada máquina produz por hora, a IA estima por descrição ou foto. Tudo é salvo ao preencher.'),
+  montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/contorno' }, '← Voltar ao passo a passo')), h('h1', null, 'Oficina: ajustes avançados'),
+    h('p', { class: 'muted' }, 'Todos os dados da oficina numa tela só: locais, distâncias, máquinas, tarefas, pesos, tempos de montagem e ambiente. Tudo é salvo ao preencher.'),
     topo, secoes);
 
   const progresso = async () => {
@@ -182,4 +182,140 @@ export async function contorno(el) {
     if (alvo) { alvo.classList.add('destaque'); alvo.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   };
   await desenhar();
+}
+
+// ---------------------------------------------------------------- passo a passo
+// Uma pergunta por vez, na língua da oficina. Os mesmos dados da tela avançada, só que em etapas curtas.
+const SUG_LOCAL = [['Estoque de chapas', 'estoque'], ['Bancada de corte', 'area'], ['Montagem', 'montagem'], ['Expedição', 'expedicao']];
+const SUG_MAQ = [['Seccionadora', 'corte'], ['Coladeira de borda', 'bordo'], ['Furadeira', 'furacao']];
+const DIST_RAPIDAS = [['Lado a lado', 2], ['Mesma sala', 8], ['Outra sala', 20]];
+const PASSOS = ['Locais', 'Máquinas', 'Ritmo', 'Distâncias', 'Pronto'];
+const PASSO_DA_SECAO = { locais: 0, equipamentos: 2, distancias: 3 };
+const FUNCOES_PILULA = FUNCOES.filter(([v]) => v);
+
+export async function contorno(el) {
+  const uid = estado.unidadeId;
+  if (estado.foco === 'tarefas') { estado.foco = null; location.hash = '#/contorno/avancado'; return undefined; }
+  let passo = null; // null: abre no primeiro passo que ainda falta
+  const topo = h('div'); const corpo = h('div'); const rodape = h('div', { class: 'assist-nav' });
+  montar(el, h('h1', null, 'Oficina'),
+    h('p', { class: 'muted' }, 'Vamos montar a sua oficina em poucos passos. Tudo é salvo ao preencher e você pode voltar quando quiser.'),
+    topo, corpo, rodape);
+
+  const pend = (c, secao) => c.pendencias.some((p) => p.secao === secao);
+  // ✓ só onde há algo realmente preenchido (ou já visitado): evita marcar "Pronto" antes da hora
+  const feito = (c, i) => [c.locais.length > 0, c.equipamentos.length > 0, c.equipamentos.length > 0 && c.equipamentos.every((r) => r.pecas_por_hora != null),
+    passo > 3 && !pend(c, 'distancias'), false][i];
+  const primeiroIncompleto = (c) => {
+    if (!c.locais.length) return 0;
+    if (!c.equipamentos.length) return 1;
+    if (pend(c, 'equipamentos')) return 2;
+    if (pend(c, 'distancias')) return 3;
+    return 4;
+  };
+
+  const desenharTopo = (c) => montar(topo, h('ol', { class: 'passos', 'aria-label': 'Passos da oficina' }, PASSOS.map((nome, i) =>
+    h('li', { class: i === passo ? 'on' : feito(c, i) ? 'ok' : '' },
+      h('button', { type: 'button', 'aria-current': i === passo ? 'step' : undefined, onclick: () => { passo = i; desenhar(); } },
+        h('span', { class: 'bolha' }, feito(c, i) && i !== passo ? '✓' : i + 1), h('span', { class: 'rot' }, nome))))));
+
+  // edição de um campo: salva e só atualiza o topo (não redesenha, para não perder o foco ao navegar de campo em campo)
+  const leve = async (fn) => {
+    const r = await tentar(fn);
+    if (r === undefined) return;
+    toast('Salvo.');
+    desenharTopo(await get(`/contorno${qs({ unidade_id: uid })}`));
+  };
+  const estrutural = async (fn) => { if (await tentar(fn) !== undefined) desenhar(); };
+
+  const pergunta = (titulo, ajuda, ...filhos) => h('div', { class: 'card pergunta' }, h('h2', null, titulo), h('p', { class: 'muted' }, ajuda), ...filhos);
+
+  // 1. Locais
+  const passoLocais = (c) => {
+    const novo = h('input', { placeholder: 'ou escreva outro local', 'aria-label': 'Nome do novo local' });
+    const add = (nome, tipo = 'area') => (nome.trim() ? estrutural(() => post('/espacos', { unidade_id: uid, nome: nome.trim(), tipo })) : toast('Digite o nome do local.', true));
+    const jaTem = (n) => c.locais.some((l) => l.nome.toLowerCase() === n.toLowerCase());
+    const sug = SUG_LOCAL.filter(([n]) => !jaTem(n));
+    return pergunta('Onde você trabalha?', 'Os lugares por onde a peça passa. Toque nos que existem na sua oficina.',
+      sug.length ? h('div', { class: 'chips' }, sug.map(([n, t]) => h('button', { type: 'button', class: 'chip', onclick: () => add(n, t) }, `+ ${n}`))) : null,
+      c.locais.length ? h('div', { class: 'itens' }, c.locais.map((l) => h('div', { class: 'item' },
+        h('input', { value: l.nome, 'aria-label': 'Nome do local', onchange: (e) => leve(() => patch(`/espacos/${l.id}`, { nome: e.target.value })) }),
+        (() => { const t = h('select', { 'aria-label': 'Tipo do local', onchange: (e) => estrutural(() => patch(`/espacos/${l.id}`, { tipo: e.target.value })) },
+          TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r))); t.value = l.tipo; return t; })(),
+        h('button', { type: 'button', class: 'sm dng', title: 'Remover', 'aria-label': `Remover ${l.nome}`, onclick: () => estrutural(() => patch(`/espacos/${l.id}`, { ativo: false })) }, '✕')))) : null,
+      h('div', { class: 'row' }, novo, h('button', { type: 'button', onclick: () => add(novo.value) }, '+ Adicionar')));
+  };
+
+  // 2. Máquinas
+  const passoMaquinas = (c) => {
+    const novo = h('input', { placeholder: 'ou escreva outra máquina', 'aria-label': 'Nome da nova máquina' });
+    const add = (nome, funcao = '') => (nome.trim() ? estrutural(() => post('/recursos', { unidade_id: uid, nome: nome.trim(), tipo: 'maquina', capacidade_unidade: 'un/h', funcao })) : toast('Digite o nome da máquina.', true));
+    const jaTem = (n) => c.equipamentos.some((r) => r.nome.toLowerCase() === n.toLowerCase());
+    const sug = SUG_MAQ.filter(([n]) => !jaTem(n));
+    return pergunta('Quais máquinas você usa?', 'Toque nas que você tem e diga para que cada uma serve. Trabalho todo manual? Pode seguir sem máquinas.',
+      sug.length ? h('div', { class: 'chips' }, sug.map(([n, f]) => h('button', { type: 'button', class: 'chip', onclick: () => add(n, f) }, `+ ${n}`))) : null,
+      c.equipamentos.length ? h('div', { class: 'itens' }, c.equipamentos.map((r) => h('div', { class: 'item maq' },
+        h('div', { class: 'linha' },
+          h('input', { value: r.nome, 'aria-label': 'Nome da máquina', onchange: (e) => leve(() => patch(`/recursos/${r.id}`, { nome: e.target.value })) }),
+          h('button', { type: 'button', class: 'sm dng', title: 'Remover', 'aria-label': `Remover ${r.nome}`, onclick: () => estrutural(() => patch(`/recursos/${r.id}`, { ativo: false })) }, '✕')),
+        h('div', { class: 'muted small' }, 'Para que serve?'),
+        h('div', { class: 'pilulas', role: 'group', 'aria-label': `Para que serve ${r.nome}` }, FUNCOES_PILULA.map(([v, t]) =>
+          h('button', { type: 'button', class: `pilula${r.funcao === v ? ' on' : ''}`, 'aria-pressed': r.funcao === v ? 'true' : 'false',
+            onclick: () => estrutural(() => patch(`/recursos/${r.id}`, { funcao: r.funcao === v ? '' : v })) }, t))),
+        c.locais.length ? h('div', null, h('div', { class: 'muted small' }, 'Em que local fica?'), seletor(c.locais, r.espaco_id, 'Escolha…', (v) => estrutural(() => patch(`/recursos/${r.id}`, { espaco_id: v })))) : null))) : null,
+      h('div', { class: 'row' }, novo, h('button', { type: 'button', onclick: () => add(novo.value) }, '+ Adicionar')));
+  };
+
+  // 3. Ritmo (peças por hora): medido ou estimado pela IA
+  const passoRitmo = (c) => pergunta('Quantas peças cada máquina faz por hora?',
+    'Se você já cronometrou, digite. Se não sabe, toque em "Não sei: a IA estima" e conte o que souber da máquina, ou mande uma foto.',
+    c.equipamentos.length ? h('div', { class: 'itens' }, c.equipamentos.map((r) => h('div', { class: 'item maq' },
+      h('div', { class: 'linha' }, h('strong', null, r.nome), h('span', { class: 'muted small' }, (FUNCOES.find((f) => f[0] === r.funcao) || [])[1] || '')),
+      celulaCapacidade(r, desenhar, leve))))
+      : h('p', { class: 'muted' }, 'Nenhuma máquina cadastrada: nada a informar aqui. Pode continuar.'));
+
+  // 4. Distâncias: toque numa opção (ou digite os metros)
+  const passoDistancias = (c) => pergunta('Qual a distância entre os locais?',
+    'Só o que o sistema precisa para contar o tempo de levar a peça de um lugar a outro. Escolha a opção mais próxima; se souber, digite os metros.',
+    c.distancias.length ? h('div', { class: 'itens' }, c.distancias.map((d) => {
+      const gravar = (m) => api('PUT', '/distancias', { origem_id: d.origem_id, destino_id: d.destino_id, metros: m });
+      const i = h('input', { type: 'number', min: '0', step: 'any', value: d.metros ?? '', placeholder: 'metros', 'aria-label': `Metros entre ${d.origem} e ${d.destino}` });
+      i.addEventListener('change', () => { if (i.value !== '') leve(() => gravar(Number(i.value))); });
+      return h('div', { class: 'item maq' }, h('div', { class: 'linha' }, h('strong', null, `${d.origem} ↔ ${d.destino}`)),
+        h('div', { class: 'pilulas' }, DIST_RAPIDAS.map(([t, m]) => h('button', { type: 'button', class: `pilula${d.metros === m ? ' on' : ''}`, 'aria-pressed': d.metros === m ? 'true' : 'false',
+          onclick: () => estrutural(() => gravar(m)) }, `${t} (${m} m)`))),
+        h('div', { class: 'inline' }, i, h('span', { class: 'muted small' }, 'metros')));
+    })) : h('p', { class: 'muted' }, 'Nenhuma distância necessária por enquanto. Elas aparecem quando os seus locais e máquinas formarem o caminho da peça (estoque, corte, borda, furação, montagem).'));
+
+  // 5. Pronto
+  const passoPronto = (c) => {
+    // além do que o servidor já cobra, avisa de máquina sem "peças por hora": o passo dela ficaria "sem tempo"
+    const faltas = [...c.pendencias];
+    c.equipamentos.filter((r) => r.pecas_por_hora == null).forEach((r) => {
+      if (!faltas.some((p) => p.secao === 'equipamentos' && p.texto.includes(r.nome))) faltas.push({ secao: 'equipamentos', texto: `Quantas peças por hora faz '${r.nome}'` });
+    });
+    return faltas.length === 0
+      ? h('div', { class: 'card ok-box pergunta' }, h('h2', null, '✓ Oficina pronta'), h('p', null, 'Agora a IA já consegue prever o tempo. Falta só gerar o plano de trabalho.'),
+        h('a', { class: 'btn pri big', href: '#/planos' }, 'Ir para os planos de trabalho'))
+      : h('div', { class: 'card pergunta' }, h('h2', null, 'Quase lá'), h('p', { class: 'muted' }, `Faltam ${faltas.length} informação(ões) para o plano ficar completo. Sem elas, os passos afetados ficam "sem tempo":`),
+        h('ul', { class: 'pend' }, faltas.slice(0, 6).map((p) => h('li', null, p.texto, ' ',
+          p.secao === 'tarefas' ? h('a', { class: 'btn sm', href: '#/contorno/avancado' }, 'Preencher')
+            : h('button', { type: 'button', class: 'sm', onclick: () => { passo = PASSO_DA_SECAO[p.secao] ?? 0; desenhar(); } }, 'Preencher'))),
+          faltas.length > 6 ? h('li', { class: 'muted' }, `e mais ${faltas.length - 6}…`) : null),
+        h('p', { class: 'small muted' }, 'Pode seguir mesmo assim: ', h('a', { href: '#/planos' }, 'ir para os planos de trabalho'), '.'));
+  };
+
+  const PASSO_FN = [passoLocais, passoMaquinas, passoRitmo, passoDistancias, passoPronto];
+  async function desenhar() {
+    const c = await get(`/contorno${qs({ unidade_id: uid })}`);
+    if (passo === null) { passo = PASSO_DA_SECAO[estado.foco] ?? primeiroIncompleto(c); estado.foco = null; }
+    desenharTopo(c);
+    montar(corpo, PASSO_FN[passo](c));
+    montar(rodape,
+      passo > 0 ? h('button', { type: 'button', onclick: () => { passo -= 1; desenhar(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }, '← Voltar') : h('span'),
+      h('a', { class: 'small muted', href: '#/contorno/avancado' }, 'Ver tudo numa tela só (avançado)'),
+      passo < PASSOS.length - 1 ? h('button', { type: 'button', class: 'pri', onclick: () => { passo += 1; desenhar(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }, 'Continuar →') : h('span'));
+  }
+  await desenhar();
+  return undefined;
 }

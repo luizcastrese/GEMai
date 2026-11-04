@@ -21,6 +21,7 @@ const ROTAS = [
   [/^#\/produtos$/, plano.produtos, ['Plano de trabalho', '1. Produtos', '#/produtos']],
   [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
   [/^#\/contorno$/, contorno.contorno, ['Plano de trabalho', '2. Oficina', '#/contorno']],
+  [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
   [/^#\/planos$/, plano.planos, ['Plano de trabalho', '3. Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
   [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
