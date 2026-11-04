@@ -22,6 +22,13 @@ O caminho principal da interface tem só três passos (menu: *Início · 1. Prod
 3. **Plano de trabalho:** a IA monta o roteiro a partir do produto, da oficina e de quem vai fazer (nº de pessoas e perfil); o sistema calcula e mostra,
    em destaque, o **tempo padrão por unidade** e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
 
+Dois apoios no caminho principal:
+- **Antes de gerar o plano**, o sistema confere a oficina. Se faltar dado (distância, "peças por hora" de uma máquina que o plano usa, locais), mostra a lista e
+  leva direto ao bloco certo da tela *Oficina* (destacado), em vez de gerar um plano parcial. "Gerar mesmo assim" continua possível: os passos sem dado ficam "sem tempo", nunca zero.
+- **"Posso prometer esta data?"** (tela do plano, `POST /planos/{id}/prazo`): informe quantidade e prazo pedido; o sistema usa os tempos e a jornada do plano (sem IA, sem gravar nada)
+  e responde **cabe / não cabe / não dá para garantir**, quando termina e **até que dia dá para começar**. Plano com passos sem tempo nunca recebe "cabe". Com quantidade diferente da do plano,
+  só o tempo de execução é escalado (preparo fixo): é **estimativa proporcional**, declarada na tela.
+
 Ordens, fila, conferência de registros, processos e análises continuam no sistema, mas só aparecem no menu com **"Mostrar detalhes técnicos"** ligado (fase 2: medir o real para melhorar o padrão).
 
 ## Experiência do usuário: um só tipo de usuário, simples por padrão

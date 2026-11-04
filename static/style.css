@@ -81,3 +81,10 @@ tr.semtempo td{background:#fffaf0}
 .passo{display:flex;align-items:center;gap:1rem}.passo .num{flex:none;width:2.4rem;height:2.4rem;border-radius:50%;background:#e8eefc;color:#1f5fbf;display:grid;place-items:center;font-weight:700;font-size:1.1rem}
 .passo.feito .num{background:#dff3e4;color:#1d7a3a}.passo .corpo{flex:1}.passo h3{margin:0 0 .2rem}.passo p{margin:.15rem 0}
 .hero{background:#f3f7ff;border:1px solid #c9d9f5;border-radius:10px;padding:1.1rem 1.3rem;margin:.8rem 0}.hero .big{font-size:2.2rem;font-weight:700;color:#1f5fbf;line-height:1.1}.hero .sub{color:#445}
+
+.destaque{outline:3px solid var(--warn);outline-offset:2px;scroll-margin-top:1rem}
+.pend li{margin:.25rem 0}.pend .sm{margin-left:.4rem}
+.veredito{border-left:6px solid var(--mut);border-radius:8px;padding:.8rem 1rem;margin:.8rem 0;background:#f6f8fb}
+.veredito.cabe{border-color:var(--ok);background:#f1faf4}.veredito.nao_cabe{border-color:var(--err);background:#fdf1ef}.veredito.incerto{border-color:var(--warn);background:#fff6e5}
+.veredito .t{font-size:1.25rem;font-weight:700;margin:0 0 .25rem}.veredito.cabe .t{color:var(--ok)}.veredito.nao_cabe .t{color:var(--err)}.veredito.incerto .t{color:var(--warn)}
+.veredito p{margin:.2rem 0}

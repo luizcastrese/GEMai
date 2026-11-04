@@ -274,6 +274,58 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     return plano
 
 
+# ------------------------------------------------------------------ "dá para entregar até…?"
+def _simular_fim(inicio: datetime, blocos, uteis: bool, duracoes: list[float], fadiga: float) -> datetime:
+    return agendar(inicio, blocos, uteis, duracoes, fadiga)[-1][1]
+
+
+def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | None, inicio: datetime | None) -> dict:
+    """Responde "cabe no prazo?" reaproveitando os tempos do plano e a jornada dele (sem chamar a IA nem gravar nada).
+
+    Com outra quantidade, escala só o tempo de execução (o preparo não muda): é uma ESTIMATIVA proporcional,
+    declarada como `aproximado`. Passos sem tempo não entram na conta: se o plano está incompleto, o sistema
+    nunca diz "cabe" (o prazo real seria maior) — só pode dizer "não cabe" ou "incerto".
+    """
+    cfg = plano.config or {}
+    blocos = _blocos(cfg)
+    uteis = bool(cfg.get("so_dias_uteis", True))
+    fadiga = float(cfg.get("fadiga_pct_hora") or 0)
+    tz = tz_empresa(ctx.empresa)
+    qtd = quantidade or plano.quantidade
+    fator = qtd / plano.quantidade if plano.quantidade else 1.0
+    comtempo = [p for p in plano.passos if p.tempo_padrao_min is not None]
+    if not comtempo:
+        raise HTTPException(422, "Este plano ainda não tem nenhum passo com tempo calculado. Complete os dados e recalcule.")
+    duracoes = [(p.tempo_prep_min or 0.0) + (p.tempo_exec_min or 0.0) * fator for p in comtempo]
+    por_unidade = sum(duracoes) / qtd
+
+    agora = datetime.now(timezone.utc).astimezone(tz).replace(tzinfo=None)
+    ini_local = inicio.astimezone(tz).replace(tzinfo=None) if inicio else agora
+    limite = datetime.combine(prazo, blocos[-1][1])  # fim do último bloco do dia combinado
+    ag = agendar(ini_local, blocos, uteis, duracoes, fadiga)
+    fim, ini_real = ag[-1][1], ag[0][0]
+
+    # último dia em que ainda dá para começar (olhando para trás a partir do prazo)
+    ultimo_inicio = None
+    for k in range(0, 120):
+        dia = prazo - timedelta(days=k)
+        if _simular_fim(datetime.combine(dia, blocos[0][0]), blocos, uteis, duracoes, fadiga) <= limite:
+            ultimo_inicio = dia
+            break
+
+    completo = bool(plano.totais.get("completo")) and len(comtempo) == len(plano.passos)
+    cabe_no_calculo = fim <= limite
+    veredito = "nao_cabe" if not cabe_no_calculo else ("cabe" if completo else "incerto")
+    aprox = abs(fator - 1.0) > 1e-9
+    utc = lambda d: d.replace(tzinfo=tz).astimezone(timezone.utc)  # noqa: E731
+    return {
+        "veredito": veredito, "prazo": prazo, "quantidade": qtd, "aproximado": aprox, "completo": completo,
+        "inicio": utc(ini_real), "termina_em": utc(fim), "folga_dias": (limite.date() - fim.date()).days,
+        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2),
+        "tempo_total_min": round(sum(duracoes), 2), "pessoas": int(cfg.get("pessoas") or 1),
+    }
+
+
 # ------------------------------------------------------------------ plano → ordem de produção
 def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) -> Ordem:
     if plano.status != "confirmado":
