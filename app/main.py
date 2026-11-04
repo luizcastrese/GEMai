@@ -1,14 +1,14 @@
 """ERP de Produção com IA – aplicação FastAPI."""
 import hashlib
 import logging
+import re
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -42,6 +42,14 @@ def html_com_versao(html: str, versao: str) -> str:
     return (html
             .replace('href="/static/style.css"', f'href="/static/style.css?v={versao}"')
             .replace('src="/static/app.js"', f'src="/static/app.js?v={versao}"'))
+
+
+_JS_FROM = re.compile(r"""(\bfrom\s+['"])(\./[^'"]+\.js)(['"])""")
+
+
+def js_com_versao(src: str, versao: str) -> str:
+    """Cache-bust imports relativos (o ?v= do HTML só vale para o app.js de entrada)."""
+    return _JS_FROM.sub(lambda m: f"{m.group(1)}{m.group(2)}?v={versao}{m.group(3)}", src)
 
 
 @asynccontextmanager
@@ -112,7 +120,17 @@ def criar_app() -> FastAPI:
         return {"status": "ok"}
 
     if STATIC.exists():
-        app.mount("/static", StaticFiles(directory=STATIC), name="static")
+        raiz_static = STATIC.resolve()
+
+        @app.get("/static/{caminho:path}", include_in_schema=False)
+        def estatico(caminho: str):
+            alvo = (STATIC / caminho).resolve()
+            if not alvo.is_relative_to(raiz_static) or not alvo.is_file():
+                raise HTTPException(404)
+            if alvo.suffix == ".js":
+                corpo = js_com_versao(alvo.read_text(encoding="utf-8"), versao_estaticos())
+                return Response(corpo, media_type="text/javascript; charset=utf-8")
+            return FileResponse(alvo)
 
         @app.get("/", include_in_schema=False)
         def index():
