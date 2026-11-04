@@ -9,7 +9,9 @@ from app.database import Base
 
 config = context.config
 if config.config_file_name:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: o app aplica migrações in-process no
+    # lifespan; o default do fileConfig desligaria uvicorn/erp até o fim do processo.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 target_metadata = Base.metadata
 

@@ -7,6 +7,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _SECRET_PADRAO = "dev-only-insecure-secret-change-me-0123456789"
 
 
+def normalizar_database_url(v: str) -> str:
+    """Render/Heroku entregam postgres:// ou postgresql://; o driver é psycopg 3."""
+    v = (v or "").strip()
+    lower = v.lower()
+    for prefixo in ("postgres://", "postgresql://"):
+        if lower.startswith(prefixo):
+            return "postgresql+psycopg://" + v[len(prefixo):]
+    return v
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="ERP_", extra="ignore")
 
@@ -47,11 +57,7 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def _driver_postgres(cls, v: str) -> str:
-        # Provedores (Render, Heroku…) entregam "postgres://" ou "postgresql://"; o driver instalado é o psycopg 3.
-        for prefixo in ("postgres://", "postgresql://"):
-            if v.startswith(prefixo):
-                return "postgresql+psycopg://" + v[len(prefixo):]
-        return v
+        return normalizar_database_url(v)
 
     @property
     def producao(self) -> bool:

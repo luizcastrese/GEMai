@@ -1,11 +1,13 @@
 """ERP de Produção com IA – aplicação FastAPI."""
+import hashlib
 import logging
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -13,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from . import models  # noqa: F401  (registra as tabelas)
 from .config import get_settings
 from .database import Base, engine
+from .migrar import aplicar_migracoes, url_postgres
 from .routers import apontamentos, auth, cadastros, calibracao, contorno, diagnostico, empresa, gemeo, gestao, ia, inicio, meios, ordens, planos, processos
 
 log = logging.getLogger("erp")
@@ -23,12 +26,33 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' 
        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 
 
+@lru_cache
+def versao_estaticos() -> str:
+    """Muda a cada deploy (mtime/tamanho dos JS/CSS) para cache-bust em /."""
+    h = hashlib.sha256()
+    if STATIC.exists():
+        for p in sorted(STATIC.iterdir()):
+            if p.is_file() and p.suffix in {".js", ".css"}:
+                st = p.stat()
+                h.update(f"{p.name}:{st.st_mtime_ns}:{st.st_size}".encode())
+    return h.hexdigest()[:12] or "0"
+
+
+def html_com_versao(html: str, versao: str) -> str:
+    return (html
+            .replace('href="/static/style.css"', f'href="/static/style.css?v={versao}"')
+            .replace('src="/static/app.js"', f'src="/static/app.js?v={versao}"'))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     s = get_settings()
-    if not s.producao:
+    if url_postgres(s.database_url):
+        log.info("Aplicando migrações Alembic (Postgres).")
+        aplicar_migracoes(s.database_url)
+    elif not s.producao:
         Base.metadata.create_all(engine)  # conveniência em desenvolvimento; produção usa Alembic
-    elif s.cors_origens == ["*"]:
+    if s.producao and s.cors_origens == ["*"]:
         raise RuntimeError("CORS '*' não é permitido em produção.")
     yield
 
@@ -60,6 +84,8 @@ def criar_app() -> FastAPI:
         resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if request.url.path.startswith("/api"):
             resp.headers.setdefault("Cache-Control", "no-store")
+        elif request.url.path == "/" or request.url.path.startswith("/static"):
+            resp.headers["Cache-Control"] = "no-cache"
         if not request.url.path.startswith(("/docs", "/openapi")):
             resp.headers.setdefault("Content-Security-Policy", CSP)
         if s.producao:
@@ -90,7 +116,8 @@ def criar_app() -> FastAPI:
 
         @app.get("/", include_in_schema=False)
         def index():
-            return FileResponse(STATIC / "index.html")
+            html = (STATIC / "index.html").read_text(encoding="utf-8")
+            return HTMLResponse(html_com_versao(html, versao_estaticos()))
 
     return app
 
