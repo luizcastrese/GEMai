@@ -1,9 +1,13 @@
 """Cache de estáticos, URL do Postgres e migrações na subida — o que o Render precisa."""
-import psycopg
+import logging
 
-from app.config import Settings, normalizar_database_url
+import psycopg
+from alembic import command
+from alembic.config import Config
+
+from app.config import Settings, get_settings, normalizar_database_url
 from app.main import html_com_versao, versao_estaticos
-from app.migrar import aplicar_migracoes, url_postgres
+from app.migrar import RAIZ, aplicar_migracoes, url_postgres
 
 
 def test_cache_control_html_e_estaticos(client):
@@ -60,3 +64,20 @@ def test_url_postgres_e_migracoes_nao_rodam_no_sqlite(monkeypatch):
 
 def test_psycopg_instalado():
     assert psycopg.connect  # driver usado em postgresql+psycopg://
+
+
+def test_alembic_inprocess_nao_desliga_loggers(tmp_path, monkeypatch):
+    """fileConfig do Alembic não pode desligar uvicorn/erp quando o upgrade roda no lifespan."""
+    erp = logging.getLogger("erp")
+    acesso = logging.getLogger("uvicorn.access")
+    erp.disabled = acesso.disabled = False
+    erp.setLevel(logging.INFO)
+    monkeypatch.setenv("ERP_DATABASE_URL", f"sqlite:///{tmp_path / 'mig.db'}")
+    get_settings.cache_clear()
+    try:
+        cfg = Config(str(RAIZ / "alembic.ini"))
+        cfg.set_main_option("script_location", str(RAIZ / "migrations"))
+        command.upgrade(cfg, "head")
+        assert erp.disabled is False and acesso.disabled is False
+    finally:
+        get_settings.cache_clear()
