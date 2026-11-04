@@ -11,8 +11,8 @@ from ...config import get_settings
 from ...models import Empresa
 from ..modelo_tempo import ModeloTempoIA, sanear_modelo
 from . import claude, heuristica
-from .esquemas import (AnaliseTexto, EstruturaProdutoIA, EstruturaProposta, FichaTecnicaIA, IdentificacaoMeio, ListaPerguntas,
-                       PerguntaIA, PlanoProposta, SugestaoModulo, ExplicacaoArranjos, sanear_explicacao, sanear_sugestao_modulo, sanear_identificacao, sanear_analise, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
+from .esquemas import (AnaliseTexto, CapacidadeIA, EstruturaProdutoIA, EstruturaProposta, FichaTecnicaIA, IdentificacaoMeio, ListaPerguntas,
+                       PerguntaIA, PlanoProposta, SugestaoModulo, ExplicacaoArranjos, sanear_explicacao, sanear_sugestao_modulo, sanear_identificacao, sanear_analise, sanear_capacidade, sanear_estrutura, sanear_estrutura_produto, sanear_perguntas, sanear_plano)
 
 log = logging.getLogger("erp.ia")
 
@@ -91,3 +91,8 @@ def sugerir_modulo(empresa: Empresa, ctx: dict) -> tuple[SugestaoModulo, str, st
 def explicar_arranjos(empresa: Empresa, fatos: dict) -> tuple[ExplicacaoArranjos, str, str]:
     r, prov, aviso = _executar(empresa, "explicar_arranjos", fatos)
     return sanear_explicacao(r), prov, aviso
+
+
+def estimar_capacidade(empresa: Empresa, ctx: dict, imagem: tuple[bytes, str] | None = None) -> tuple[CapacidadeIA, str, str]:
+    r, prov, aviso = _executar(empresa, "estimar_capacidade", ctx, imagem)
+    return sanear_capacidade(r), prov, aviso

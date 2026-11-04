@@ -1,6 +1,6 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
-import { avisoIA, badge, confirmar, detalhes, fmtData, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
+import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const METODOS = [['parafuso', 'Parafuso'], ['cavilha', 'Cavilha'], ['minifix', 'Minifix'], ['dobradica', 'Dobradiça'], ['corredica', 'Corrediça'],
@@ -73,7 +73,7 @@ export async function produtoDetalhe(el, id) {
 
     const sPlano = h('div', { class: 'card' }, h('h2', null, '3. Plano de trabalho'),
       h('p', { class: 'muted' }, 'O sistema considera movimentação, usinagem, montagem, conferência, carga, ambiente e a jornada, e entrega os passos com horários.'),
-      h('div', { class: 'inline' }, h('button', { class: 'pri big', disabled: !comps.length, onclick: () => abrirGerar({ produtoId: id, produtoNome: p.nome }) }, 'Gerar plano de trabalho'),
+      h('div', { class: 'inline' }, h('button', { class: 'pri big', disabled: !comps.length, onclick: () => gerarComChecagem({ produtoId: id, produtoNome: p.nome }) }, 'Gerar plano de trabalho'),
         h('button', { class: 'big', disabled: !comps.length, title: 'O sistema compara equipes, lotes e meios de movimentação e mostra o que cada escolha custa.', onclick: () => abrirArranjos({ produtoId: id, produtoNome: p.nome }) }, 'Recomendar arranjo'),
         h('a', { class: 'btn', href: '#/planos' }, 'Ver planos anteriores')));
     montar(area, sComps, sLig, sPlano);
@@ -115,12 +115,31 @@ function conferirProposta(p, r, depois) {
 }
 
 // ---------------------------------------------------------------- gerar / recalcular
+const SECAO_ROTULO = { locais: 'Locais', distancias: 'Distâncias', equipamentos: 'Máquinas', tarefas: 'Tarefas' };
+
+// Antes de gerar um plano novo, confere a oficina: se faltar dado, mostra o quê e leva direto ao campo,
+// em vez de gerar um plano parcial. Quem quiser pode seguir mesmo assim (os passos ficam "sem tempo", nunca zero).
+export async function gerarComChecagem(args) {
+  let c = null;
+  try { c = await get(`/contorno${qs({ unidade_id: estado.unidadeId })}`); } catch { /* sem a checagem, segue para a geração */ }
+  if (!c || !c.pendencias?.length) return abrirGerar(args);
+  const resolver = (secao) => { estado.foco = secao; location.hash = '#/contorno'; };
+  const lista = c.pendencias.slice(0, 6);
+  const fechar = modal(`Faltam ${c.pendencias.length} dado(s) da oficina`, h('div', null,
+    h('p', null, 'Sem eles, os passos afetados ficam "sem tempo" e o prazo real será maior do que o plano mostra.'),
+    h('ul', { class: 'pend' }, lista.map((x) => h('li', null, x.texto, ' ',
+      h('button', { class: 'sm', onclick: () => { fechar(); resolver(x.secao); } }, `Preencher (${SECAO_ROTULO[x.secao] || 'Oficina'})`))),
+    c.pendencias.length > lista.length ? h('li', { class: 'muted' }, `e mais ${c.pendencias.length - lista.length}…`) : null)),
+  { acoes: (f) => [h('button', { onclick: () => { f(); abrirGerar(args); } }, 'Gerar mesmo assim'),
+    h('button', { class: 'pri', onclick: () => { f(); resolver(c.pendencias[0].secao); } }, 'Preencher a oficina agora')] });
+}
+
 const isoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 export async function abrirGerar({ produtoId, produtoNome, plano }) {
   const cfg = plano?.config || {};
   const bl = cfg.blocos || [['08:00', '12:00'], ['13:00', '17:00']];
-  const perfis = estado.avancado ? await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`) : [];
+  const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
   const f = {
     qtd: entrada('number', plano?.quantidade ?? 1, { min: '0', step: 'any' }),
     ini: entrada('datetime-local', cfg.inicio ? isoLocal(new Date(cfg.inicio)) : isoLocal(new Date())),
@@ -135,7 +154,8 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', null, f.uteis, ' Trabalhar só de segunda a sexta'),
-    estado.avancado ? detalhes('Opções de especialista', h('label', null, 'Perfil de mão de obra (ritmo do operador)'), f.perfil) : null);
+    h('h3', null, 'Quem vai fazer'),
+    perfis.length ? h('div', null, h('label', null, 'Perfil da pessoa (ritmo e limites de carga)'), f.perfil, h('div', { class: 'muted small' }, '"Padrão" usa ritmo normal. Perfis são cadastrados em Configurações › Cadastros avançados (com detalhes técnicos ligados).')) : h('p', { class: 'muted small' }, 'Sem perfil cadastrado: o sistema usa o ritmo normal (100%) e os limites de carga padrão.'));
   modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async (e) => {
       const m = [[f.m1.value, f.m2.value], [f.t1.value, f.t2.value]].filter((b) => b[0] && b[1]);
@@ -204,10 +224,10 @@ export async function planos(el) {
   const nome = (id) => prods.find((x) => x.id === id)?.nome ?? '—';
   const escolha = h('select', null, h('option', { value: '' }, 'Escolha o produto…'), prods.filter((x) => x.tipo === 'produto').map((x) => h('option', { value: x.id }, x.nome)));
   montar(el, h('h1', null, 'Planos de trabalho'),
-    h('p', { class: 'muted' }, 'Cada plano é uma sugestão calculada a partir do produto e do contorno físico. Só vale depois que você confirmar.'),
+    h('p', { class: 'muted' }, 'Cada plano é calculado a partir do produto, da oficina e de quem vai fazer. O número que importa é o tempo padrão por unidade. Só vale depois que você confirmar.'),
     h('div', { class: 'card' }, h('div', { class: 'row' }, escolha, h('button', { class: 'pri', onclick: () => {
       if (!escolha.value) return toast('Escolha o produto.', true);
-      abrirGerar({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
+      gerarComChecagem({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
     } }, 'Novo plano'), h('button', { onclick: () => {
       if (!escolha.value) return toast('Escolha o produto.', true);
       abrirArranjos({ produtoId: Number(escolha.value), produtoNome: nome(Number(escolha.value)) });
@@ -215,7 +235,7 @@ export async function planos(el) {
     h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge('Rascunho', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) },
-      { t: 'Tempo de trabalho', f: (p) => fmtMin(p.totais.tempo_padrao_min) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
+      { t: 'Tempo padrão por unidade', f: (p) => fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
       { t: 'Pendências', f: (p) => (p.totais.completo ? badge('Completo', 'b-ok') : badge('Incompleto', 'b-warn')) },
       { t: 'Ordem', f: (p) => (p.ordem_id ? h('a', { href: `#/ordens/${p.ordem_id}` }, 'Ver ordem') : '—') }], ps, 'Nenhum plano ainda. Escolha um produto acima.')));
 }
@@ -256,7 +276,7 @@ export async function planoDetalhe(el, id) {
       : 'Este plano tem pendências (passos sem tempo). Confirmar mesmo assim? Esses passos ficarão "sem base" na ordem.', async () => {
       if (await tentar(() => post(`/planos/${id}/confirmar`), 'Plano confirmado.')) recarregar();
     }, 'Confirmar plano') }, 'Confirmar plano') : null,
-    p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem de produção') : null,
+    estado.avancado && p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem de produção') : null,
     p.ordem_id ? h('a', { class: 'btn big', href: `#/ordens/${p.ordem_id}` }, 'Abrir a ordem') : null,
     p.status === 'rascunho' ? h('button', { onclick: () => abrirGerar({ produtoId: p.produto_id, produtoNome: p.produto_nome, plano: p }) }, 'Recalcular') : null,
     h('button', { onclick: () => window.print() }, 'Imprimir'),
@@ -267,10 +287,16 @@ export async function planoDetalhe(el, id) {
     h('h1', null, p.nome), h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
       badge(`Confiança: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''), badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado por regras locais', 'b-ia')),
     (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa calculada a partir do produto, dos meios cadastrados (ficha técnica) e de coeficientes de referência genéricos, ainda não calibrados com a sua produção. Quando houver apontamentos reais, compare com o previsto.'),
+    h('div', { class: 'hero' },
+      h('div', { class: 'sub' }, t.completo ? 'Tempo padrão por unidade' : 'Tempo padrão por unidade (parcial: faltam dados)'),
+      h('div', { class: 'big' }, t.tempo_padrao_min ? fmtMin(t.tempo_padrao_min / (p.quantidade || 1)) : '—'),
+      h('div', { class: 'sub' }, `${fmtNum(p.quantidade, 2)} unidade(s) = ${fmtMin(t.tempo_padrao_min)} de trabalho · termina ${t.fim ? fmtData(t.fim) : '—'} (${t.dias || '—'} dia(s) de trabalho)`),
+      t.completo ? null : h('div', { class: 'small warn-l' }, 'Passos sem tempo não entram na conta: o prazo real será maior. Complete o que falta abaixo e recalcule.')),
     h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Pessoas-hora', `${fmtNum(t.horas_homem, 1)} h`),
       kpi('Começa', t.inicio ? fmtData(t.inicio) : '—', 'peq'), kpi('Termina', t.fim ? fmtData(t.fim) : '—', 'peq'), kpi('Dias de trabalho', t.dias || '—')),
+    t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
-      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher no Contorno físico'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
+      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher a Oficina'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
         p.status === 'rascunho' ? h('span', { class: 'muted small' }, 'Depois, use "Recalcular".') : null)) : null,
     unicos.length ? h('div', { class: 'card' }, h('h3', null, 'Atenção'), h('ul', null, unicos.map((a) => h('li', { class: a.categoria === 'seguranca' ? 'seg-l' : '' }, a.msg)))) : null,
     h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['#', 'Passo', 'Começa', 'Termina', 'Tempo', ''].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),
@@ -288,6 +314,43 @@ function hierarquiaView(hi) {
     ...g.modulos.map((x) => ({ rotulo: `   ${x.titulo}: ${x.passo}${x.completo ? '' : ' (incompleto)'}`, ...x }))]);
   return h('div', null, tabela(cols, linhas),
     h('p', { class: 'small muted' }, `Por unidade do produto: padrão ${m(hi.por_unidade_produto.tempo_padrao_min)} (normal ${m(hi.por_unidade_produto.tempo_normal_min)}, preparação ${m(hi.por_unidade_produto.preparacao_min)}).`));
+}
+
+// "Posso prometer esta data?" — usa os tempos e a jornada do plano; não grava nada.
+function cartaoPrazo(p) {
+  const hoje = isoLocal(new Date()).slice(0, 10);
+  const f = { qtd: entrada('number', p.quantidade, { min: '0', step: 'any' }), prazo: entrada('date', '', { min: hoje }), ini: entrada('datetime-local', '') };
+  const saida = h('div', { 'aria-live': 'polite' });
+  const unidades = (q) => `${fmtNum(q, 2)} unidade${q === 1 ? '' : 's'}`;
+  const mostrar = (r) => {
+    const atraso = -r.folga_dias;
+    const jaPassou = r.ultimo_dia_para_comecar && r.ultimo_dia_para_comecar < hoje;
+    const titulo = { cabe: `✓ Cabe até ${fmtDia(r.prazo)}`, nao_cabe: `✗ Não cabe até ${fmtDia(r.prazo)}`, incerto: `? Talvez caiba até ${fmtDia(r.prazo)}, mas não dá para garantir` }[r.veredito];
+    const linhas = [];
+    linhas.push(h('p', null, `${unidades(r.quantidade)} com ${r.pessoas} pessoa${r.pessoas > 1 ? 's' : ''}, começando ${fmtData(r.inicio)}: termina ${fmtData(r.termina_em)}.`));
+    if (r.veredito === 'cabe') linhas.push(h('p', null, r.folga_dias > 0 ? `Sobram ${r.folga_dias} dia(s) de folga.` : 'É justo: sem folga para imprevistos.',
+      r.ultimo_dia_para_comecar ? ` Último dia para começar: ${fmtDia(r.ultimo_dia_para_comecar)}.` : ''));
+    if (r.veredito === 'nao_cabe') linhas.push(h('p', null, atraso > 0 ? `Passa ${atraso} dia(s) do combinado. ` : 'Passa do horário combinado. ',
+      r.ultimo_dia_para_comecar ? (jaPassou ? `O último dia para começar era ${fmtDia(r.ultimo_dia_para_comecar)}, que já passou.` : `Para cumprir, começar até ${fmtDia(r.ultimo_dia_para_comecar)}.`)
+        : 'Com esta equipe e esta jornada não cumpre nem começando 4 meses antes do prazo: aumente a equipe, a jornada ou negocie o prazo.'));
+    if (r.veredito === 'incerto') linhas.push(h('p', null, 'O plano tem passos sem tempo, que não entram nesta conta: o prazo real será maior. Complete os dados da oficina e do produto, recalcule e pergunte de novo.'));
+    linhas.push(h('p', { class: 'muted small' }, `Tempo padrão: ${fmtMin(r.tempo_por_unidade_min)} por unidade. `,
+      r.aproximado ? 'Como a quantidade é diferente da do plano, o tempo de execução foi ajustado na proporção (estimativa); para o número exato, gere um plano para essa quantidade. ' : '',
+      'Dias úteis e jornada são os do plano.'));
+    montar(saida, h('div', { class: `veredito ${r.veredito}` }, h('p', { class: 't' }, titulo), linhas));
+  };
+  return h('div', { class: 'card noprint' }, h('h2', null, 'Posso prometer esta data?'),
+    h('p', { class: 'muted' }, 'Informe o prazo que o cliente pediu. O sistema usa os tempos deste plano e responde se cabe, quando termina e até quando dá para começar.'),
+    h('div', { class: 'row' }, h('div', null, h('label', null, 'Quantidade'), f.qtd), h('div', null, h('label', null, 'Prazo pedido'), f.prazo),
+      h('div', null, h('label', null, 'Começar em (padrão: agora)'), f.ini),
+      h('button', { class: 'pri', onclick: async (e) => {
+        if (!f.prazo.value) return toast('Informe o prazo pedido.', true);
+        if (!(Number(f.qtd.value) > 0)) return toast('Informe a quantidade.', true);
+        e.target.disabled = true;
+        const r = await tentar(() => post(`/planos/${p.id}/prazo`, { prazo: f.prazo.value, quantidade: Number(f.qtd.value), inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null }));
+        e.target.disabled = false;
+        if (r) mostrar(r);
+      } }, 'Verificar')), saida);
 }
 
 function gerarOrdem(p) {

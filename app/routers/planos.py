@@ -14,7 +14,7 @@ from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoP
 from ..ratelimit import limite_ia
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        ArranjoIn, ArranjosOut, InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoDeArranjoIn, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
-                       PlanoPassoOut, ReferenciaIn, ReferenciaOut)
+                       PlanoPassoOut, PrazoIn, PrazoOut, ReferenciaIn, ReferenciaOut)
 from ..services import ia, modelo_tempo, plano as svc
 from ..services.arranjo import avaliar as arranjo_av, servico as arranjo
 from ..services.dashboard import tz_empresa
@@ -320,6 +320,15 @@ def confirmar(pid: int, ctx: Ctx = Depends(get_ctx)):
     ctx.auditar("plano.confirmar", "plano_trabalho", p.id, {"status": "rascunho"}, {"status": "confirmado", "completo": p.totais.get("completo")})
     ctx.db.commit()
     return _plano_out(ctx, p)
+
+
+@router.post("/planos/{pid}/prazo", response_model=PrazoOut)
+def responder_prazo(pid: int, dados: PrazoIn, ctx: Ctx = Depends(get_ctx)):
+    """"Cabe até esta data?" Só calcula (não grava): usa os tempos e a jornada do plano."""
+    p = _plano(ctx, pid)
+    if p.status == "cancelado":
+        raise HTTPException(409, "Este plano foi cancelado.")
+    return svc.responder_prazo(ctx, p, dados.prazo, dados.quantidade, dados.inicio)
 
 
 @router.post("/planos/{pid}/cancelar", response_model=PlanoOut)
