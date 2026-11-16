@@ -21,7 +21,7 @@ O caminho principal da interface tem só três passos (menu: *Início · 1. Prod
    e o usuário confere antes de gravar. Quem consegue **cronometrar** digita o valor, que fica rotulado como *medido*. Valor da IA fica rotulado
    *estimado pela IA* e entra nas premissas do plano. Sem IA externa habilitada, o sistema só aproveita um número escrito pelo usuário (não inventa).
 3. **Plano de trabalho:** a IA monta o roteiro a partir do produto, da oficina e de quem vai fazer (nº de pessoas e perfil); o sistema calcula e mostra,
-   em destaque, o **tempo padrão por unidade** e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
+   em destaque, o **tempo padrão por unidade** (execução ÷ quantidade; o preparo do lote aparece à parte) e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
 
 Dois apoios no caminho principal:
 - **Antes de gerar o plano**, o sistema confere a oficina. Se faltar dado (distância, "peças por hora" de uma máquina que o plano usa, locais), mostra a lista e
@@ -80,8 +80,8 @@ O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo norma
 | **Peso / tamanho do item** | Peso e dimensões do item típico (o do produto da ordem prevalece); alimentam manuseio, deslocamento (itens por viagem) e NIOSH | — |
 | **Carga manual** | Triagem **NIOSH** (RWL, índice de levantamento) com os multiplicadores HM/VM/DM/AM/FM/CM; LI > 1 gera alerta e uma tolerância de fadiga | NIOSH Pub. 94-110; tabelas FM/CM conferidas em fontes secundárias |
 | **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
-| **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
-| **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %. Padrão: necessidades pessoais 5 % + fadiga básica 4 % + em pé 2 % | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
+| **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; tempo de máquina não muda | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
+| **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %, aplicado **só ao tempo que depende do operador** (não ao tempo de máquina). Padrão: necessidades pessoais 5 % + fadiga básica 4 % + em pé 2 % | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
 | **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** |
 | **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
 | **Postura / altura de trabalho** | Postura entra nas tolerâncias; altura de trabalho é comparada à altura do cotovelo do perfil, **sem julgar** (as faixas recomendadas divergem entre fontes) | — |
@@ -118,26 +118,33 @@ Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de 
    ficam com fonte `plano`; passos sem tempo entram como "sem base". Depois os apontamentos reais permitem o planejado × realizado.
 
 Limites assumidos (declarados na tela e nas premissas do plano; veja também "Limitações conhecidas do cálculo" abaixo): sequência única de passos (sem trabalho em paralelo entre passos); tempos de montagem e
-conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
-declare é descartada) porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
+conferência partem de **referências genéricas** até serem substituídos pelos da empresa; a confiança do plano **nunca é "alta"** (a que a IA declare é descartada) e só chega a
+"média" se nada no cálculo for genérico ou estimado pela IA, porque ainda não há histórico medido de passos de plano — o aprendizado por histórico continua ligado às operações de processo.
 Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
 
 ## Limitações conhecidas do cálculo
 
-Revisão da lógica (leitura do código e experimentos pontuais). O que está abaixo **ainda não foi corrigido**; leia antes de confiar num prazo.
+Revisão da lógica (leitura do código e experimentos pontuais), com as correções já feitas e o que ainda está em aberto. Leia antes de confiar num prazo.
+
+**Corrigido** (com testes em `tests/test_plano.py` e `tests/test_fatores_humanos.py`):
+- **Pessoas e prazo:** na montagem, o trabalho manual é dividido entre as pessoas (elementos `paralelizavel`); usinagem e transporte não dividem (a máquina dita o ritmo; mais pessoas só aumentam a carga por viagem). É o **caso ideal**, sem perda de coordenação, e a premissa aparece no plano.
+- **Tolerâncias só no tempo da pessoa:** ritmo e tolerâncias (pessoal, fadiga, ambiente) não multiplicam mais o tempo de máquina (`capacidade_recurso` ou `depende_operador=false`). 60 peças a 60 peças/h voltaram a ser 60 min (antes 65,9).
+- **Horário de início dos passos:** o passo começa quando o trabalho recomeça (13:00 após o almoço, 08:00 do dia útil seguinte), e não no fim do bloco anterior.
+- **Tempo padrão por unidade:** é só a execução ÷ quantidade. O **preparo do lote** (`tempo_preparo_min`, feito uma vez) aparece à parte na tela do plano e em "Posso prometer esta data?" (`preparo_lote_min`). O número deixa de crescer ou encolher com a quantidade pedida.
+- **Confiança do plano:** só chega a "média" se o plano é completo, a IA não declarou "baixa" e nada no cálculo é referência genérica, capacidade estimada pela IA ou coeficiente proposto pela IA. Cada motivo de confiança baixa é listado nas premissas. Nunca é "alta".
+- **Coeficientes da IA (provedor Claude):** os elementos com coeficientes de tempo propostos pela IA são listados nas premissas e baixam a confiança. O prompt pede que a IA use a tabela de referências e não invente valores.
+
+**Em aberto:**
 
 | # | Limitação | Efeito | Onde |
 |---|---|---|---|
-| 1 | **O nº de pessoas não encurta passos de usinagem nem de montagem.** O planejador local nunca marca elementos como `paralelizavel`; só o transporte melhora (cabem mais peças por viagem) | Mais pessoas aumentam as pessoas-hora, mas o prazo quase não muda. "Posso prometer esta data?" fica pouco sensível à equipe | `services/ia/heuristica.py` (`planejar`), `services/modelo_tempo.py` |
-| 2 | **As tolerâncias (pessoal 5 % + fadiga 4 %) também multiplicam o tempo de máquina.** Ex.: 60 peças numa máquina de 60 peças/h resultam em 65,9 min, e não 60 | Tempo de máquina superestimado em cerca de 10 %; contradiz "máquina não muda" | `services/modelo_tempo.py` (`calcular`) |
-| 3 | **Início de passo exibido errado após intervalo ou fim de expediente.** O passo seguinte a um bloco que acaba às 12:00 aparece começando 12:00 (e não 13:00); após as 17:00, aparece começando 17:00 | Só o horário de **início** exibido; os horários de término estão corretos | `services/plano.py` (`agendar`) |
-| 4 | **"Tempo padrão por unidade" = tempo total ÷ quantidade.** O total inclui preparo de máquina e viagens | O número muda com a quantidade pedida; não separa a parte fixa do lote da parte variável por unidade, como no estudo de tempos | `services/plano.py`, `static/telas_plano.js` |
-| 5 | **Ordens geradas por plano não alimentam o plano.** Nascem com `operacao_id` vazio e o histórico (`services/estimativa.py`) só lê operações de processo; nada atualiza a tabela de referências com os apontamentos | O fluxo Produto → Oficina → Plano não aprende com o tempo medido; o contraste planejado × real existe, a melhoria automática do padrão não | `services/plano.py` (`gerar_ordem`), `services/estimativa.py` |
-| 6 | **Os coeficientes de montagem e conferência são referências genéricas** (ex.: 0,30 min por parafuso, 1,5 min por dobradiça) e os índices MOST são ilustrativos | Sem medição da oficina, o "tempo padrão" é uma estimativa de ordem de grandeza. A confiança do plano pode chegar a "média" mesmo sem nenhuma medição | `services/modelo_tempo.py` |
-| 7 | **No provedor Claude, os coeficientes (`a_min`, `b_min`, velocidades) vêm da IA**, saneados só por faixa (0–100 000 min) | O sistema calcula, mas o número de entrada é da IA; o rótulo "estimado" e a confiança limitada continuam valendo | `services/ia/esquemas.py` (`sanear_modelo`) |
-| 8 | **Sequência única de passos, sem trabalho em paralelo entre eles**; pessoas-hora assumem toda a equipe ocupada em todos os passos | Prazo tende a ser superestimado quando há equipe | `services/plano.py` |
+| 5 | **Ordens geradas por plano não alimentam o plano.** Nascem com `operacao_id` vazio e o histórico (`services/estimativa.py`) só lê operações de processo; nada atualiza a tabela de referências com os apontamentos | O fluxo Produto → Oficina → Plano não aprende com o tempo medido; o contraste planejado × real existe, a melhoria automática do padrão não. Por isso a confiança na prática fica em "baixa" (o provedor local sempre devolve "baixa") | `services/plano.py` (`gerar_ordem`), `services/estimativa.py` |
+| 6 | **Os coeficientes de montagem e conferência são referências genéricas** (ex.: 0,30 min por parafuso, 1,5 min por dobradiça) e os índices MOST são ilustrativos | Sem medição da oficina, o "tempo padrão" é uma estimativa de ordem de grandeza (agora declarado na confiança). Informe os tempos da sua oficina na tabela de referências | `services/modelo_tempo.py` |
+| 7 | **O sistema não consegue rastrear de onde vem cada coeficiente da IA** (só limita a faixa, 0–100 000 min, e sinaliza) | O número de entrada pode ser da IA mesmo quando o sistema faz a conta | `services/ia/esquemas.py`, `services/plano.py` |
+| 8 | **Sequência única de passos**, sem trabalho em paralelo entre eles; pessoas-hora assumem toda a equipe ocupada em todos os passos (inclusive nos de máquina e na conferência) | Prazo tende a ser superestimado quando há equipe, e as pessoas-hora também | `services/plano.py` |
+| 9 | **Divisão ideal do trabalho:** mais pessoas dividem a montagem por igual, sem curva de aprendizagem nem perda de coordenação | Com equipes grandes o ganho de prazo pode ser otimista | `services/ia/heuristica.py` |
 
-Já estão cobertos por testes: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; sexo, estatura e peso corporal não alteram o tempo. A regra "a confiança do plano nunca é alta" está no código (`services/plano.py`), mas **não tem teste**.
+Já estão cobertos por testes: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; a confiança do plano nunca é "alta"; sexo, estatura e peso corporal não alteram o tempo.
 
 ## Rodando
 
@@ -205,7 +212,7 @@ Atrás de proxy reverso, ajuste `FORWARDED_ALLOW_IPS` para o IP do proxy; caso c
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 117 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 122 testes automatizados (SQLite) + percursos completos no navegador (implantação, gêmeo digital, fatores humanos e produto → plano → ordem). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 
