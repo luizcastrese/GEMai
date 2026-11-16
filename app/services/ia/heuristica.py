@@ -490,11 +490,12 @@ def planejar(ctx: dict) -> PlanoProposta:
     grupo_de = {c["nome"]: c.get("grupo") or "Corpo" for c in comps}
     grupos = list(dict.fromkeys(grupo_de.values()))
 
-    def elementos_montagem(lista_ligs, n_pecas, rotulo):
+    def elementos_montagem(lista_ligs, n_pecas, rotulo, pessoas):
+        """`pessoas` > 1: o trabalho manual de montagem é dividido entre elas (elementos `paralelizavel`)."""
         els = []
         if n_pecas:
             els.append(ElementoTempo(nome=f"Pegar e posicionar {n_pecas:g} peça(s)/conjunto(s) por unidade", tipo="manuseio", metodo="fixo", por_unidade=True,
-                                     a_min=round(n_pecas * POS_MIN, 4),
+                                     paralelizavel=pessoas > 1, a_min=round(n_pecas * POS_MIN, 4),
                                      justificativa=f"{len(_POS_IDX)} índices MOST ilustrativos (≈{POS_MIN * 60:.0f} s por peça): curvar/levantar + posicionar com cuidado."))
         por_metodo: dict[str, int] = {}
         for l in lista_ligs:
@@ -505,7 +506,7 @@ def planejar(ctx: dict) -> PlanoProposta:
             chave = f"fixador:{metodo}" if f"fixador:{metodo}" in refs else "fixador:outro"
             origem = "da sua oficina" if chave in ctx.get("referencias_informadas", []) else "genérico"
             els.append(ElementoTempo(nome=f"Fixar com {metodo} ({n} un por unidade)", tipo="processamento", metodo="fixo", por_unidade=True,
-                                     a_min=round(n * refs[chave], 4), justificativa=f"{refs[chave]:g} min por {metodo} ({origem})."))
+                                     paralelizavel=pessoas > 1, a_min=round(n * refs[chave], 4), justificativa=f"{refs[chave]:g} min por {metodo} ({origem})."))
         return els
 
     for g in grupos:
@@ -518,20 +519,25 @@ def planejar(ctx: dict) -> PlanoProposta:
         if not l_g:
             faltam.append(f"Como se montam as peças do grupo '{g}' (método e nº de fixadores)")
         pesos_g = [c["peso_kg"] for c in membros if c.get("peso_kg")]
+        pes_g = pessoas_para(max(pesos_g) if pesos_g else None)
         passos.append(PassoIA(nome=f"Montar {g}", tipo="montagem", grupo=g, componentes=nomes, qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem,
-                              pessoas=pessoas_para(max(pesos_g) if pesos_g else None), elementos=elementos_montagem(l_g, pecas_g, g)))
+                              pessoas=pes_g, elementos=elementos_montagem(l_g, pecas_g, g, pes_g)))
     l_final = [l for l in ligs if l.get("ligado_a") and grupo_de.get(l["componente"]) != grupo_de.get(l["ligado_a"])]
     if l_final or len(grupos) > 1:
         if not l_final:
             faltam.append("Como os subconjuntos se ligam na montagem final (método e nº de fixadores)")
         peso_conj = sum((c.get("peso_kg") or 0) * c["qtd"] for c in comps)
+        pes_f = pessoas_para(peso_conj or None)
         passos.append(PassoIA(nome="Montagem final", tipo="montagem", grupo="Final", componentes=[g for g in grupos], qtd_pecas=N,
-                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_para(peso_conj or None),
-                              elementos=elementos_montagem(l_final, max(len(grupos) - 1, 1), "final")))
+                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pes_f,
+                              elementos=elementos_montagem(l_final, max(len(grupos) - 1, 1), "final", pes_f)))
     passos.append(PassoIA(nome="Conferência final", tipo="inspecao", qtd_pecas=N, espaco_origem=montagem, espaco_destino=montagem, pessoas=1,
                           elementos=[ElementoTempo(nome="Conferir acabamento, folgas e funcionamento", tipo="inspecao", metodo="fixo", por_unidade=True,
                                                    a_min=refs["conferencia_final"], justificativa="Referência genérica; ajuste ao seu padrão de qualidade.")]))
     prem.append("Pressupõe uma equipe executando os passos em sequência (sem trabalho em paralelo entre passos).")
+    if pessoas_eq > 1:
+        prem.append(f"Montagem: o trabalho manual é dividido por igual entre as {pessoas_eq} pessoas (caso ideal, sem perda de coordenação); "
+                    "usinagem e transporte não dividem o tempo (a máquina dita o ritmo; mais pessoas só aumentam a carga por viagem).")
     prem.append("Tempos de montagem e conferência partem de referências genéricas (ou da sua tabela); movimentação usa caminhada a "
                 f"{REFERENCIAS['velocidade_caminhada_m_min']:g} m/min. Substitua por medições assim que existirem.")
     return PlanoProposta(passos=passos, premissas=prem, dados_faltantes=list(dict.fromkeys(faltam)), confianca="baixa",

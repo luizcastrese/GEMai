@@ -94,6 +94,13 @@ export const fonteBadge = (f) => badge((FONTE[f] || ['', f])[1], (FONTE[f] || ['
 const ORIGEM = { informado: ['', 'Informado'], medido: ['b-ok', 'Medido'], calculado: ['b-pri', 'Calculado'], ia_sugerido: ['b-ia', 'Sugestão IA'] };
 export const origemBadge = (o) => badge((ORIGEM[o] || ['', o])[1], (ORIGEM[o] || [''])[0]);
 
+// Tempo padrão por unidade de um plano: só a execução ÷ quantidade (o preparo é do lote). Planos antigos, sem esse campo, caem no total ÷ quantidade.
+export function tempoPorUnidade(p) {
+  const t = p.totais || {};
+  if (t.tempo_por_unidade_min !== undefined && t.tempo_por_unidade_min !== null) return t.tempo_por_unidade_min;
+  return t.tempo_padrao_min ? t.tempo_padrao_min / (p.quantidade || 1) : null;
+}
+
 export function fmtMin(m) {
   if (m === null || m === undefined) return '—';
   const t = Math.round(m);

@@ -99,7 +99,8 @@ def agendar(inicio: datetime, blocos, uteis: bool, duracoes: list[float | None],
         if d is None:
             saida.append((cursor, cursor, None))
             continue
-        inicio_passo = cursor
+        # o passo começa no primeiro instante de trabalho depois do anterior (não no almoço nem no fim do expediente)
+        inicio_passo = _inicio_util(cursor, blocos, uteis)
         horas = _trabalhado_no_dia(inicio_passo, blocos) / 60
         efetiva = d * (1 + fadiga_pct_hora / 100 * horas)
         restante, t = efetiva, inicio_passo
@@ -127,6 +128,36 @@ def alertas_jornada(blocos) -> list[dict]:
     elif liquido > 240 and maior < 15:
         out.append({"msg": "Jornada entre 4 h e 6 h por dia precisa de um intervalo de pelo menos 15 minutos.", "detalhe": "CLT art. 71 (conferir).", "categoria": "seguranca"})
     return out
+
+
+# ------------------------------------------------------------------ confiança
+def _motivos_confianca_baixa(ligs, por_id, refs, informadas, linhas, provedor) -> list[str]:
+    """Por que o plano não pode ter confiança "média": tudo o que é referência genérica, estimado pela IA ou coeficiente da IA."""
+    motivos = []
+    usadas = set()
+    for l in ligs:
+        if l.componente_id in por_id and (l.fixadores or 0) > 0:
+            usadas.add(f"fixador:{l.metodo}" if f"fixador:{l.metodo}" in refs else "fixador:outro")
+    if any(x["p"].tipo == "inspecao" for x in linhas):
+        usadas.add("conferencia_final")
+    genericas = sorted(k.replace("fixador:", "") for k in usadas if k not in informadas)
+    if genericas:
+        motivos.append("Confiança baixa: o tempo de " + ", ".join(genericas) + " usa referência genérica, não medida na sua oficina "
+                       "(informe os seus tempos de referência).")
+    ia_cap = sorted({x["rec"].nome for x in linhas if x["rec"] is not None and x["rec"].capacidade_origem == "ia"})
+    if ia_cap:
+        motivos.append("Confiança baixa: a capacidade de " + ", ".join(ia_cap) + " foi estimada pela IA, não medida.")
+    if provedor.startswith("claude"):
+        coef = []
+        for x in linhas:
+            for e in x["p"].elementos:
+                if e.metodo in ("fixo", "linear_driver", "indices_most") and (e.a_min or e.b_min or e.indices_most) and e.nome not in coef:
+                    coef.append(e.nome)
+        if coef:
+            motivos.append(f"Confiança baixa: {len(coef)} elemento(s) usam coeficientes de tempo propostos pela IA, que o sistema não "
+                           f"consegue conferir contra a sua tabela de referências ({'; '.join(coef[:4])}{'…' if len(coef) > 4 else ''}). "
+                           "Confira em 'Como o tempo foi calculado' e substitua por medição.")
+    return motivos
 
 
 # ------------------------------------------------------------------ geração
@@ -234,12 +265,14 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
         db.flush()
         plano.quantidade = quantidade
     cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k != "nome"}
-    totais_p = totais_a = hh = 0.0
+    totais_p = totais_a = hh = prep_total = exec_total = 0.0
     incompletos = 0
     for i, (l, (ini, fim, efetiva)) in enumerate(zip(linhas, ag), 1):
         p = l["p"]
         if l["total"] is not None:
             totais_p += l["total"]
+            prep_total += l["prep"] or 0.0
+            exec_total += l["exec"] or 0.0
             totais_a += efetiva or 0
             hh += l["total"] * l["pessoas"] / 60
         else:
@@ -256,14 +289,19 @@ def gerar(ctx: Ctx, produto: Produto, quantidade: float, unidade_id: int, cfg: d
     dias = len({f.date() for (_, f, e) in ag if e is not None} | {i.date() for (i, _, e) in ag if e is not None})
     faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"] if x != SEM_ELEMENTOS]))
     plano.config = cfg_guardada
-    # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
-    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
+    # Confiança: só vale "média" quando o plano é completo, a IA não declarou "baixa" e NADA no cálculo é genérico ou estimado.
+    # Sem histórico medido do plano nunca é "alta". A confiança que a IA declara é só um rótulo: o sistema a limita.
+    motivos = _motivos_confianca_baixa(ligs, por_id, refs, informadas, linhas, provedor)
+    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa" or motivos) else "media")
     estimadas = sorted({r.nome for r in recursos if r.capacidade_origem == "ia" and r.capacidade})
     nota_cap = [f"Capacidade estimada pela IA (não medida) em: {', '.join(estimadas)}. Substitua por uma medição para ganhar confiança."] if estimadas else []
-    plano.premissas = nota_cap + proposta.premissas + ([aviso] if aviso else [])
+    plano.premissas = nota_cap + proposta.premissas + motivos + ([aviso] if aviso else [])
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),
+                    # tempo padrão por unidade = só a execução ÷ quantidade; o preparo é do LOTE (acontece uma vez, não cresce com a quantidade)
+                    "tempo_preparo_min": round(prep_total, 2), "tempo_execucao_min": round(exec_total, 2),
+                    "tempo_por_unidade_min": round(exec_total / quantidade, 3) if quantidade else None,
                     "tempo_agendado_min": round(totais_a, 2), "horas_homem": round(hh, 2), "dias": dias,
                     "inicio": (ag[0][0].replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if ag else None),
                     "fim": (fim_geral.replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if fim_geral else None),
@@ -297,7 +335,8 @@ def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | N
     if not comtempo:
         raise HTTPException(422, "Este plano ainda não tem nenhum passo com tempo calculado. Complete os dados e recalcule.")
     duracoes = [(p.tempo_prep_min or 0.0) + (p.tempo_exec_min or 0.0) * fator for p in comtempo]
-    por_unidade = sum(duracoes) / qtd
+    preparo_lote = sum(p.tempo_prep_min or 0.0 for p in comtempo)
+    por_unidade = sum((p.tempo_exec_min or 0.0) * fator for p in comtempo) / qtd  # o preparo é do lote, não da unidade
 
     agora = datetime.now(timezone.utc).astimezone(tz).replace(tzinfo=None)
     ini_local = inicio.astimezone(tz).replace(tzinfo=None) if inicio else agora
@@ -321,7 +360,7 @@ def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | N
     return {
         "veredito": veredito, "prazo": prazo, "quantidade": qtd, "aproximado": aprox, "completo": completo,
         "inicio": utc(ini_real), "termina_em": utc(fim), "folga_dias": (limite.date() - fim.date()).days,
-        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2),
+        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2), "preparo_lote_min": round(preparo_lote, 2),
         "tempo_total_min": round(sum(duracoes), 2), "pessoas": int(cfg.get("pessoas") or 1),
     }
 

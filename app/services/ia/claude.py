@@ -121,6 +121,9 @@ def planejar(ctx: dict) -> PlanoProposta:
         "equipamento, locais de origem/destino (use os nomes cadastrados), pessoas e ELEMENTOS DE TEMPO com os métodos fechados: 'fixo' "
         "(a_min), 'linear_driver', 'deslocamento' (distância vem dos locais; informe velocidade_m_min, itens_por_viagem), "
         "'capacidade_recurso' (capacidade do equipamento; depende_operador=false) e 'indices_most' (índices só em 0,1,3,6,10,16). "
+        "Quando houver mais de uma pessoa, marque paralelizavel=true nos elementos MANUAIS que a equipe divide (montagem); não marque "
+        "tempo de máquina nem deslocamento (itens_por_viagem já considera a carga por pessoa). Use os tempos da tabela de referências "
+        "sempre que existirem e não invente coeficientes: o que não vier dela será sinalizado como proposto pela IA. "
         "Considere carga (peso por pessoa), distâncias e a tabela de referências recebida. NÃO invente medidas, pesos, capacidades nem "
         "distâncias ausentes: liste em 'dados_faltantes'. Declare premissas e a confiança. Sexo/estatura/peso corporal NÃO alteram tempo. "
         "O sistema aplica tolerâncias, ritmo, ambiente e jornada e faz as contas.", ctx, PlanoProposta)

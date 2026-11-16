@@ -51,7 +51,7 @@ def test_tempos_do_plano_batem_com_a_conta_a_mao(admin, unidade_id):
     assert por_nome["Levar peças até Corte (cortar)"]["tempo_padrao_min"] == pytest.approx(2 * (30 / 75) * 2 * FT, abs=0.01)
     corte = por_nome["Cortar 6 peça(s)"]
     assert corte["tempo_prep_min"] == pytest.approx(5 * FT, abs=0.01)           # preparar a máquina: 5 min de referência
-    assert corte["tempo_exec_min"] == pytest.approx(6 / 30 * 60 * FT, abs=0.01)  # 6 peças a 30 un/h
+    assert corte["tempo_exec_min"] == pytest.approx(6 / 30 * 60, abs=0.01)       # 6 peças a 30 un/h: tempo de máquina, sem tolerância
     assert por_nome["Levar peças até a montagem"]["tempo_padrao_min"] == pytest.approx(2 * (15 / 75) * 2 * FT, abs=0.01)
     # montagem: (3 peças × 0,174 min + 8 parafusos × 0,30 min) por unidade × 2 unidades
     assert por_nome["Montar Corpo"]["tempo_padrao_min"] == pytest.approx((3 * 0.174 + 8 * 0.30) * 2 * FT, abs=0.01)
@@ -121,7 +121,7 @@ def test_tolerancia_do_ambiente_e_alertas_do_local(admin, unidade_id):
     assert admin.patch(f"/espacos/{cor['id']}", {"tolerancia_ambiente_pct": 2, "ruido_db": 92, "temperatura_c": 34}).status_code == 200
     p = _gerar(admin, pid, unidade_id)
     corte = next(s for s in p["passos"] if s["tipo"] == "corte")
-    assert corte["tempo_padrao_min"] == pytest.approx(17 / 0.89, abs=0.01)                   # 5 % + 4 % + 2 %
+    assert corte["tempo_padrao_min"] == pytest.approx(5 / 0.89 + 12, abs=0.01)               # tolerância de 5 % + 4 % + 2 % só no preparo (pessoa); 12 min de máquina
     assert corte["tempo_padrao_min"] > base
     assert any("ambiente (Corte)" in t["categoria"] for t in corte["tolerancias"])
     msgs = " ".join(a["msg"] for a in corte["alertas"])
@@ -342,14 +342,17 @@ def test_prazo_diz_se_cabe_quando_deve_comecar_e_nao_grava_nada(admin, unidade_i
     ok = admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-14", "inicio": inicio}).json()
     assert ok["veredito"] == "cabe" and ok["completo"] and not ok["aproximado"] and ok["ultimo_dia_para_comecar"] == "2026-10-14"
     assert ok["tempo_total_min"] == pytest.approx(p["totais"]["tempo_padrao_min"], abs=0.01)
-    assert ok["tempo_por_unidade_min"] == pytest.approx(p["totais"]["tempo_padrao_min"] / 2, abs=0.01)
+    # tempo padrão por unidade = só a execução; o preparo é do lote e aparece à parte
+    assert ok["tempo_por_unidade_min"] == pytest.approx(p["totais"]["tempo_execucao_min"] / 2, abs=0.01)
+    assert ok["preparo_lote_min"] == pytest.approx(p["totais"]["tempo_preparo_min"], abs=0.01)
     assert datetime.fromisoformat(ok["termina_em"]) == datetime.fromisoformat(p["totais"]["fim"])  # mesmo cálculo da agenda do plano
 
     # 3.000 unidades: não cabe em 2 dias, e o sistema avisa que o número é proporcional
     grande = admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-15", "inicio": inicio, "quantidade": 3000}).json()
     assert grande["veredito"] == "nao_cabe" and grande["aproximado"] and grande["folga_dias"] < 0
     assert grande["ultimo_dia_para_comecar"] is None or grande["ultimo_dia_para_comecar"] < "2026-10-14"
-    assert grande["tempo_por_unidade_min"] < ok["tempo_por_unidade_min"]  # o preparo se dilui em mais peças
+    assert grande["tempo_por_unidade_min"] == pytest.approx(ok["tempo_por_unidade_min"], abs=0.01)  # não depende da quantidade
+    assert grande["preparo_lote_min"] == pytest.approx(ok["preparo_lote_min"], abs=0.01)           # o preparo não cresce com a quantidade
 
     # começar depois do prazo também não cabe
     assert admin.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-14", "inicio": "2026-10-16T08:00:00-03:00"}).json()["veredito"] == "nao_cabe"
@@ -384,3 +387,55 @@ def test_prazo_de_outra_empresa_responde_404(client, admin, unidade_id):
     p = _gerar(admin, pid, unidade_id)
     outro = registrar(client, nome="Empresa B", email="b@exemplo.com")
     assert outro.post(f"/planos/{p['id']}/prazo", {"prazo": "2026-10-20"}).status_code == 404
+
+
+# ------------------------------------------------------------------ correções da lógica de cálculo
+def test_mais_pessoas_encurtam_a_montagem_e_nao_a_usinagem(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    um = {s["nome"]: s for s in _gerar(admin, pid, unidade_id, pessoas=1)["passos"]}
+    dois = {s["nome"]: s for s in _gerar(admin, pid, unidade_id, pessoas=2)["passos"]}
+    assert dois["Montar Corpo"]["tempo_padrao_min"] == pytest.approx(um["Montar Corpo"]["tempo_padrao_min"] / 2, abs=0.01)
+    assert dois["Cortar 6 peça(s)"]["tempo_padrao_min"] == pytest.approx(um["Cortar 6 peça(s)"]["tempo_padrao_min"], abs=0.01)  # a máquina dita o ritmo
+    assert any("dividido por igual" in x for x in _gerar(admin, pid, unidade_id, pessoas=2)["premissas"])
+
+
+def test_agenda_o_passo_comeca_quando_o_trabalho_recomeca():
+    bl = svc._blocos({})  # 08–12 e 13–17
+    ag = svc.agendar(datetime(2026, 11, 16, 9, 0), bl, True, [180, 120, 300, 30], 0)  # segunda 09:00
+    hm = lambda d: d.strftime("%a %H:%M")  # noqa: E731
+    assert [(hm(i), hm(f)) for i, f, _ in ag] == [("Mon 09:00", "Mon 12:00"), ("Mon 13:00", "Mon 15:00"),
+                                                  ("Mon 15:00", "Tue 11:00"), ("Tue 11:00", "Tue 11:30")]
+    fim_do_dia = svc.agendar(datetime(2026, 11, 20, 15, 0), bl, True, [120, 60], 0)  # sexta 15:00 → 17:00; o 2º passo é na segunda
+    assert (hm(fim_do_dia[1][0]), hm(fim_do_dia[1][1])) == ("Mon 08:00", "Mon 09:00")
+
+
+def test_tempo_padrao_por_unidade_separa_o_preparo_do_lote(admin, unidade_id):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    p2 = _gerar(admin, pid, unidade_id, quantidade=2)["totais"]
+    p4 = _gerar(admin, pid, unidade_id, quantidade=4)["totais"]
+    assert p2["tempo_preparo_min"] == pytest.approx(p4["tempo_preparo_min"], abs=0.01)  # preparo é do lote
+    assert p2["tempo_preparo_min"] + p2["tempo_execucao_min"] == pytest.approx(p2["tempo_padrao_min"], abs=0.02)
+    assert p2["tempo_por_unidade_min"] == pytest.approx(p2["tempo_execucao_min"] / 2, abs=0.01)
+    assert p2["tempo_por_unidade_min"] < p2["tempo_padrao_min"] / 2    # a média antiga (total ÷ qtd) misturava o preparo
+    assert p4["tempo_por_unidade_min"] == pytest.approx(p2["tempo_por_unidade_min"], rel=0.05)  # estável com a quantidade
+
+
+def test_confianca_media_so_sem_nada_generico_ou_estimado_pela_ia(admin, unidade_id, monkeypatch):
+    from app.services import ia
+    from app.services.ia import esquemas as es
+
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    monkeypatch.setattr(ia, "provedor_ativo", lambda empresa: "claude")
+    ok = es.PlanoProposta(passos=[es.PassoIA(nome="Montar", tipo="montagem", pessoas=1, qtd_pecas=2, elementos=[
+        es.ElementoTempo(nome="Fixar com parafuso", metodo="fixo", por_unidade=True, a_min=2.4)])], confianca="media")
+    monkeypatch.setattr(ia.claude, "planejar", lambda ctx: ok)
+    p = _gerar(admin, pid, unidade_id)
+    txt = " ".join(p["premissas"])
+    assert p["confianca"] == "baixa"                                     # IA diz "média", mas há coeficiente da IA e referência genérica
+    assert "coeficientes de tempo propostos pela IA" in txt and "parafuso" in txt and "referência genérica" in txt
+    # o provedor local também registra por que a confiança é baixa
+    monkeypatch.setattr(ia, "provedor_ativo", lambda empresa: "heuristica")
+    assert any("Confiança baixa" in x for x in _gerar(admin, pid, unidade_id)["premissas"])
