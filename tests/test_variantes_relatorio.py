@@ -88,7 +88,8 @@ def test_modelo_base_vem_por_nome_e_serve_de_partida(admin, unidade_id):
     pid = _produto_com_campos(admin, unidade_id, parafusos=8)
     mb = admin.get(f"/produtos/{pid}/modelo-base").json()
     assert [c["nome"] for c in mb["componentes"]] == ["Tampo", "Lateral"]
-    assert mb["ligacoes"] == [{"componente": "Lateral", "ligado_a": "Tampo", "metodo": "parafuso", "fixadores": 8}]
+    assert mb["ligacoes"] == [{"componente": "Lateral", "ligado_a": "Tampo", "metodo": "parafuso", "fixadores": 8, "formula_fixadores": ""}]
+    assert all(c["formulas"] == {} for c in mb["componentes"])
 
 
 def test_estrutura_do_pedido_muda_o_tempo_sem_mexer_no_produto(admin, unidade_id):

@@ -228,3 +228,9 @@ svg.chart text{font-size:10px;fill:var(--mut)}
   main>div:last-child>*{animation:none}
   details>summary{display:none}details>*{display:block}
 }
+
+/* peça ligada às medidas do pedido por fórmula */
+input.form{background:var(--pri-t);border-color:var(--pri);color:var(--pri);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem}
+code.form{background:var(--pri-t);color:var(--pri);padding:.1rem .4rem;border-radius:6px}
+code{background:var(--soft);padding:.05rem .35rem;border-radius:5px;font-size:.82em}
+.form-c{color:var(--pri);font-weight:600;cursor:help}

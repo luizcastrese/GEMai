@@ -399,6 +399,9 @@ class Componente(Base):
     peso_kg: Mapped[float | None] = mapped_column(Float)  # se vazio, o plano estima por material e medidas (rotulado)
     furos: Mapped[int] = mapped_column(Integer, default=0)
     bordas_m: Mapped[float | None] = mapped_column(Float)  # metros de borda a colar, por peça
+    # Fórmulas que ligam a peça às medidas do pedido: {campo da peça: "={Altura} - 0.036"} (sem o "="). O valor numérico
+    # do campo é o de partida; a fórmula, quando existe, manda (services/formulas.py).
+    formulas: Mapped[dict] = mapped_column(JSON, default=dict)
     ordem: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -413,6 +416,7 @@ class Ligacao(Base):
     ligado_a_id: Mapped[int | None] = mapped_column(ForeignKey("componentes.id"))
     metodo: Mapped[str] = mapped_column(String(30), default="parafuso")
     fixadores: Mapped[int] = mapped_column(Integer, default=0)  # por ligação, por unidade do produto
+    formula_fixadores: Mapped[str] = mapped_column(String(200), default="")  # ex.: teto({Largura} * 10)
     ordem: Mapped[int] = mapped_column(Integer, default=0)
 
 

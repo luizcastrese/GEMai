@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 
+from .services.formulas import CAMPOS_FORMULA
 from .services.modulos.catalogo import ChaveModulo
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, model_validator
@@ -998,6 +999,19 @@ class AuditoriaOut(Out):
 METODOS = Literal["parafuso", "cavilha", "minifix", "dobradica", "corredica", "cola", "prego", "encaixe", "puxador", "outro"]
 
 
+def _formulas_ok(m: dict | None):
+    """Chaves só dos campos que aceitam fórmula; a sintaxe é conferida na API (precisa dos campos do produto)."""
+    for k, v in (m or {}).items():
+        if k not in CAMPOS_FORMULA:
+            raise ValueError(f'«{k}» não aceita fórmula. Aceitam: {", ".join(CAMPOS_FORMULA)}.')
+        if not isinstance(v, str) or not v.strip() or len(v) > 200:
+            raise ValueError(f"A fórmula de «{k}» está vazia ou longa demais.")
+    return m
+
+
+Formulas = Annotated[dict[str, str], Field(max_length=10), AfterValidator(_formulas_ok)]
+
+
 class ComponenteIn(In):
     nome: Nome
     quantidade: float = Field(1.0, gt=0, le=100000)
@@ -1009,6 +1023,7 @@ class ComponenteIn(In):
     peso_kg: float | None = Field(None, ge=0, le=100000)
     furos: int = Field(0, ge=0, le=10000)
     bordas_m: float | None = Field(None, ge=0, le=1000)
+    formulas: Formulas = Field(default_factory=dict)
 
 
 class ComponenteUpdate(In):
@@ -1022,6 +1037,7 @@ class ComponenteUpdate(In):
     peso_kg: float | None = Field(None, ge=0, le=100000)
     furos: int | None = Field(None, ge=0, le=10000)
     bordas_m: float | None = Field(None, ge=0, le=1000)
+    formulas: Formulas | None = None
 
 
 class ComponenteOut(Out):
@@ -1038,6 +1054,7 @@ class ComponenteOut(Out):
     peso_estimado_kg: float | None = None  # calculado por material e medidas; só exibição
     furos: int
     bordas_m: float | None
+    formulas: dict = {}
 
 
 class LigacaoIn(In):
@@ -1045,6 +1062,7 @@ class LigacaoIn(In):
     ligado_a_id: int | None = None
     metodo: METODOS = "parafuso"
     fixadores: int = Field(0, ge=0, le=10000)
+    formula_fixadores: Annotated[str, Field(max_length=200)] = ""
 
 
 class LigacaoOut(Out):
@@ -1054,6 +1072,7 @@ class LigacaoOut(Out):
     ligado_a_id: int | None
     metodo: str
     fixadores: int
+    formula_fixadores: str = ""
 
 
 class EstruturaOut(Out):
@@ -1117,6 +1136,7 @@ class LigacaoPedidoIn(In):
     ligado_a: Nome | None = None  # None = ao conjunto
     metodo: METODOS = "parafuso"
     fixadores: int = Field(0, ge=0, le=10000)
+    formula_fixadores: Annotated[str, Field(max_length=200)] = ""
 
 
 class EstruturaPedidoIn(In):
@@ -1139,6 +1159,10 @@ class EstruturaPedidoIn(In):
 
 
 Especificacoes = dict[Annotated[str, Field(min_length=1, max_length=60)], str | float | None]
+
+
+class MontarIn(In):
+    especificacoes: Especificacoes = Field(default_factory=dict, max_length=30)
 
 
 class PlanoGerarIn(In):

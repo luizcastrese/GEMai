@@ -14,7 +14,7 @@ from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoP
 from ..ratelimit import limite_ia
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        ArranjoIn, ArranjosOut, InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoDeArranjoIn, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
-                       PlanoPassoOut, PrazoIn, PrazoOut, ReferenciaIn, ReferenciaOut)
+                       MontarIn, PlanoPassoOut, PrazoIn, PrazoOut, ReferenciaIn, ReferenciaOut)
 from ..services import especificacao, ia, modelo_tempo, plano as svc
 from ..services.arranjo import avaliar as arranjo_av, servico as arranjo
 from ..services.dashboard import tz_empresa
@@ -38,13 +38,32 @@ def _estrutura(ctx: Ctx, produto: Produto) -> EstruturaOut:
                         ligacoes=[LigacaoOut.model_validate(l) for l in ligs])
 
 
+def _base(ctx: Ctx, produto: Produto) -> dict | None:
+    """Modelo base do produto no formato do pedido (ligações por nome, com fórmulas); None se ainda não tem peças."""
+    comps = ctx.db.scalars(select(Componente).where(Componente.produto_id == produto.id).order_by(Componente.ordem, Componente.id)).all()
+    ligs = ctx.db.scalars(select(Ligacao).where(Ligacao.produto_id == produto.id).order_by(Ligacao.ordem, Ligacao.id)).all()
+    return especificacao.estrutura_do_produto(list(comps), list(ligs)) if comps else None
+
+
 @router.get("/produtos/{pid}/modelo-base")
 def modelo_base(pid: int, ctx: Ctx = Depends(get_ctx)):
     """Peças e ligações do produto no formato do pedido (ligações por nome): ponto de partida para editar no plano."""
+    return _base(ctx, ctx.obter(Produto, pid)) or {"componentes": [], "ligacoes": []}
+
+
+@router.post("/produtos/{pid}/montar")
+def montar(pid: int, dados: MontarIn, ctx: Ctx = Depends(get_ctx)):
+    """Pré-visualização: as peças deste pedido, já com as fórmulas calculadas para as medidas informadas. Não grava nada.
+    Campo do pedido ainda vazio não bloqueia: a fórmula que o usa fica com o valor de partida e aparece em `pendentes`."""
     p = ctx.obter(Produto, pid)
-    comps = ctx.db.scalars(select(Componente).where(Componente.produto_id == p.id).order_by(Componente.ordem, Componente.id)).all()
-    ligs = ctx.db.scalars(select(Ligacao).where(Ligacao.produto_id == p.id).order_by(Ligacao.ordem, Ligacao.id)).all()
-    return especificacao.estrutura_do_produto(list(comps), list(ligs))
+    espec = especificacao.validar(p, dados.especificacoes, completo=False)
+    base = _base(ctx, p)
+    if base is None:
+        return {"estrutura": {"componentes": [], "ligacoes": []}, "avisos": [], "pendentes": [], "usa_formulas": False}
+    est, info = especificacao.montar_estrutura(p, base, espec, estrito=False)
+    avisos = info["avisos"] + especificacao.aviso_medidas_soltas(p, espec, info["usados"], False)
+    usa = any(c.get("formulas") for c in base["componentes"]) or any(l.get("formula_fixadores") for l in base["ligacoes"])
+    return {"estrutura": est, "avisos": avisos, "pendentes": info["pendentes"], "usa_formulas": usa}
 
 
 @router.get("/produtos/{pid}/estrutura", response_model=EstruturaOut)
@@ -55,6 +74,8 @@ def estrutura(pid: int, ctx: Ctx = Depends(get_ctx)):
 @router.post("/produtos/{pid}/componentes", response_model=ComponenteOut, status_code=201)
 def criar_componente(pid: int, dados: ComponenteIn, ctx: Ctx = Depends(get_ctx)):
     p = ctx.obter(Produto, pid)
+    for campo, texto in dados.formulas.items():
+        especificacao.validar_formula(p, texto, f"«{dados.nome}» ({campo})")
     n = len(ctx.db.scalars(select(Componente.id).where(Componente.produto_id == p.id)).all())
     c = Componente(empresa_id=ctx.empresa_id, produto_id=p.id, ordem=n, **dados.model_dump())
     ctx.db.add(c)
@@ -80,8 +101,11 @@ def _componente(ctx: Ctx, pid: int, cid: int) -> Componente:
 def atualizar_componente(pid: int, cid: int, dados: ComponenteUpdate, ctx: Ctx = Depends(get_ctx)):
     c = _componente(ctx, pid, cid)
     antes = audit.snap(c)
+    if dados.formulas:
+        for campo, texto in dados.formulas.items():
+            especificacao.validar_formula(ctx.obter(Produto, pid), texto, f"«{c.nome}» ({campo})")
     for k, v in dados.model_dump(exclude_unset=True).items():
-        if v is None and k in ("nome", "quantidade", "furos", "grupo", "material"):
+        if v is None and k in ("nome", "quantidade", "furos", "grupo", "material", "formulas"):
             continue
         setattr(c, k, v)
     try:
@@ -111,6 +135,8 @@ def criar_ligacao(pid: int, dados: LigacaoIn, ctx: Ctx = Depends(get_ctx)):
         _componente(ctx, pid, dados.ligado_a_id)
         if dados.ligado_a_id == dados.componente_id:
             raise HTTPException(422, "Um componente não pode ser ligado a ele mesmo.")
+    if dados.formula_fixadores:
+        especificacao.validar_formula(p, dados.formula_fixadores, "quantidade de fixadores")
     n = len(ctx.db.scalars(select(Ligacao.id).where(Ligacao.produto_id == p.id)).all())
     l = Ligacao(empresa_id=ctx.empresa_id, produto_id=p.id, ordem=n, **dados.model_dump())
     ctx.db.add(l)
@@ -239,31 +265,51 @@ def _plano(ctx: Ctx, pid: int) -> PlanoTrabalho:
     return ctx.obter(PlanoTrabalho, pid)
 
 
-def _variante(produto: Produto, dados, plano: PlanoTrabalho | None = None) -> dict:
-    """Variante do pedido (valores dos campos + peças/ligações), validada. Ao recalcular, o que não veio mantém o que o plano já tem."""
-    espec = dados.especificacoes if dados.especificacoes is not None else (plano.especificacoes if plano else {})
-    estrutura = dados.estrutura.model_dump() if dados.estrutura is not None else (plano.estrutura if plano else None)
-    return {"especificacoes": especificacao.validar(produto, espec), "estrutura": estrutura}
+def _variante(ctx: Ctx, produto: Produto, dados, plano: PlanoTrabalho | None = None) -> dict:
+    """Variante do pedido: valores dos campos + peças/ligações CALCULADAS para essas medidas (fórmulas do produto).
+    - `estrutura` enviada (a pessoa conferiu/ajustou na tela) vale como está; ajustes sobre campos com fórmula ficam nas premissas.
+    - Ao recalcular sem `estrutura`: se as medidas não mudaram mantém a do plano; se mudaram, RECALCULA (nunca reaproveita peça velha).
+    - Sem `estrutura` e sem plano: monta do modelo base + fórmulas (vale também para o arranjo recomendado)."""
+    espec_in = dados.especificacoes if dados.especificacoes is not None else (plano.especificacoes if plano else {})
+    espec = especificacao.validar(produto, espec_in)
+    base = _base(ctx, produto)
+    montada, info, avisos, editou = None, {"usados": set(), "avisos": []}, [], False
+    if base is not None:
+        montada, info = especificacao.montar_estrutura(produto, base, espec)
+        avisos += info["avisos"]
+    if dados.estrutura is not None:
+        final = dados.estrutura.model_dump()
+    elif plano and plano.estrutura and espec == (plano.especificacoes or {}):
+        final = plano.estrutura
+    else:
+        final = montada
+    if montada is not None and final is not montada:
+        ajustes, editou = especificacao.comparar(montada, final)
+        avisos += ajustes
+    if montada is not None:
+        avisos += especificacao.aviso_medidas_soltas(produto, espec, info["usados"], editou)
+    return {"especificacoes": espec, "estrutura": final, "avisos_variante": avisos}
 
 
-def _cfg(dados: PlanoGerarIn, produto: Produto, plano: PlanoTrabalho | None = None) -> dict:
+def _cfg(ctx: Ctx, dados: PlanoGerarIn, produto: Produto, plano: PlanoTrabalho | None = None) -> dict:
     return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
-            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_ignorada": bool(dados.fadiga_pct_hora), **_variante(produto, dados, plano)}
+            "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_ignorada": bool(dados.fadiga_pct_hora),
+            **_variante(ctx, produto, dados, plano)}
 
 
 @router.post("/planos", response_model=PlanoOut, status_code=201)
 def gerar_plano(dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
     ctx.exige_unidade(dados.unidade_id)
     produto = ctx.obter(Produto, dados.produto_id)
-    plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(dados, produto))
+    plano = svc.gerar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg(ctx, dados, produto))
     ctx.auditar("plano.gerar", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "quantidade": dados.quantidade, "provedor": plano.provedor})
     ctx.db.commit()
     return _plano_out(ctx, plano)
 
 
-def _cfg_arranjo(dados: ArranjoIn, produto: Produto) -> dict:
+def _cfg_arranjo(ctx: Ctx, dados: ArranjoIn, produto: Produto) -> dict:
     return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
-            "pessoas": 1, "perfil_id": dados.perfil_id, **_variante(produto, dados)}
+            "pessoas": 1, "perfil_id": dados.perfil_id, **_variante(ctx, produto, dados)}
 
 
 @router.post("/planos/arranjos", response_model=ArranjosOut)
@@ -275,7 +321,7 @@ def recomendar_arranjos(dados: ArranjoIn, ctx: Ctx = Depends(get_ctx)):
     produto = ctx.obter(Produto, dados.produto_id)
     if dados.explicar:
         limite_ia.checar(f"{ctx.empresa_id}")
-    r = arranjo.recomendar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(dados, produto), pessoas_max=dados.pessoas_max,
+    r = arranjo.recomendar(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(ctx, dados, produto), pessoas_max=dados.pessoas_max,
                            n_melhores=dados.n_melhores, explicar=dados.explicar)
     ctx.auditar("plano.arranjos", "produto", produto.id, None, {"avaliados": r["avaliados"], "candidatos": len(r["candidatos"])})
     ctx.db.commit()
@@ -292,7 +338,7 @@ def plano_do_arranjo(dados: PlanoDeArranjoIn, ctx: Ctx = Depends(get_ctx)):
         meio = ctx.obter(Recurso, e.meio_id)
         if meio.unidade_id != dados.unidade_id or meio.funcao != "movimentacao":
             raise HTTPException(422, "Meio de movimentação inválido para esta unidade.")
-    plano = arranjo.gerar_do_arranjo(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(dados, produto),
+    plano = arranjo.gerar_do_arranjo(ctx, produto, dados.quantidade, dados.unidade_id, _cfg_arranjo(ctx, dados, produto),
                                      arranjo_av.Config(e.pessoas, e.lotes, e.regra, e.meio_id))
     ctx.auditar("plano.gerar_de_arranjo", "plano_trabalho", plano.id, None, {"produto_id": produto.id, "arranjo": plano.totais.get("arranjo", {}).get("id")})
     ctx.db.commit()
@@ -324,7 +370,7 @@ def recalcular(pid: int, dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
     if dados.produto_id != p.produto_id or dados.unidade_id != p.unidade_id:
         raise HTTPException(422, "Produto e unidade não podem mudar ao recalcular.")
     produto = ctx.obter(Produto, p.produto_id)
-    svc.gerar(ctx, produto, dados.quantidade, p.unidade_id, _cfg(dados, produto, p), plano=p)
+    svc.gerar(ctx, produto, dados.quantidade, p.unidade_id, _cfg(ctx, dados, produto, p), plano=p)
     ctx.auditar("plano.recalcular", "plano_trabalho", p.id, None, {"quantidade": dados.quantidade, "provedor": p.provedor})
     ctx.db.commit()
     return _plano_out(ctx, p)
