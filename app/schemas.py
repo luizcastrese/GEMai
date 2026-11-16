@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal
 
 from .services.modulos.catalogo import ChaveModulo
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 def _utc(v: datetime) -> datetime:
@@ -554,10 +554,40 @@ class MaterialOut(Out):
     ativo: bool
 
 
+class CampoEspecificacao(In):
+    """Um campo que varia de pedido para pedido (ex.: "Largura" em cm, "Tipo" com opções)."""
+
+    nome: Annotated[str, Field(min_length=1, max_length=60)]
+    tipo: Literal["numero", "texto", "opcao"] = "texto"
+    unidade: Annotated[str, Field(max_length=20)] = ""
+    opcoes: list[Annotated[str, Field(min_length=1, max_length=60)]] = Field(default_factory=list, max_length=30)
+    obrigatorio: bool = False
+
+    @model_validator(mode="after")
+    def _coerente(self):
+        if self.tipo == "opcao" and len(set(self.opcoes)) < 2:
+            raise ValueError(f'O campo "{self.nome}" é de escolha: informe ao menos 2 opções diferentes.')
+        if self.tipo != "opcao":
+            self.opcoes = []
+        return self
+
+
+def _campos_unicos(campos: list[CampoEspecificacao] | None):
+    if campos is not None:
+        nomes = [c.nome.casefold() for c in campos]
+        if len(set(nomes)) != len(nomes):
+            raise ValueError("Há dois campos com o mesmo nome.")
+    return campos
+
+
+CamposEspecificacao = Annotated[list[CampoEspecificacao], Field(max_length=30), AfterValidator(_campos_unicos)]
+
+
 class ProdutoIn(In):
     nome: Nome
     tipo: Literal["produto", "servico"] = "produto"
     descricao: Texto = ""
+    campos_especificacao: CamposEspecificacao = Field(default_factory=list)
     caracteristicas: dict[str, Any] = Field(default_factory=dict)
     peso_kg: float | None = Field(None, ge=0, le=100000)
     comprimento_m: float | None = Field(None, ge=0, le=1000)
@@ -569,6 +599,7 @@ class ProdutoUpdate(In):
     nome: Nome | None = None
     tipo: Literal["produto", "servico"] | None = None
     descricao: Texto | None = None
+    campos_especificacao: CamposEspecificacao | None = None
     caracteristicas: dict[str, Any] | None = None
     peso_kg: float | None = Field(None, ge=0, le=100000)
     comprimento_m: float | None = Field(None, ge=0, le=1000)
@@ -582,6 +613,7 @@ class ProdutoOut(Out):
     nome: str
     tipo: str
     descricao: str
+    campos_especificacao: list = []
     caracteristicas: dict
     peso_kg: float | None = None
     comprimento_m: float | None = None
@@ -1080,11 +1112,43 @@ class ReferenciaOut(Out):
     informada: bool = False
 
 
+class LigacaoPedidoIn(In):
+    componente: Nome
+    ligado_a: Nome | None = None  # None = ao conjunto
+    metodo: METODOS = "parafuso"
+    fixadores: int = Field(0, ge=0, le=10000)
+
+
+class EstruturaPedidoIn(In):
+    """Peças e ligações DESTE pedido (cópia editada do modelo base do produto), ligadas por nome."""
+
+    componentes: list[ComponenteIn] = Field(min_length=1, max_length=300)
+    ligacoes: list[LigacaoPedidoIn] = Field(default_factory=list, max_length=600)
+
+    @model_validator(mode="after")
+    def _referencias(self):
+        nomes = [c.nome.casefold() for c in self.componentes]
+        if len(set(nomes)) != len(nomes):
+            raise ValueError("Há dois componentes com o mesmo nome.")
+        for l in self.ligacoes:
+            if l.componente.casefold() not in nomes or (l.ligado_a is not None and l.ligado_a.casefold() not in nomes):
+                raise ValueError("Uma ligação cita um componente que não está na lista.")
+            if l.ligado_a is not None and l.ligado_a.casefold() == l.componente.casefold():
+                raise ValueError("Um componente não pode ser ligado a ele mesmo.")
+        return self
+
+
+Especificacoes = dict[Annotated[str, Field(min_length=1, max_length=60)], str | float | None]
+
+
 class PlanoGerarIn(In):
     produto_id: int
     unidade_id: int
     quantidade: float = Field(1.0, gt=0, le=100000)
     nome: Annotated[str, Field(max_length=300)] | None = None
+    # Variante do pedido. None = não enviado (ao recalcular, mantém o que o plano já tem; ao gerar, usa o modelo base).
+    especificacoes: Especificacoes | None = Field(None, max_length=30)
+    estrutura: EstruturaPedidoIn | None = None
     inicio: UTC | None = None
     blocos: list[Annotated[list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]], Field(min_length=2, max_length=2)]] | None = Field(None, max_length=6)
     so_dias_uteis: bool = True
@@ -1140,6 +1204,9 @@ class PlanoOut(Out):
     quantidade: float
     status: str
     config: dict
+    especificacoes: dict = {}
+    variante: str = ""  # texto legível das especificações, com unidades (ex.: "Largura 80 cm · Tipo 2 portas")
+    estrutura: dict | None = None  # só no detalhe do plano
     provedor: str
     confianca: str
     premissas: list
@@ -1280,6 +1347,8 @@ class ArranjoIn(In):
     unidade_id: int
     quantidade: float = Field(1.0, gt=0, le=100000)
     nome: Annotated[str, Field(max_length=300)] | None = None
+    especificacoes: Especificacoes | None = Field(None, max_length=30)
+    estrutura: EstruturaPedidoIn | None = None
     inicio: UTC | None = None
     blocos: list[Annotated[list[Annotated[str, Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]], Field(min_length=2, max_length=2)]] | None = Field(None, max_length=6)
     so_dias_uteis: bool = True

@@ -272,6 +272,9 @@ class Produto(Base):
     tipo: Mapped[str] = mapped_column(String(20), default="produto")  # produto | servico
     descricao: Mapped[str] = mapped_column(Text, default="")
     caracteristicas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Campos que variam de um pedido para outro (ex.: largura, altura, tipo). O produto é a FAMÍLIA ("Armário"); os valores
+    # e a lista de peças/parafusos daquele pedido ficam no plano de trabalho. [{nome, tipo, unidade, opcoes, obrigatorio}]
+    campos_especificacao: Mapped[list] = mapped_column(JSON, default=list)
     # Contorno físico do item (sobrepõe o item típico da operação no cálculo do modelo de tempo)
     peso_kg: Mapped[float | None] = mapped_column(Float)
     comprimento_m: Mapped[float | None] = mapped_column(Float)
@@ -435,6 +438,9 @@ class PlanoTrabalho(Base):
     quantidade: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="rascunho")  # rascunho | confirmado | cancelado
     config: Mapped[dict] = mapped_column(JSON, default=dict)  # início, jornada, perfil, pessoas, fadiga/h
+    # Variante deste pedido: valores dos campos do produto e a lista de peças/ligações usada no cálculo (cópia editada do modelo base).
+    especificacoes: Mapped[dict] = mapped_column(JSON, default=dict)
+    estrutura: Mapped[dict | None] = mapped_column(JSON)
     provedor: Mapped[str] = mapped_column(String(80), default="")
     confianca: Mapped[str] = mapped_column(String(10), default="baixa")
     premissas: Mapped[list] = mapped_column(JSON, default=list)

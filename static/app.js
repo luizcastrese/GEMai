@@ -9,6 +9,7 @@ import * as admin from './telas_admin.js';
 import * as contorno from './telas_contorno.js';
 import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
+import * as relatorio from './telas_relatorio.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -24,6 +25,7 @@ const ROTAS = [
   [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
   [/^#\/planos$/, plano.planos, ['Plano de trabalho', '3. Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
+  [/^#\/relatorio$/, relatorio.relatorio, ['Plano de trabalho', '4. Relatório', '#/relatorio']],
   [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/ordens$/, prod.ordens, ['Detalhes técnicos', 'Ordens de produção', '#/ordens', true]],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
