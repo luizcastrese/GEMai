@@ -1,5 +1,6 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
+import { cartaoCampos, editorEstrutura, formEspecificacoes } from './variante.js';
 import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
@@ -18,10 +19,10 @@ export async function produtos(el) {
   const lista = await get('/produtos?ativo=true');
   const nome = h('input', { placeholder: 'ex.: Armário de cozinha' });
   montar(el, h('h1', null, 'Produtos'),
-    h('p', { class: 'muted' }, 'Informe do que o produto é feito (componentes) e como as peças se juntam. A partir disso o sistema monta o plano de trabalho com os tempos.'),
+    h('p', { class: 'muted' }, 'Produto é o tipo de coisa que você faz (ex.: Armário). O que muda de um pedido para outro (tamanho, tipo, quantidade de parafusos) você informa no plano de trabalho.'),
     h('div', { class: 'card' }, tabela([{ t: 'Produto', f: (p) => h('a', { href: `#/produtos/${p.id}` }, p.nome) }, { t: 'Descrição', f: (p) => p.descricao }],
       lista.filter((p) => p.tipo === 'produto'), 'Nenhum produto ainda. Crie o primeiro abaixo.')),
-    h('div', { class: 'card' }, h('h3', null, 'Novo produto'), h('div', { class: 'row' }, nome, h('button', { class: 'pri', onclick: async () => {
+    h('div', { class: 'card' }, h('h3', null, 'Novo produto'), h('p', { class: 'muted small' }, 'Use o nome geral, sem medidas: "Armário", não "Armário 2 portas 80 cm".'), h('div', { class: 'row' }, nome, h('button', { class: 'pri', onclick: async () => {
       if (!nome.value.trim()) return toast('Digite o nome do produto.', true);
       const r = await tentar(() => post('/produtos', { nome: nome.value.trim(), tipo: 'produto' }));
       if (r) location.hash = `#/produtos/${r.id}`;
@@ -49,8 +50,8 @@ export async function produtoDetalhe(el, id) {
       h('td', null, celula(c, 'furos')), h('td', null, celula(c, 'bordas_m')),
       h('td', null, h('button', { class: 'sm dng', title: 'Remover', onclick: () => confirmar(`Remover "${c.nome}" e suas ligações?`, async () => { if (await tentar(() => del(`/produtos/${id}/componentes/${c.id}`))) desenhar(); }, 'Remover') }, '✕'))));
     const novo = { nome: h('input', { placeholder: 'ex.: Lateral' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: MDF)' }) };
-    const sComps = h('div', { class: 'card' }, h('h2', null, '1. Componentes'),
-      h('p', { class: 'muted small' }, 'Quantidade é por unidade do produto. Medidas em metros. Se não souber o peso, informe material e medidas: o sistema estima e marca como "estimado".'),
+    const sComps = h('div', { class: 'card' }, h('h2', null, '2. Peças de partida (modelo base)'),
+      h('p', { class: 'muted small' }, 'Ponto de partida de todo pedido: em cada plano você ajusta quantidades, medidas e parafusos. Quantidade é por unidade do produto. Medidas em metros. Se não souber o peso, informe material e medidas: o sistema estima e marca como "estimado".'),
       comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', ''].map((t) => h('th', null, t)))),
         h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum componente ainda. Adicione abaixo ou use "Descrever com a IA".'),
       h('div', { class: 'row' }, novo.nome, novo.qtd, novo.mat, h('button', { onclick: async () => {
@@ -61,7 +62,7 @@ export async function produtoDetalhe(el, id) {
     const sel = (lista, vazio) => h('select', null, h('option', { value: '' }, vazio), lista.map(([v, r]) => h('option', { value: v }, r)));
     const [lc, la, lm, lf] = [sel(comps.map((c) => [c.id, c.nome]), 'Componente…'), sel(comps.map((c) => [c.id, c.nome]), 'ao conjunto'), sel(METODOS, ''), h('input', { type: 'number', min: '0', step: '1', value: '0' })];
     lm.value = 'parafuso';
-    const sLig = h('div', { class: 'card' }, h('h2', null, '2. Como as peças se juntam'),
+    const sLig = h('div', { class: 'card' }, h('h2', null, '3. Como as peças se juntam'),
       h('p', { class: 'muted small' }, 'Diga como cada componente se liga a outro e quantos parafusos, cavilhas etc. são usados por unidade do produto. Sem isso, o tempo de montagem fica como pendência.'),
       est.ligacoes.length ? est.ligacoes.map((l) => h('div', { class: 'lig' }, h('span', null, `${nomeDe(l.componente_id)} → ${nomeDe(l.ligado_a_id)} · ${rotMetodo(l.metodo)} · ${l.fixadores} un.`),
         h('button', { class: 'sm dng', onclick: async () => { if (await tentar(() => del(`/produtos/${id}/ligacoes/${l.id}`))) desenhar(); } }, '✕')))
@@ -71,17 +72,17 @@ export async function produtoDetalhe(el, id) {
         if (await tentar(() => post(`/produtos/${id}/ligacoes`, { componente_id: Number(lc.value), ligado_a_id: num(la.value), metodo: lm.value, fixadores: Number(lf.value) || 0 }))) desenhar();
       } }, '+ Adicionar ligação')) : null);
 
-    const sPlano = h('div', { class: 'card' }, h('h2', null, '3. Plano de trabalho'),
+    const sPlano = h('div', { class: 'card' }, h('h2', null, '4. Plano de trabalho'),
       h('p', { class: 'muted' }, 'O sistema considera movimentação, usinagem, montagem, conferência, carga, ambiente e a jornada, e entrega os passos com horários.'),
       h('div', { class: 'inline' }, h('button', { class: 'pri big', disabled: !comps.length, onclick: () => gerarComChecagem({ produtoId: id, produtoNome: p.nome }) }, 'Gerar plano de trabalho'),
         h('button', { class: 'big', disabled: !comps.length, title: 'O sistema compara equipes, lotes e meios de movimentação e mostra o que cada escolha custa.', onclick: () => abrirArranjos({ produtoId: id, produtoNome: p.nome }) }, 'Recomendar arranjo'),
         h('a', { class: 'btn', href: '#/planos' }, 'Ver planos anteriores')));
-    montar(area, sComps, sLig, sPlano);
+    montar(area, cartaoCampos(p, desenhar), sComps, sLig, sPlano);
   };
 
   montar(el, h('p', null, h('a', { href: '#/produtos' }, '← Produtos')), h('h1', null, p.nome),
     h('div', { class: 'inline' }, h('button', { class: 'ia', onclick: () => descreverComIA(p, desenhar) }, 'Descrever com a IA')),
-    h('p', { class: 'muted small' }, 'Escreva em texto livre (ex.: "armário de MDF com 2 portas, 3 prateleiras e 4 dobradiças"). A IA propõe a lista; você confere antes de salvar.'), area);
+    h('p', { class: 'muted small' }, 'Escreva em texto livre (ex.: "armário de MDF com 2 portas, 3 prateleiras e 4 dobradiças"). A IA propõe as peças de partida; você confere antes de salvar.'), area);
   await desenhar();
 }
 
@@ -139,7 +140,11 @@ const isoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).to
 export async function abrirGerar({ produtoId, produtoNome, plano }) {
   const cfg = plano?.config || {};
   const bl = cfg.blocos || [['08:00', '12:00'], ['13:00', '17:00']];
-  const perfis = await get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`);
+  const [perfis, produto, base] = await Promise.all([get(`/perfis-mao-de-obra${qs({ unidade_id: estado.unidadeId, ativo: true })}`),
+    get(`/produtos/${produtoId}`), plano?.estrutura ? Promise.resolve(plano.estrutura) : get(`/produtos/${produtoId}/modelo-base`)]);
+  const campos = produto.campos_especificacao || [];
+  const espec = formEspecificacoes(campos, plano?.especificacoes || {});
+  const pecas = editorEstrutura(base);
   const f = {
     qtd: entrada('number', plano?.quantidade ?? 1, { min: '0', step: 'any' }),
     ini: entrada('datetime-local', cfg.inicio ? isoLocal(new Date(cfg.inicio)) : isoLocal(new Date())),
@@ -150,18 +155,21 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
   };
   if (cfg.perfil_id) f.perfil.value = cfg.perfil_id;
   const corpo = h('div', null,
+    campos.length ? h('div', null, h('h3', null, 'Este pedido'), espec.el) : h('p', { class: 'muted small' }, 'Dica: no produto, cadastre o que muda de um pedido para outro (largura, tipo…) para o relatório separar as variantes.'),
+    detalhes('Peças e parafusos deste pedido (ajustar é opcional)', pecas.el),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Quantas unidades?'), f.qtd), h('div', null, h('label', null, 'Quando começa?'), f.ini), h('div', null, h('label', null, 'Quantas pessoas na equipe?'), f.pess)),
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', null, f.uteis, ' Trabalhar só de segunda a sexta'),
     h('h3', null, 'Quem vai fazer'),
     perfis.length ? h('div', null, h('label', null, 'Perfil da pessoa (ritmo e limites de carga)'), f.perfil, h('div', { class: 'muted small' }, '"Padrão" usa ritmo normal. Perfis são cadastrados em Configurações › Cadastros avançados (com detalhes técnicos ligados).')) : h('p', { class: 'muted small' }, 'Sem perfil cadastrado: o sistema usa o ritmo normal (100%) e os limites de carga padrão.'));
-  modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
+  modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
     h('button', { class: 'pri', onclick: async (e) => {
       const m = [[f.m1.value, f.m2.value], [f.t1.value, f.t2.value]].filter((b) => b[0] && b[1]);
       if (!m.length) return toast('Informe ao menos um bloco de horário.', true);
       const corpoReq = { produto_id: produtoId, unidade_id: estado.unidadeId, quantidade: Number(f.qtd.value) || 1, inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null,
-        blocos: m, so_dias_uteis: f.uteis.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value) };
+        blocos: m, so_dias_uteis: f.uteis.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value),
+        especificacoes: espec.valores(), estrutura: pecas.valor() };
       e.target.disabled = true;
       const r = await tentar(() => (plano ? post(`/planos/${plano.id}/recalcular`, corpoReq) : post('/planos', corpoReq)));
       e.target.disabled = false;
@@ -173,6 +181,8 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
 const rotRegra = { plano: 'na ordem do plano', critico: 'o caminho mais longo primeiro' };
 
 export async function abrirArranjos({ produtoId, produtoNome }) {
+  const campos = (await get(`/produtos/${produtoId}`)).campos_especificacao || [];
+  const espec = formEspecificacoes(campos);
   const f = {
     qtd: entrada('number', 1, { min: '0', step: 'any' }),
     ini: entrada('datetime-local', isoLocal(new Date())),
@@ -181,7 +191,7 @@ export async function abrirArranjos({ produtoId, produtoNome }) {
   };
   const saida = h('div', { class: 'arranjos' });
   const corpoReq = () => ({ produto_id: produtoId, unidade_id: estado.unidadeId, quantidade: Number(f.qtd.value) || 1,
-    inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null, pessoas_max: Number(f.max.value) || 4 });
+    inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null, pessoas_max: Number(f.max.value) || 4, especificacoes: espec.valores() });
   const escolher = async (c, fechar) => {
     const r = await tentar(() => post('/planos/de-arranjo', { ...corpoReq(), escolha: { pessoas: c.pessoas, lotes: c.lotes, regra: c.regra, meio_id: c.meio_id } }));
     if (r) { fechar(); location.hash = `#/planos/${r.id}`; }
@@ -205,6 +215,7 @@ export async function abrirArranjos({ produtoId, produtoNome }) {
   };
   const corpo = h('div', null,
     h('p', { class: 'muted' }, 'O sistema calcula cada arranjo com o tempo padrão dos módulos e os meios cadastrados. Ninguém digita tempo: você compara e escolhe.'),
+    campos.length ? espec.el : null,
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Quantas unidades?'), f.qtd), h('div', null, h('label', null, 'Quando começa?'), f.ini),
       h('div', null, h('label', null, 'Maior equipe a considerar'), f.max)),
     estado.avancado ? h('label', null, f.ia, ' Pedir à IA que explique as diferenças e sugira alternativas (o sistema recalcula)') : null,
@@ -234,6 +245,7 @@ export async function planos(el) {
     } }, 'Recomendar arranjo'))),
     h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
+      { t: 'Variante', f: (p) => p.variante || '—' },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge('Rascunho', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) },
       { t: 'Tempo padrão por unidade', f: (p) => fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) }, { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
       { t: 'Pendências', f: (p) => (p.totais.completo ? badge('Completo', 'b-ok') : badge('Incompleto', 'b-warn')) },
@@ -284,7 +296,8 @@ export async function planoDetalhe(el, id) {
     p.status !== 'cancelado' && !p.ordem_id ? h('button', { class: 'dng', onclick: () => confirmar('Cancelar este plano?', async () => { if (await tentar(() => post(`/planos/${id}/cancelar`))) recarregar(); }, 'Cancelar plano') }, 'Cancelar plano') : null);
 
   montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/planos' }, '← Planos de trabalho')),
-    h('h1', null, p.nome), h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
+    h('h1', null, p.nome), Object.keys(p.especificacoes || {}).length ? h('p', { class: 'muted' }, `Este pedido: ${p.variante}`) : null,
+    h('div', { class: 'inline' }, p.status === 'rascunho' ? badge('Rascunho: falta você conferir e confirmar', 'b-warn') : statusBadge(p.status),
       badge(`Confiança: ${{ baixa: 'baixa', media: 'média', alta: 'alta' }[p.confianca]}`, p.confianca === 'baixa' ? 'b-warn' : ''), badge(p.provedor.startsWith('claude') ? 'Montado pela IA' : 'Montado por regras locais', 'b-ia')),
     (p.provedor.startsWith('claude') ? avisoIA : (txt) => h('div', { class: 'aviso-ia' }, h('strong', null, 'Sugestão automática. '), txt))('Este plano é uma estimativa calculada a partir do produto, dos meios cadastrados (ficha técnica) e de coeficientes de referência genéricos, ainda não calibrados com a sua produção. Quando houver apontamentos reais, compare com o previsto.'),
     h('div', { class: 'hero' },

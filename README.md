@@ -29,6 +29,14 @@ Dois apoios no caminho principal:
   e responde **cabe / não cabe / não dá para garantir**, quando termina e **até que dia dá para começar**. Plano com passos sem tempo nunca recebe "cabe". Com quantidade diferente da do plano,
   só o tempo de execução é escalado (preparo fixo): é **estimativa proporcional**, declarada na tela.
 
+## Produto como família, variante no pedido, e relatório de desempenho
+
+- **Produto = a família** ("Armário"), com nome geral e, opcionalmente, **campos que mudam de pedido para pedido** (ex.: Largura em cm, Altura, Tipo com opções), definidos uma vez no produto (`campos_especificacao`: número, texto ou escolha; obrigatório ou não).
+- **A variante vive no plano de trabalho.** Ao gerar ou recalcular um plano (`POST /planos`, `/planos/{id}/recalcular`, e também `/planos/arranjos`) o usuário informa os valores (`especificacoes`, validados contra os campos do produto) e pode ajustar as **peças e a quantidade de parafusos só daquele pedido** (`estrutura`, uma cópia editável do modelo base: `GET /produtos/{id}/modelo-base`). O produto não muda; o motor calcula com a estrutura do pedido. Sem `estrutura`, usa o modelo base (comportamento anterior).
+- A ordem gerada leva a variante na descrição (ex.: "Armário (Largura 80 cm · Tipo 2 portas)").
+- **Relatório** (menu *4. Relatório*, `GET /relatorios/desempenho`, planilha em `/relatorios/desempenho.csv?tipo=resumo|detalhe`, filtros por produto, unidade e período): uma linha por plano com variante, previsto, realizado, desvio e eficiência, e um **resumo por produto + variante**. Previsto × realizado só é comparado em **ordens concluídas com todos os passos previstos** (o que ainda não terminou, ou não tinha previsão, não entra no desvio). Desvio positivo = demorou mais que o previsto. O CSV usa `;`, vírgula decimal, BOM (abre direto no Excel) e neutraliza células que começam com `=`, `+`, `-` ou `@`.
+- Limitação: o resumo agrupa por valores **idênticos** (80 cm e 81 cm são variantes diferentes); faixas de tamanho não existem ainda.
+
 Ordens, fila, conferência de registros, processos e análises continuam no sistema, mas só aparecem no menu com **"Mostrar detalhes técnicos"** ligado (fase 2: medir o real para melhorar o padrão).
 
 ## Experiência do usuário: um só tipo de usuário, simples por padrão
@@ -249,7 +257,7 @@ e ponha um proxy reverso com HTTPS na frente.
 - Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
 - Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
 - Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 210 testes automatizados (SQLite) + percursos no navegador (implantação, gêmeo digital, fatores humanos, produto → plano → ordem, cadastro de meios e arranjo recomendado). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+- **Validação feita:** 251 testes automatizados (SQLite) + percursos no navegador (implantação, gêmeo digital, fatores humanos, produto → plano → ordem, cadastro de meios e arranjo recomendado). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
 
 ## Estrutura
 

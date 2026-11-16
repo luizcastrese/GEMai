@@ -18,7 +18,7 @@ from .. import audit
 from ..deps import Ctx
 from ..models import (Componente, Distancia, Espaco, Ligacao, Ordem, OrdemOperacao, PerfilMaoDeObra, PlanoPasso,
                       PlanoTrabalho, Produto, Recurso)
-from . import calibracao_modulos, ergonomia, ia, modelo_tempo, tolerancias
+from . import calibracao_modulos, ergonomia, especificacao, ia, modelo_tempo, tolerancias
 from .modulos import catalogo, entradas, motor
 from .dashboard import tz_empresa
 from .prontidao import _alerta_simples
@@ -135,11 +135,15 @@ def alertas_jornada(blocos) -> list[dict]:
 
 
 # ------------------------------------------------------------------ geração
-def _carregar(ctx: Ctx, produto: Produto, unidade_id: int):
-    comps = list(ctx.db.scalars(select(Componente).where(Componente.produto_id == produto.id).order_by(Componente.ordem, Componente.id)))
+def _carregar(ctx: Ctx, produto: Produto, unidade_id: int, estrutura: dict | None = None):
+    """Peças e ligações do cálculo: as DO PEDIDO (`estrutura`), se houver; senão o modelo base do produto."""
+    if estrutura:
+        comps, ligs = especificacao.estrutura_transiente(estrutura, ctx.empresa_id, produto.id)
+    else:
+        comps = list(ctx.db.scalars(select(Componente).where(Componente.produto_id == produto.id).order_by(Componente.ordem, Componente.id)))
+        ligs = list(ctx.db.scalars(select(Ligacao).where(Ligacao.produto_id == produto.id).order_by(Ligacao.ordem, Ligacao.id)))
     if not comps:
         raise HTTPException(422, "O produto ainda não tem componentes. Informe a lista de componentes primeiro.")
-    ligs = list(ctx.db.scalars(select(Ligacao).where(Ligacao.produto_id == produto.id).order_by(Ligacao.ordem, Ligacao.id)))
     recursos = list(ctx.db.scalars(select(Recurso).where(Recurso.empresa_id == ctx.empresa_id, Recurso.unidade_id == unidade_id, Recurso.ativo.is_(True))))
     espacos = list(ctx.db.scalars(select(Espaco).where(Espaco.empresa_id == ctx.empresa_id, Espaco.unidade_id == unidade_id, Espaco.ativo.is_(True))))
     return comps, ligs, recursos, espacos
@@ -171,7 +175,7 @@ class Base:
 
 def preparar(ctx: Ctx, produto: Produto, unidade_id: int, cfg: dict) -> Base:
     db = ctx.db
-    comps, ligs, recursos, espacos = _carregar(ctx, produto, unidade_id)
+    comps, ligs, recursos, espacos = _carregar(ctx, produto, unidade_id, cfg.get("estrutura"))
     por_id = {c.id: c for c in comps}
     esp_id = {e.id: e for e in espacos}
     perfil = db.get(PerfilMaoDeObra, cfg["perfil_id"]) if cfg.get("perfil_id") else None
@@ -196,7 +200,7 @@ def propor(base: Base, quantidade: float):
     ctx = base.ctx
     contexto = {
         "segmento": ctx.empresa.segmento,
-        "produto": {"nome": base.produto.nome, "quantidade": quantidade},
+        "produto": {"nome": base.produto.nome, "quantidade": quantidade, "especificacoes": base.cfg.get("especificacoes") or {}},
         "componentes": [{"nome": c["nome"], "qtd": c["qtd"], "material": c["material"], "grupo": c["grupo"], "comp": c["comp"],
                          "larg": c["larg"], "esp": c["esp"], "peso_kg": c["peso_kg"], "peso_origem": base.pesos[c["nome"]][1],
                          "furos": c["furos"], "bordas_m": c["bordas_m"]} for c in base.comps_d],
@@ -267,9 +271,12 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     [(início local, fim local, duração efetiva | None)] alinhada às linhas."""
     ctx, db, cfg, produto, unidade_id = base.ctx, base.ctx.db, base.cfg, base.produto, base.unidade_id
     tz = tz_empresa(ctx.empresa)
+    espec = cfg.get("especificacoes") or {}
+    rotulo = especificacao.resumo(produto, espec)
     if plano is None:
         plano = PlanoTrabalho(empresa_id=ctx.empresa_id, unidade_id=unidade_id, produto_id=produto.id, criado_por=ctx.usuario.id,
-                              nome=cfg.get("nome") or f"{produto.nome} × {quantidade:g}", quantidade=quantidade)
+                              nome=cfg.get("nome") or (f"{produto.nome} ({rotulo}) × {quantidade:g}" if rotulo else f"{produto.nome} × {quantidade:g}"),
+                              quantidade=quantidade)
         db.add(plano)
         db.flush()
     else:
@@ -277,7 +284,8 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
             db.delete(passo)
         db.flush()
         plano.quantidade = quantidade
-    cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k != "nome"}
+    plano.especificacoes, plano.estrutura = espec, cfg.get("estrutura")
+    cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k not in ("nome", "estrutura", "especificacoes")}
     cfg_guardada.update(extras_config or {})
     totais_p = totais_a = hh = 0.0
     incompletos = 0
@@ -422,8 +430,9 @@ def gerar_ordem(ctx: Ctx, plano: PlanoTrabalho, cliente: str, prazo, numero_fn) 
         raise HTTPException(409, "Este plano já gerou uma ordem.")
     produto = ctx.db.get(Produto, plano.produto_id)
     tem_tempo = [p for p in plano.passos if p.tempo_padrao_min is not None]
+    rotulo = especificacao.resumo(produto, plano.especificacoes)
     o = Ordem(empresa_id=ctx.empresa_id, unidade_id=plano.unidade_id, numero=numero_fn(ctx.db, ctx.empresa_id), cliente=cliente,
-              produto_id=plano.produto_id, descricao=produto.nome if produto else plano.nome, quantidade=plano.quantidade, prazo=prazo,
+              produto_id=plano.produto_id, descricao=((f"{produto.nome} ({rotulo})" if rotulo else produto.nome) if produto else plano.nome)[:300], quantidade=plano.quantidade, prazo=prazo,
               processo_id=None, plano_id=plano.id, status="planejada", criada_por=ctx.usuario.id,
               tempo_estimado_min=round(sum(p.tempo_padrao_min for p in tem_tempo), 2) if tem_tempo else None,
               observacoes=f"Gerada do plano de trabalho #{plano.id}.")
