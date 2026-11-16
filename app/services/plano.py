@@ -285,7 +285,7 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
         db.flush()
         plano.quantidade = quantidade
     plano.especificacoes, plano.estrutura = espec, cfg.get("estrutura")
-    cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k not in ("nome", "estrutura", "especificacoes")}
+    cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k not in ("nome", "estrutura", "especificacoes", "avisos_variante")}
     cfg_guardada.update(extras_config or {})
     totais_p = totais_a = hh = 0.0
     incompletos = 0
@@ -320,7 +320,7 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
         if cfg.get("fadiga_ignorada") else []
     estimadas = sorted({r.nome for r in base.recursos if r.capacidade_origem == "ia" and r.capacidade})
     nota_cap = [f"Capacidade estimada pela IA (não medida) em: {', '.join(estimadas)}. Substitua por uma medição para ganhar confiança."] if estimadas else []
-    plano.premissas = list(dict.fromkeys(nota_cap + proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
+    plano.premissas = list(dict.fromkeys(list(cfg.get("avisos_variante") or []) + nota_cap + proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
                                          + obsoleto + (extras_premissas or []) + ([aviso] if aviso else [])))
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(base.blocos)
@@ -332,6 +332,7 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     plano.status = "rascunho"
     plano.confirmado_por = plano.confirmado_em = None
     db.flush()
+    db.expire(plano, ["passos"])  # os passos novos entram por plano_id: sem isto, ao recalcular a resposta traria os passos antigos (apagados)
     return plano
 
 

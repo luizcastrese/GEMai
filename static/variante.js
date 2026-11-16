@@ -39,26 +39,30 @@ export function cartaoCampos(produto, depois) {
 // ---------------------------------------------------------------- valores do pedido (formulário no plano)
 export function formEspecificacoes(campos, inicial = {}) {
   const ref = {};
+  const ouvintes = [];
   const el = campos.length ? h('div', null, h('div', { class: 'row' }, campos.map((c) => {
     let inp;
     if (c.tipo === 'opcao') inp = h('select', null, h('option', { value: '' }, 'Escolha…'), c.opcoes.map((o) => h('option', { value: o, selected: inicial[c.nome] === o }, o)));
     else if (c.tipo === 'numero') inp = h('input', { type: 'number', min: '0', step: 'any', value: inicial[c.nome] ?? '', placeholder: c.unidade || '' });
     else inp = h('input', { type: 'text', value: inicial[c.nome] ?? '' });
     ref[c.nome] = inp;
+    inp.addEventListener('change', () => ouvintes.forEach((fn) => fn()));
     return h('div', null, h('label', null, rotCampo(c)), inp);
   }))) : null;
-  return { el, valores: () => Object.fromEntries(campos.map((c) => [c.nome, ref[c.nome].value.trim()]).filter(([, v]) => v !== '')
+  return { el, aoMudar: (fn) => ouvintes.push(fn), valores: () => Object.fromEntries(campos.map((c) => [c.nome, ref[c.nome].value.trim()]).filter(([, v]) => v !== '')
     .map(([k, v]) => [k, campos.find((c) => c.nome === k).tipo === 'numero' ? num(v) : v])) };
 }
 
 // ---------------------------------------------------------------- peças e parafusos deste pedido
 // Parte do modelo base do produto (ou da estrutura já guardada no plano) e deixa ajustar só para este pedido.
 export function editorEstrutura(inicial) {
-  const est = JSON.parse(JSON.stringify(inicial));
+  let est = JSON.parse(JSON.stringify(inicial));
   const area = h('div');
   const nomes = () => est.componentes.map((c) => c.nome);
   const campoNum = (obj, k, ajuda, ehInt = false) => {
-    const i = h('input', { type: 'number', class: 'n', min: '0', step: ehInt ? '1' : 'any', value: obj[k] ?? '', placeholder: ajuda });
+    const formula = k === 'fixadores' ? obj.formula_fixadores : obj.formulas?.[k];
+    const i = h('input', { type: 'number', class: formula ? 'n form' : 'n', min: '0', step: ehInt ? '1' : 'any', value: obj[k] ?? '', placeholder: ajuda,
+      title: formula ? `Calculado pelas medidas do pedido: =${formula}. Se mudar à mão, fica registrado no plano.` : undefined });
     const POSITIVOS = ['comprimento_m', 'largura_m', 'espessura_m']; // a API exige > 0 (vazio = não informado)
     i.addEventListener('change', () => {
       let v = num(i.value);
@@ -107,5 +111,5 @@ export function editorEstrutura(inicial) {
       } }, '+ Ligação')) : null);
   };
   desenhar();
-  return { el: area, valor: () => est };
+  return { el: area, valor: () => est, definir: (nova) => { est = JSON.parse(JSON.stringify(nova)); desenhar(); } };
 }

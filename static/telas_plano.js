@@ -36,22 +36,38 @@ export async function produtoDetalhe(el, id) {
     const est = await get(`/produtos/${id}/estrutura`);
     const comps = est.componentes;
     const nomeDe = (cid) => comps.find((c) => c.id === cid)?.nome ?? 'o conjunto';
-    const salvar = async (c, campos) => { if (await tentar(() => patch(`/produtos/${id}/componentes/${c.id}`, campos))) { await desenhar(); } };
+    const salvar = async (c, campos) => { await tentar(() => patch(`/produtos/${id}/componentes/${c.id}`, campos)); await desenhar(); }; // sempre redesenha: se a fórmula foi recusada, a célula volta ao valor salvo
     const celula = (c, k, tipo = 'number', ajuda) => {
       const i = entrada(tipo, c[k], { class: tipo === 'number' ? 'n' : '', step: 'any', min: '0', placeholder: ajuda });
       i.addEventListener('change', () => salvar(c, { [k]: tipo === 'number' ? num(i.value) : i.value.trim() }));
       return i;
     };
+    // Medidas, quantidade, peso, furos e borda aceitam um número OU uma fórmula começando com "=" (ex.: ={Altura}), que liga a peça às medidas do pedido.
+    const celulaF = (c, k, ajuda) => {
+      const f = c.formulas?.[k];
+      const i = entrada('text', f ? `=${f}` : (c[k] ?? ''), { class: f ? 'n form' : 'n', placeholder: ajuda, inputmode: 'decimal',
+        title: f ? `Calculado pelo pedido: =${f}. O valor ${fmtNum(c[k], 4)} é só o ponto de partida.` : 'Número, ou fórmula começando com = (ex.: ={Altura})' });
+      i.addEventListener('change', async () => {
+        const v = i.value.trim();
+        const outras = { ...(c.formulas || {}) };
+        if (v.startsWith('=')) { await salvar(c, { formulas: { ...outras, [k]: v.slice(1).trim() } }); return; }
+        if (v !== '' && Number.isNaN(Number(v.replace(',', '.')))) { toast('Escreva um número, ou uma fórmula começando com = (ex.: ={Altura}).', true); i.value = f ? `=${f}` : (c[k] ?? ''); return; }
+        delete outras[k];
+        await salvar(c, { [k]: num(v.replace(',', '.')) ?? (k === 'quantidade' ? 1 : (k === 'furos' ? 0 : null)), formulas: outras });
+      });
+      return i;
+    };
     const linhas = comps.map((c) => h('tr', null,
-      h('td', null, celula(c, 'nome', 'text')), h('td', null, celula(c, 'quantidade')), h('td', null, celula(c, 'material', 'text', 'ex.: MDF')),
+      h('td', null, celula(c, 'nome', 'text')), h('td', null, celulaF(c, 'quantidade', 'qtd.')), h('td', null, celula(c, 'material', 'text', 'ex.: MDF')),
       h('td', null, celula(c, 'grupo', 'text')),
-      h('td', null, h('div', { class: 'inline nw' }, celula(c, 'comprimento_m', 'number', 'comp.'), celula(c, 'largura_m', 'number', 'larg.'), celula(c, 'espessura_m', 'number', 'esp.'))),
-      h('td', { class: 'pk' }, celula(c, 'peso_kg', 'number', c.peso_estimado_kg ? `~${fmtNum(c.peso_estimado_kg)} est.` : 'kg')),
-      h('td', null, celula(c, 'furos')), h('td', null, celula(c, 'bordas_m')),
+      h('td', null, h('div', { class: 'inline nw' }, celulaF(c, 'comprimento_m', 'comp.'), celulaF(c, 'largura_m', 'larg.'), celulaF(c, 'espessura_m', 'esp.'))),
+      h('td', { class: 'pk' }, celulaF(c, 'peso_kg', c.peso_estimado_kg ? `~${fmtNum(c.peso_estimado_kg)} est.` : 'kg')),
+      h('td', null, celulaF(c, 'furos', '')), h('td', null, celulaF(c, 'bordas_m', '')),
       h('td', null, h('button', { class: 'sm dng', title: 'Remover', onclick: () => confirmar(`Remover "${c.nome}" e suas ligações?`, async () => { if (await tentar(() => del(`/produtos/${id}/componentes/${c.id}`))) desenhar(); }, 'Remover') }, '✕'))));
     const novo = { nome: h('input', { placeholder: 'ex.: Lateral' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: MDF)' }) };
     const sComps = h('div', { class: 'card' }, h('h2', null, '2. Peças de partida (modelo base)'),
       h('p', { class: 'muted small' }, 'Ponto de partida de todo pedido: em cada plano você ajusta quantidades, medidas e parafusos. Quantidade é por unidade do produto. Medidas em metros. Se não souber o peso, informe material e medidas: o sistema estima e marca como "estimado".'),
+      ajudaFormulas(p, comps, est.ligacoes),
       comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', ''].map((t) => h('th', null, t)))),
         h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum componente ainda. Adicione abaixo ou use "Descrever com a IA".'),
       h('div', { class: 'row' }, novo.nome, novo.qtd, novo.mat, h('button', { onclick: async () => {
@@ -60,16 +76,21 @@ export async function produtoDetalhe(el, id) {
       } }, '+ Adicionar componente')));
 
     const sel = (lista, vazio) => h('select', null, h('option', { value: '' }, vazio), lista.map(([v, r]) => h('option', { value: v }, r)));
-    const [lc, la, lm, lf] = [sel(comps.map((c) => [c.id, c.nome]), 'Componente…'), sel(comps.map((c) => [c.id, c.nome]), 'ao conjunto'), sel(METODOS, ''), h('input', { type: 'number', min: '0', step: '1', value: '0' })];
+    const [lc, la, lm, lf] = [sel(comps.map((c) => [c.id, c.nome]), 'Componente…'), sel(comps.map((c) => [c.id, c.nome]), 'ao conjunto'), sel(METODOS, ''),
+      h('input', { type: 'text', value: '0', inputmode: 'decimal', title: 'Quantidade, ou fórmula começando com = (ex.: =teto({Largura} * 10))' })];
     lm.value = 'parafuso';
     const sLig = h('div', { class: 'card' }, h('h2', null, '3. Como as peças se juntam'),
       h('p', { class: 'muted small' }, 'Diga como cada componente se liga a outro e quantos parafusos, cavilhas etc. são usados por unidade do produto. Sem isso, o tempo de montagem fica como pendência.'),
-      est.ligacoes.length ? est.ligacoes.map((l) => h('div', { class: 'lig' }, h('span', null, `${nomeDe(l.componente_id)} → ${nomeDe(l.ligado_a_id)} · ${rotMetodo(l.metodo)} · ${l.fixadores} un.`),
+      est.ligacoes.length ? est.ligacoes.map((l) => h('div', { class: 'lig' }, h('span', null, `${nomeDe(l.componente_id)} → ${nomeDe(l.ligado_a_id)} · ${rotMetodo(l.metodo)} · `,
+          l.formula_fixadores ? h('code', { class: 'form' }, `=${l.formula_fixadores}`) : `${l.fixadores} un.`, l.formula_fixadores ? ` (partida: ${l.fixadores} un.)` : ''),
         h('button', { class: 'sm dng', onclick: async () => { if (await tentar(() => del(`/produtos/${id}/ligacoes/${l.id}`))) desenhar(); } }, '✕')))
         : h('p', { class: 'muted' }, 'Nenhuma ligação informada.'),
       comps.length ? h('div', { class: 'row' }, lc, la, lm, lf, h('button', { onclick: async () => {
         if (!lc.value) return toast('Escolha o componente.', true);
-        if (await tentar(() => post(`/produtos/${id}/ligacoes`, { componente_id: Number(lc.value), ligado_a_id: num(la.value), metodo: lm.value, fixadores: Number(lf.value) || 0 }))) desenhar();
+        const q = lf.value.trim();
+        if (!q.startsWith('=') && Number.isNaN(Number(q.replace(',', '.')))) return toast('Escreva um número, ou uma fórmula começando com = (ex.: =teto({Largura} * 10)).', true);
+        const corpoLig = q.startsWith('=') ? { fixadores: 0, formula_fixadores: q.slice(1).trim() } : { fixadores: Math.max(0, Math.round(Number(q.replace(',', '.')) || 0)) };
+        if (await tentar(() => post(`/produtos/${id}/ligacoes`, { componente_id: Number(lc.value), ligado_a_id: num(la.value), metodo: lm.value, ...corpoLig }))) desenhar();
       } }, '+ Adicionar ligação')) : null);
 
     const sPlano = h('div', { class: 'card' }, h('h2', null, '4. Plano de trabalho'),
@@ -84,6 +105,20 @@ export async function produtoDetalhe(el, id) {
     h('div', { class: 'inline' }, h('button', { class: 'ia', onclick: () => descreverComIA(p, desenhar) }, 'Descrever com a IA')),
     h('p', { class: 'muted small' }, 'Escreva em texto livre (ex.: "armário de MDF com 2 portas, 3 prateleiras e 4 dobradiças"). A IA propõe as peças de partida; você confere antes de salvar.'), area);
   await desenhar();
+}
+
+// Explica como ligar as peças às medidas e AVISA quando há medidas que não mexem em nenhuma peça (o tempo não variaria com o tamanho).
+function ajudaFormulas(p, comps, ligs) {
+  const campos = p.campos_especificacao || [];
+  if (!campos.length) return null;
+  const textos = [...comps.flatMap((c) => Object.values(c.formulas || {})), ...ligs.map((l) => l.formula_fixadores).filter(Boolean)].join(' ').toLowerCase();
+  const soltos = campos.filter((c) => c.tipo === 'numero' && !textos.includes(`{${c.nome.toLowerCase()}}`));
+  return h('div', null,
+    h('p', { class: 'muted small' }, 'Ligue as peças às medidas do pedido escrevendo uma fórmula que começa com "=" (nas medidas, quantidade, peso, furos ou borda). ',
+      'Campos entre chaves: ', campos.map((c) => h('code', null, `{${c.nome}}`)), '. Medidas em cm ou mm entram na fórmula já em metros. Ex.: ', h('code', null, '={Altura}'), ' · ', h('code', null, '={Largura} - 0.036'),
+      ' · ', h('code', null, '=se({Tipo} == "2 portas"; 2; 1)'), ' · use ponto nos decimais e ; entre argumentos.'),
+    soltos.length && comps.length ? h('div', { class: 'aviso' }, h('strong', null, 'Atenção: '), `${soltos.map((c) => c.nome).join(', ')} não ${soltos.length > 1 ? 'estão ligados' : 'está ligado'} a nenhuma peça. `,
+      'Enquanto for assim, o tempo padrão não muda com o tamanho do pedido, e isso esconderia a diferença real entre um armário pequeno e um grande.') : null);
 }
 
 function descreverComIA(p, depois) {
@@ -145,6 +180,21 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
   const campos = produto.campos_especificacao || [];
   const espec = formEspecificacoes(campos, plano?.especificacoes || {});
   const pecas = editorEstrutura(base);
+  const avisoPecas = h('div');
+  const detPecas = detalhes('Peças e parafusos deste pedido (ajustar é opcional)', pecas.el);
+  // Ao mudar uma medida do pedido, o servidor recalcula as peças pelas fórmulas do produto (o tempo padrão acompanha o tamanho).
+  const recalcularPecas = async (inicial = false) => {
+    const r = await tentar(() => post(`/produtos/${produtoId}/montar`, { especificacoes: espec.valores() }));
+    if (!r) return;
+    if (!inicial || !plano?.estrutura) pecas.definir(r.estrutura);
+    if (r.usa_formulas) detPecas.open = true;
+    montar(avisoPecas,
+      r.usa_formulas && !inicial ? h('p', { class: 'muted small' }, 'As peças foram recalculadas pelas medidas deste pedido. Confira abaixo; o que você mudar à mão fica registrado no plano.') : null,
+      r.pendentes.length ? h('div', { class: 'aviso' }, `Ainda falta preencher ${[...new Set(r.pendentes.map((x) => x.falta))].join(', ')}: ${[...new Set(r.pendentes.map((x) => x.onde))].join(', ')} dependem dele.`) : null,
+      r.avisos.map((x) => h('div', { class: 'aviso' }, x)));
+  };
+  espec.aoMudar(() => recalcularPecas(false));
+  await recalcularPecas(true);
   const f = {
     qtd: entrada('number', plano?.quantidade ?? 1, { min: '0', step: 'any' }),
     ini: entrada('datetime-local', cfg.inicio ? isoLocal(new Date(cfg.inicio)) : isoLocal(new Date())),
@@ -156,7 +206,7 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
   if (cfg.perfil_id) f.perfil.value = cfg.perfil_id;
   const corpo = h('div', null,
     campos.length ? h('div', null, h('h3', null, 'Este pedido'), espec.el) : h('p', { class: 'muted small' }, 'Dica: no produto, cadastre o que muda de um pedido para outro (largura, tipo…) para o relatório separar as variantes.'),
-    detalhes('Peças e parafusos deste pedido (ajustar é opcional)', pecas.el),
+    avisoPecas, detPecas,
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Quantas unidades?'), f.qtd), h('div', null, h('label', null, 'Quando começa?'), f.ini), h('div', null, h('label', null, 'Quantas pessoas na equipe?'), f.pess)),
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
@@ -252,6 +302,16 @@ export async function planos(el) {
       { t: 'Ordem', f: (p) => (p.ordem_id ? h('a', { href: `#/ordens/${p.ordem_id}` }, 'Ver ordem') : '—') }], ps, 'Nenhum plano ainda. Escolha um produto acima.')));
 }
 
+function pecasDoPedido(est) {
+  const f = (c, k) => (c.formulas?.[k] ? h('span', { class: 'form-c', title: `=${c.formulas[k]}` }, `${fmtNum(c[k], 4)} ƒ`) : fmtNum(c[k], 4));
+  const nome = (n) => n || 'o conjunto';
+  return h('div', null,
+    tabela([{ t: 'Peça', f: (c) => c.nome }, { t: 'Qtd.', f: (c) => f(c, 'quantidade') }, { t: 'Comp. (m)', f: (c) => f(c, 'comprimento_m') }, { t: 'Larg. (m)', f: (c) => f(c, 'largura_m') },
+      { t: 'Esp. (m)', f: (c) => f(c, 'espessura_m') }, { t: 'Peso (kg)', f: (c) => (c.peso_kg === null ? 'estimado' : f(c, 'peso_kg')) }, { t: 'Furos', f: (c) => f(c, 'furos') }], est.componentes),
+    est.ligacoes.length ? h('div', null, est.ligacoes.map((l) => h('div', { class: 'small muted' }, `${l.componente} → ${nome(l.ligado_a)} · ${rotMetodo(l.metodo)} · ${l.fixadores} un.${l.formula_fixadores ? ` ƒ =${l.formula_fixadores}` : ''}`))) : null,
+    h('p', { class: 'muted small' }, 'ƒ = valor calculado pelas medidas do pedido (passe o mouse para ver a fórmula).'));
+}
+
 export async function planoDetalhe(el, id) {
   const p = await get(`/planos/${id}`);
   const t = p.totais;
@@ -308,6 +368,7 @@ export async function planoDetalhe(el, id) {
     h('div', { class: 'grid g4' }, kpi('Tempo de trabalho', fmtMin(t.tempo_padrao_min)), kpi('Pessoas-hora', `${fmtNum(t.horas_homem, 1)} h`),
       kpi('Começa', t.inicio ? fmtData(t.inicio) : '—', 'peq'), kpi('Termina', t.fim ? fmtData(t.fim) : '—', 'peq'), kpi('Dias de trabalho', t.dias || '—')),
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
+    p.estrutura?.componentes?.length ? detalhes('Peças deste pedido (como as medidas entraram)', pecasDoPedido(p.estrutura)) : null,
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
       h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher a Oficina'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
         p.status === 'rascunho' ? h('span', { class: 'muted small' }, 'Depois, use "Recalcular".') : null)) : null,
