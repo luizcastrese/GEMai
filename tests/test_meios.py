@@ -184,7 +184,7 @@ def test_ficha_achada_na_web_nasce_pendente_e_so_entra_depois_de_validada(admin,
     # uma pessoa valida ⇒ passa a valer (15,6 m de corte a 90 m/min)
     assert admin.post(f"/parametros/{p['id']}/validar", {"observacao": "conferi a ficha"}).status_code == 200
     corte = next(x for x in _gerar(admin, pid, unidade_id)["passos"] if x["tipo"] == "corte")
-    assert corte["tempo_exec_min"] == pytest.approx(15.6 / 90 / 0.91, abs=0.01)
+    assert corte["tempo_exec_min"] == pytest.approx(15.6 / 90, abs=0.01)  # tempo de máquina: sem tolerância
     assert corte["parametros_modulo"]["avanco_corte_m_min"] == 90
     # buscar de novo substitui a sugestão pendente anterior e não mexe na vigente validada
     again = admin.post(f"/recursos/{s['id']}/ficha-tecnica/buscar", {}).json()

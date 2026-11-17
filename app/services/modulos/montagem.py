@@ -32,7 +32,7 @@ def montar(e: EntradaModulo) -> Montagem:
         c = coef("pegar_posicionar_peca_min")
         m.coeficientes.append(c)
         m.elementos.append(el(f"Pegar e posicionar {n_pecas:g} peça(s)/conjunto(s) por unidade", "manuseio", "fixo", por_unidade=True,
-                              a_min=round(n_pecas * c.valor, 4),
+                              a_min=round(n_pecas * c.valor, 4), paralelizavel=True,
                               justificativa=f"≈{c.valor * 60:.0f} s por peça (índices MOST ilustrativos: curvar/levantar + posicionar com cuidado)."))
     for metodo, n in por_metodo.items():
         if n <= 0:
@@ -40,10 +40,14 @@ def montar(e: EntradaModulo) -> Montagem:
         c = coef_fixador(metodo)
         m.coeficientes.append(c)
         m.elementos.append(el(f"Fixar com {metodo} ({n} un por unidade)", "processamento", "fixo", por_unidade=True,
-                              a_min=round(n * c.valor, 4), justificativa=f"{c.valor:g} min por {metodo} (referência genérica do catálogo)."))
+                              a_min=round(n * c.valor, 4), paralelizavel=True,
+                              justificativa=f"{c.valor:g} min por {metodo} (referência genérica do catálogo)."))
     peso = e.extras.get("peso_conjunto_kg") if final else e.peso_max_kg
     if peso:
         m.pessoas_minimas = max(math.ceil(peso / coef("carga_manual_max_kg").valor), 1)
+    pessoas = max(e.pessoas, m.pessoas_minimas or 1)
+    if pessoas > 1:
+        m.premissas.append(f"Montagem: o trabalho manual é dividido por igual entre as {pessoas} pessoas (caso ideal, sem perda de coordenação).")
     m.premissas.append("Altura de trabalho e precisão são registradas, mas não alteram o tempo (sem coeficiente com fonte).")
     return m
 

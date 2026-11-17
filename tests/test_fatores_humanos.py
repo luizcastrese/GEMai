@@ -48,10 +48,19 @@ def test_most_ritmo_e_tolerancias_no_motor():
     rapido = mt.calcular([mov, maq], 1.0, c, ritmo_pct=125)
     assert rapido.exec == pytest.approx(0.24 / 1.25 + 10)  # ritmo só afeta o que depende do operador
     tol = mt.calcular([mov, maq], 1.0, c, [{"categoria": "p", "percentual": 5}, {"categoria": "f", "percentual": 4}])
-    assert tol.exec == pytest.approx(10.24 * FT, abs=0.001)
+    assert tol.exec == pytest.approx(0.24 * FT + 10, abs=0.001)  # tolerância só no que depende da pessoa; máquina fica em 10 min
     assert sum(e["minutos"] for e in tol.elementos) == pytest.approx(tol.exec, abs=0.005)  # composição fecha com o total
-    muito = mt.calcular([maq], 1.0, c, [{"categoria": "x", "percentual": 90}])
-    assert muito.exec == pytest.approx(20, abs=0.001)  # p limitado a 50% (FT máx. = 2)
+    so_maquina = mt.calcular([maq], 1.0, c, [{"categoria": "x", "percentual": 90}])
+    assert so_maquina.exec == pytest.approx(10, abs=0.001)  # tempo de máquina não recebe tolerância
+    muito = mt.calcular([mov], 1.0, c, [{"categoria": "x", "percentual": 90}])
+    assert muito.exec == pytest.approx(0.24 * 2, abs=0.001)  # p limitado a 50% (FT máx. = 2)
+
+
+def test_capacidade_do_equipamento_nao_recebe_tolerancia_nem_ritmo():
+    c = mt.Contexto(quantidade=60, capacidade_un_h=60)
+    corte = {"nome": "corte", "tipo": "processamento", "metodo": "capacidade_recurso", "depende_operador": False}
+    r = mt.calcular([corte], 1.0, c, [{"categoria": "p", "percentual": 5}, {"categoria": "f", "percentual": 4}], ritmo_pct=80)
+    assert r.exec == pytest.approx(60.0, abs=0.001)  # 60 peças a 60/h = 60 min, como na máquina
 
 
 def test_indices_most_sao_limitados_ao_vocabulario():

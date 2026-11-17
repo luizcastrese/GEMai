@@ -1,7 +1,7 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { estado } from './estado.js';
 import { cartaoCampos, editorEstrutura, formEspecificacoes } from './variante.js';
-import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tentar, toast } from './ui.js';
+import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tempoPorUnidade, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const METODOS = [['parafuso', 'Parafuso'], ['cavilha', 'Cavilha'], ['minifix', 'Minifix'], ['dobradica', 'Dobradiça'], ['corredica', 'Corrediça'],
@@ -290,7 +290,7 @@ export async function planos(el) {
     } }, 'Novo plano'))),
     h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
-      { t: 'Tempo por unidade', f: (p) => fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) },
+      { t: 'Tempo por unidade', f: (p) => fmtMin(tempoPorUnidade(p)) },
       { t: 'Termina', f: (p) => fmtData(p.totais.fim) },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? badge(p.totais.completo ? 'Para conferir' : 'Incompleto', 'b-warn') : p.status === 'cancelado' ? badge('Cancelado', 'b-err') : statusBadge(p.status)) }],
       ps, 'Nenhum plano ainda. Escolha um produto acima.')));
@@ -359,7 +359,8 @@ export async function planoDetalhe(el, id) {
     p.provedor.startsWith('claude') ? avisoIA() : h('p', { class: 'muted small' }, 'Estimativa automática, ainda não calibrada com a sua produção.'),
     h('div', { class: 'hero' },
       h('div', { class: 'sub' }, t.completo ? 'Tempo padrão por unidade' : 'Tempo padrão por unidade (parcial: faltam dados)'),
-      h('div', { class: 'big' }, t.tempo_padrao_min ? fmtMin(t.tempo_padrao_min / (p.quantidade || 1)) : '—'),
+      h('div', { class: 'big' }, t.tempo_padrao_min ? fmtMin(tempoPorUnidade(p)) : '—'),
+      t.tempo_preparo_min ? h('div', { class: 'sub' }, `+ ${fmtMin(t.tempo_preparo_min)} de preparo do lote (uma vez, não cresce com a quantidade)`) : null,
       h('div', { class: 'sub' }, `${fmtNum(p.quantidade, 2)} unidade(s) = ${fmtMin(t.tempo_padrao_min)} · termina ${t.fim ? fmtData(t.fim) : '—'}`),
       t.completo ? null : h('div', { class: 'small warn-l' }, 'Passos sem tempo não entram na conta: o prazo real será maior. Complete o que falta abaixo e recalcule.')),
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
@@ -404,7 +405,7 @@ function cartaoPrazo(p) {
       r.ultimo_dia_para_comecar ? (jaPassou ? `O último dia para começar era ${fmtDia(r.ultimo_dia_para_comecar)}, que já passou.` : `Para cumprir, começar até ${fmtDia(r.ultimo_dia_para_comecar)}.`)
         : 'Com esta equipe e esta jornada não cumpre nem começando 4 meses antes do prazo: aumente a equipe, a jornada ou negocie o prazo.'));
     if (r.veredito === 'incerto') linhas.push(h('p', null, 'O plano tem passos sem tempo, que não entram nesta conta: o prazo real será maior. Complete os dados da oficina e do produto, recalcule e pergunte de novo.'));
-    linhas.push(h('p', { class: 'muted small' }, `Tempo padrão: ${fmtMin(r.tempo_por_unidade_min)} por unidade. `,
+    linhas.push(h('p', { class: 'muted small' }, `Tempo padrão: ${fmtMin(r.tempo_por_unidade_min)} por unidade, mais ${fmtMin(r.preparo_lote_min)} de preparo do lote. `,
       r.aproximado ? 'Como a quantidade é diferente da do plano, o tempo de execução foi ajustado na proporção (estimativa); para o número exato, gere um plano para essa quantidade. ' : '',
       'Dias úteis e jornada são os do plano.'));
     montar(saida, h('div', { class: `veredito ${r.veredito}` }, h('p', { class: 't' }, titulo), linhas));

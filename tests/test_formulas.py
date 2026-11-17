@@ -100,8 +100,8 @@ def test_tempo_padrao_acompanha_o_tamanho_do_pedido(admin, unidade_id):
     # corte (perímetros × peças × 2 un): 100×50 → 6,0 + 9,6 = 15,6 m ; 60×40 → 4,0 + 8,8 = 12,8 m, a 30 m/min
     assert _passo(grande, "corte")["parametros_modulo"]["metros_de_corte"] == 15.6
     assert _passo(pequena, "corte")["parametros_modulo"]["metros_de_corte"] == 12.8
-    assert _passo(grande, "corte")["tempo_exec_min"] == pytest.approx(15.6 / 30 * FT, abs=0.01)
-    assert _passo(pequena, "corte")["tempo_exec_min"] == pytest.approx(12.8 / 30 * FT, abs=0.01)
+    assert _passo(grande, "corte")["tempo_exec_min"] == pytest.approx(15.6 / 30, abs=0.01)  # tempo de máquina: sem tolerância
+    assert _passo(pequena, "corte")["tempo_exec_min"] == pytest.approx(12.8 / 30, abs=0.01)
     # montagem: (3 peças × 0,174 + parafusos × 0,30) × 2 un; parafusos = teto(Largura em m × 10) = 10 e 6
     assert _passo(grande, "montagem")["tempo_padrao_min"] == pytest.approx((3 * 0.174 + 10 * 0.30) * 2 * FT, abs=0.01)
     assert _passo(pequena, "montagem")["tempo_padrao_min"] == pytest.approx((3 * 0.174 + 6 * 0.30) * 2 * FT, abs=0.01)

@@ -1,6 +1,6 @@
 import { get, qs } from './api.js';
 import { estado } from './estado.js';
-import { fmtMin, h, montar, statusBadge, tabela } from './ui.js';
+import { fmtMin, h, montar, statusBadge, tabela, tempoPorUnidade } from './ui.js';
 
 // Tela inicial: o caminho em 3 passos até o tempo padrão do trabalho.
 // 1. Produto (o que fazer) → 2. Oficina (máquinas e espaço) → 3. Plano de trabalho (roteiro + tempo padrão).
@@ -25,7 +25,7 @@ export async function inicio(el) {
       planos.length > 0, '#/planos', planos.length ? 'Ver planos' : 'Gerar o primeiro plano', null),
     planos.length ? h('div', null, h('h2', null, 'Planos recentes'), h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
-      { t: 'Tempo por unidade', f: (p) => (p.totais.completo || p.totais.tempo_padrao_min ? fmtMin(p.totais.tempo_padrao_min / (p.quantidade || 1)) : '—') },
+      { t: 'Tempo por unidade', f: (p) => (tempoPorUnidade(p) !== null ? fmtMin(tempoPorUnidade(p)) : '—') },
       { t: 'Situação', f: (p) => (p.status === 'rascunho' ? 'Para conferir' : statusBadge(p.status)) }],
       planos.slice(0, 3)))) : null);
 }

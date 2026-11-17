@@ -1261,6 +1261,7 @@ class PrazoOut(Out):
     folga_dias: int
     ultimo_dia_para_comecar: date | None
     tempo_por_unidade_min: float
+    preparo_lote_min: float = 0.0
     tempo_total_min: float
     pessoas: int
 
