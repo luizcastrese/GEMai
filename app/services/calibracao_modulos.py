@@ -17,6 +17,8 @@ ganha um fator que ESCALA com o porte do pedido, aprendido dos pedidos já feito
   fator(porte) = fator_ref × (porte ÷ porte_ref)^b, limitado a 0,5–2,0; b limitado a −0,5…1,0;
 - exige ≥ `min_amostras_familia` amostras, ≥ 3 tamanhos distintos e dispersão de porte ≥ 1,25×; senão não há como aprender a
   escala e vale o fator geral do módulo;
+- a escala só é proposta se, numa prova com dados reservados (leave-one-out), reduzir o erro em ≥ 10 % frente a um fator constante
+  da família; senão fica o fator constante (e a proposta diz isso);
 - fora do intervalo observado (±50 %) o porte é travado na borda e o resultado é rotulado "extrapolado";
 - precedência no cálculo: família validada do produto > fator geral validado do módulo > nada (coeficientes genéricos).
 """
@@ -55,6 +57,11 @@ class Sugestao:
     porte_ref: float | None = None
     porte_min: float | None = None
     porte_max: float | None = None
+    # Prova com dados reservados (leave-one-out): erro típico (%) sem calibração, com um fator constante e com o modelo proposto.
+    erro_sem_pct: float | None = None
+    erro_constante_pct: float | None = None
+    erro_com_pct: float | None = None
+    nota: str = ""
 
 
 @dataclass
@@ -141,6 +148,48 @@ def ajustar_familia(pares: list[tuple[float, float]]) -> Familia | None:
                    round(min(x for x, _ in pares), 4), round(max(x for x, _ in pares), 4))
 
 
+def _pct(erros_ln: list[float]) -> float | None:
+    """Erro típico em %: média do |ln(previsto ÷ observado)| convertida (0,18 → 20 %)."""
+    return round((math.exp(sum(erros_ln) / len(erros_ln)) - 1) * 100, 1) if erros_ln else None
+
+
+def _limitar_ln(v: float) -> float:
+    return math.log(min(max(math.exp(v), FATOR_MIN), FATOR_MAX))
+
+
+def erro_sem_calibracao(rs: list[float]) -> float | None:
+    return _pct([abs(math.log(r)) for r in rs if r > 0])
+
+
+def erro_constante_loo(rs: list[float]) -> float | None:
+    """Prova com dados reservados: cada pedido é previsto pelo fator (mediana) dos OUTROS pedidos."""
+    ls = [math.log(r) for r in rs if r > 0]
+    if len(ls) < 3:
+        return None
+    return _pct([abs(l - _limitar_ln(timecalc.mediana(ls[:i] + ls[i + 1:]))) for i, l in enumerate(ls)])
+
+
+def erro_escala_loo(pares: list[tuple[float, float]]) -> float | None:
+    """Idem, com o modelo que escala com o porte (refeito sem o pedido testado; sem escala aprendível, usa o fator constante)."""
+    pares = [(x, r) for x, r in pares if x and x > 0 and r and r > 0]
+    if len(pares) < 3:
+        return None
+    erros = []
+    for i, (x, r) in enumerate(pares):
+        resto = pares[:i] + pares[i + 1:]
+        fam = ajustar_familia(resto)
+        if fam is None or not fam.expoente:
+            pred = _limitar_ln(timecalc.mediana([math.log(q) for _, q in resto]))
+        else:
+            pred = _limitar_ln(math.log(fam.fator) + fam.expoente * (math.log(x) - math.log(fam.porte_ref)))
+        erros.append(abs(math.log(r) - pred))
+    return _pct(erros)
+
+
+# a escala só é proposta se reduzir o erro nos dados reservados em pelo menos 10 % em relação ao fator constante
+GANHO_MINIMO_ESCALA = 0.9
+
+
 def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugestao]:
     """Sugestões gerais (por módulo) e por família (produto × módulo). Não grava."""
     cfg = get_settings()
@@ -159,14 +208,31 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
             continue
         bruta = timecalc.mediana(xs)
         fator = min(max(bruta, FATOR_MIN), FATOR_MAX)
-        sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta, "sugerido"))
+        sem, com = erro_sem_calibracao(xs), erro_constante_loo(xs)
+        aviso = ("Nos dados reservados este fator NÃO melhora o erro típico: o desvio parece depender do tamanho do pedido, não de um "
+                 "nível geral. Prefira a calibração por produto (que escala com o porte), se houver." if sem is not None and com is not None and com > sem else "")
+        sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta, "sugerido",
+                                  erro_sem_pct=sem, erro_com_pct=com, nota=aviso))
     for (uid, modulo, pid), am in sorted(familias.items()):
-        fam = ajustar_familia([(a.porte, a.razao) for a in am if a.porte]) if len(am) >= min_fam else None
+        pares = [(a.porte, a.razao) for a in am if a.porte]
+        fam = ajustar_familia(pares) if len(am) >= min_fam else None
         if fam is None:
             sugestoes.append(Sugestao(uid, modulo, len(am), min_fam, None, None, False, "insuficiente", produto_id=pid))
-        else:
-            sugestoes.append(Sugestao(uid, modulo, len(am), min_fam, fam.bruto, fam.fator, fam.limitado, "sugerido", produto_id=pid,
-                                      expoente=fam.expoente, porte_ref=fam.porte_ref, porte_min=fam.porte_min, porte_max=fam.porte_max))
+            continue
+        rs = [r for _, r in pares]
+        sem, const = erro_sem_calibracao(rs), erro_constante_loo(rs)
+        esc, nota = erro_escala_loo(pares), ""
+        if fam.expoente and (esc is None or const is None or esc > const * GANHO_MINIMO_ESCALA):
+            # a escala não provou ganho nos dados reservados: fica o fator constante da família (mais simples, menos risco)
+            nota = (f"Escala com o porte descartada: erro típico {esc:g} % contra {const:g} % com fator constante." if esc is not None and const is not None
+                    else "Escala com o porte descartada: poucos dados para prová-la.")
+            bruto = timecalc.mediana(rs)
+            fator = min(max(bruto, FATOR_MIN), FATOR_MAX)
+            fam = Familia(round(fator, 4), round(bruto, 4), fator != bruto, 0.0, fam.porte_ref, fam.porte_min, fam.porte_max)
+            esc = None
+        sugestoes.append(Sugestao(uid, modulo, len(am), min_fam, fam.bruto, fam.fator, fam.limitado, "sugerido", produto_id=pid,
+                                  expoente=fam.expoente, porte_ref=fam.porte_ref, porte_min=fam.porte_min, porte_max=fam.porte_max,
+                                  erro_sem_pct=sem, erro_constante_pct=const, erro_com_pct=esc if esc is not None else const, nota=nota))
     return sugestoes
 
 

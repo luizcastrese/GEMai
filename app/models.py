@@ -524,6 +524,10 @@ class CalibracaoModulo(Base):
     porte_ref: Mapped[float | None] = mapped_column(Float)
     porte_min: Mapped[float | None] = mapped_column(Float)
     porte_max: Mapped[float | None] = mapped_column(Float)
+    # prova com dados reservados (leave-one-out) no momento da proposta: erro típico em %
+    erro_sem_pct: Mapped[float | None] = mapped_column(Float)
+    erro_constante_pct: Mapped[float | None] = mapped_column(Float)
+    erro_com_pct: Mapped[float | None] = mapped_column(Float)
     fator: Mapped[float] = mapped_column(Float)  # já limitado a 0,5–2,0 (na família: o fator no porte de referência)
     mediana_bruta: Mapped[float] = mapped_column(Float)  # antes do limite
     limitado: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -54,10 +54,11 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
             just = (f"Mediana de {sg.amostras} operações aprovadas (tempo normal observado ÷ previsto)." if sg.produto_id is None else
                     f"Ajuste robusto de {sg.amostras} operações aprovadas de «{nomes.get(sg.produto_id, sg.produto_id)}»: fator "
                     f"{sg.fator:g} no porte {sg.porte_ref:g} min/un, expoente {sg.expoente:g}"
-                    + (" (sem escala detectável: fator constante)." if not sg.expoente else
-                       f" (dobrar o porte multiplica o fator por {2 ** sg.expoente:.2f})."))
+                    + (" (fator constante)." if not sg.expoente else
+                       f" (dobrar o porte multiplica o fator por {2 ** sg.expoente:.2f}).")) + (f" {sg.nota}" if sg.nota else "")
             c = CalibracaoModulo(empresa_id=ctx.empresa_id, unidade_id=sg.unidade_id, modulo=sg.modulo, produto_id=sg.produto_id,
                                  expoente=sg.expoente, porte_ref=sg.porte_ref, porte_min=sg.porte_min, porte_max=sg.porte_max, fator=sg.fator,
+                                 erro_sem_pct=sg.erro_sem_pct, erro_constante_pct=sg.erro_constante_pct, erro_com_pct=sg.erro_com_pct,
                                  mediana_bruta=sg.mediana_bruta, limitado=sg.limitado, amostras=sg.amostras, versao=ultima + 1,
                                  status="pendente", vigente=False, criado_por=ctx.usuario.id, justificativa=just)
             ctx.db.add(c)
@@ -67,7 +68,8 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
         linhas.append(SugestaoModuloCalibOut(
             unidade_id=sg.unidade_id, modulo=sg.modulo, titulo=catalogo.obter(sg.modulo).titulo, produto_id=sg.produto_id,
             produto_nome=nomes.get(sg.produto_id) if sg.produto_id else None, expoente=sg.expoente, porte_ref=sg.porte_ref,
-            porte_min=sg.porte_min, porte_max=sg.porte_max, amostras=sg.amostras, minimo=sg.minimo,
+            porte_min=sg.porte_min, porte_max=sg.porte_max, erro_sem_pct=sg.erro_sem_pct, erro_constante_pct=sg.erro_constante_pct,
+            erro_com_pct=sg.erro_com_pct, nota=sg.nota, amostras=sg.amostras, minimo=sg.minimo,
             mediana_bruta=sg.mediana_bruta, fator_sugerido=sg.fator, limitado=sg.limitado, status=sg.status,
             vigente=svc.como_dict(vig, vig.porte_ref if vig else None), proposta_id=proposta_id))
     ctx.db.commit()
@@ -81,7 +83,13 @@ def listar(unidade_id: int | None = None, ctx: Ctx = Depends(get_ctx)):
     if unidade_id is not None:
         ctx.exige_unidade(unidade_id)
         q = q.where(CalibracaoModulo.unidade_id == unidade_id)
-    return ctx.db.scalars(q.order_by(CalibracaoModulo.modulo, CalibracaoModulo.unidade_id, CalibracaoModulo.versao.desc())).all()
+    nomes = {p.id: p.nome for p in ctx.db.scalars(select(Produto).where(Produto.empresa_id == ctx.empresa_id))}
+    out = []
+    for c in ctx.db.scalars(q.order_by(CalibracaoModulo.modulo, CalibracaoModulo.unidade_id, CalibracaoModulo.versao.desc())):
+        mod = catalogo.CATALOGO.get(c.modulo)
+        out.append(CalibracaoModuloOut.model_validate(c).model_copy(update={
+            "titulo": mod.titulo if mod else c.modulo, "produto_nome": nomes.get(c.produto_id) if c.produto_id else None}))
+    return out
 
 
 def _pendente(ctx: Ctx, cid: int) -> CalibracaoModulo:

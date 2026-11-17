@@ -1332,10 +1332,15 @@ class CalibracaoModuloOut(Out):
     unidade_id: int
     modulo: str
     produto_id: int | None = None
+    titulo: str = ""  # nome do módulo (preenchido pela listagem)
+    produto_nome: str | None = None
     expoente: float = 0.0
     porte_ref: float | None = None
     porte_min: float | None = None
     porte_max: float | None = None
+    erro_sem_pct: float | None = None
+    erro_constante_pct: float | None = None
+    erro_com_pct: float | None = None
     fator: float
     mediana_bruta: float
     limitado: bool
@@ -1358,6 +1363,10 @@ class SugestaoModuloCalibOut(BaseModel):
     porte_ref: float | None = None
     porte_min: float | None = None
     porte_max: float | None = None
+    erro_sem_pct: float | None = None  # prova com dados reservados: erro típico (%) sem calibração, com fator constante e com o proposto
+    erro_constante_pct: float | None = None
+    erro_com_pct: float | None = None
+    nota: str = ""
     amostras: int
     minimo: int
     mediana_bruta: float | None

@@ -155,6 +155,46 @@ def test_familia_validada_tem_precedencia_sobre_o_fator_geral(admin, unidade_id,
     assert sorted(((c["produto_id"] or 0), c["versao"]) for c in vig) == sorted([(0, 1), (pid, 2)])
 
 
+def test_proposta_traz_a_prova_com_dados_reservados(admin, unidade_id, db_factory):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    _ordens_de_montagem(db_factory, admin, unidade_id, pid, [1.5, 2.0, 2.5, 3.0, 3.5, 4.5, 5.5, 6.5, 7.2, 8.0], fator=0.8, expoente=0.5)
+    r = admin.post("/calibracao/modulos", {"unidade_id": unidade_id, "aplicar": True}).json()
+    fam = next(m for m in r["modulos"] if m["produto_id"] == pid)
+    assert fam["expoente"] == pytest.approx(0.5, abs=0.02)
+    # com a razão dependendo do tamanho, nem "sem calibração" nem um fator constante acertam; a escala acerta (dados reservados)
+    assert fam["erro_com_pct"] < 1.0 and fam["erro_sem_pct"] > 20 and fam["erro_constante_pct"] > 20
+    ger = next(m for m in r["modulos"] if m["produto_id"] is None)
+    # o fator geral também mostra o antes e o depois, e avisa quando não ajuda (aqui o desvio depende do tamanho)
+    assert ger["erro_com_pct"] > ger["erro_sem_pct"] and "NÃO melhora" in ger["nota"]
+    prop = next(c for c in admin.get("/calibracao/modulos").json() if c["produto_id"] == pid)
+    assert prop["erro_com_pct"] == fam["erro_com_pct"] and prop["titulo"] == "Montagem" and prop["produto_nome"] == "Mesa"
+
+
+def test_escala_sem_ganho_nos_dados_reservados_vira_fator_constante(admin, unidade_id, db_factory):
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    portes = [1.0, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 11.0, 1.2, 3.3]
+    ruido = [1.35, 0.8, 1.3, 0.85, 1.25, 0.9, 1.4, 0.8, 0.75, 1.3]  # a razão não tem relação com o tamanho
+    db = db_factory()
+    emp = admin.usuario["empresa_id"]
+    for i, (x, r) in enumerate(zip(portes, ruido)):
+        o = Ordem(empresa_id=emp, unidade_id=unidade_id, numero=f"RUI{i:03d}", quantidade=1, produto_id=pid, status="concluida")
+        db.add(o)
+        db.flush()
+        oo = OrdemOperacao(empresa_id=emp, ordem_id=o.id, sequencia=1, etapa_nome="Corpo", nome="Montar", qtd_planejada=1, status="concluida",
+                           modulo="montagem", previsto_normal_min=x, fracao_operador=1.0)
+        db.add(oo)
+        db.flush()
+        ini = datetime(2026, 1, 5, 8, tzinfo=timezone.utc) + timedelta(hours=i)
+        db.add(Apontamento(empresa_id=emp, unidade_id=unidade_id, ordem_id=o.id, ordem_operacao_id=oo.id, tipo="execucao", inicio=ini,
+                           fim=ini + timedelta(minutes=x * r), quantidade_boa=1, status="aprovado", registrado_por=admin.usuario["id"]))
+    db.commit()
+    db.close()
+    fam = next(m for m in admin.post("/calibracao/modulos", {"unidade_id": unidade_id}).json()["modulos"] if m["produto_id"] == pid)
+    assert fam["status"] == "sugerido" and fam["expoente"] == 0.0               # ruído não vira "lei de escala"
+
+
 def test_migracao_0013_sobe_e_desce_no_sqlite(tmp_path):
     import os
     import sqlite3
@@ -176,6 +216,10 @@ def test_migracao_0013_sobe_e_desce_no_sqlite(tmp_path):
     assert "produto_id" not in colunas()
     alembic("upgrade", "0013")
     assert {"produto_id", "expoente", "porte_ref", "porte_min", "porte_max"} <= colunas()
-    alembic("downgrade", "-1")
+    alembic("upgrade", "0014")
+    assert {"erro_sem_pct", "erro_constante_pct", "erro_com_pct"} <= colunas()
+    alembic("downgrade", "0013")
+    assert "erro_com_pct" not in colunas() and "produto_id" in colunas()
+    alembic("downgrade", "0012")
     assert "produto_id" not in colunas() and "fator" in colunas()
     alembic("upgrade", "head")

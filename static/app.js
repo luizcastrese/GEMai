@@ -10,6 +10,7 @@ import * as contorno from './telas_contorno.js';
 import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
 import * as relatorio from './telas_relatorio.js';
+import * as calibracao from './telas_calibracao.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -35,6 +36,7 @@ const ROTAS = [
   [/^#\/processos$/, proc.lista, ['Detalhes técnicos', 'Processos', '#/processos', true]],
   [/^#\/processos\/(\d+)$/, proc.detalhe],
   [/^#\/cadastros$/, proc.cadastros],
+  [/^#\/calibracao$/, calibracao.calibracao, ['Detalhes técnicos', 'Calibração', '#/calibracao', true]],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
   [/^#\/painel$/, gestao.painel],
   [/^#\/ia$/, admin.recomendacoes, ['Detalhes técnicos', 'Sugestões da IA', '#/ia', true]],
