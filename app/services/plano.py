@@ -233,8 +233,16 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
     # tolerâncias por fontes plugáveis (OIT constantes, NIOSH, Murrell, ambiente, postura); nada digitado
     tr = tolerancias.calcular(tolerancias.ContextoTolerancia(locais=[local], perfil=base.perfil))
     tol = tr.aplicadas
-    cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, base.unidade_id, modulo.chave)  # só calibração VALIDADA
-    r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo, calibracao=calibracao_modulos.como_dict(cal))
+    # só calibração VALIDADA: a da família (este produto) tem precedência sobre o fator geral do módulo
+    cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, base.unidade_id, modulo.chave, base.produto.id)
+    porte = None
+    if cal is not None and cal.produto_id is not None and cal.expoente:
+        # O fator da família escala com o porte do pedido (tempo normal previsto por unidade, ANTES de qualquer calibração):
+        # calcula uma vez sem fator só para medir o porte e depois aplica o fator daquele tamanho.
+        r0 = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo)
+        if r0.normal_base and quantidade > 0:
+            porte = r0.normal_base / quantidade
+    r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo, calibracao=calibracao_modulos.como_dict(cal, porte))
     pessoas = r.pessoas
     falt = list(r.faltantes)
     if modulo.precisa_recurso and rec is None and not any("equipamento" in f for f in falt):

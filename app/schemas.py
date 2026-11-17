@@ -1331,6 +1331,11 @@ class CalibracaoModuloOut(Out):
     id: int
     unidade_id: int
     modulo: str
+    produto_id: int | None = None
+    expoente: float = 0.0
+    porte_ref: float | None = None
+    porte_min: float | None = None
+    porte_max: float | None = None
     fator: float
     mediana_bruta: float
     limitado: bool
@@ -1347,6 +1352,12 @@ class SugestaoModuloCalibOut(BaseModel):
     unidade_id: int
     modulo: str
     titulo: str
+    produto_id: int | None = None  # None = fator geral do módulo; com produto = calibração da família (escala com o porte)
+    produto_nome: str | None = None
+    expoente: float = 0.0  # fator(porte) = fator_sugerido × (porte ÷ porte_ref) ^ expoente
+    porte_ref: float | None = None
+    porte_min: float | None = None
+    porte_max: float | None = None
     amostras: int
     minimo: int
     mediana_bruta: float | None

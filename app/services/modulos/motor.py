@@ -87,7 +87,7 @@ def calcular_modulo(modulo: Modulo, entrada: EntradaModulo, *, tolerancias: list
     r.normal = round(r.total / ft, 3)
     if calibracao and k != 1.0:
         r.coeficientes.append({"chave": f"calibracao:{modulo.chave}", "valor": round(k, 4), "unidade": "×",
-                               "fonte": f"Calibração validada: mediana de {calibracao['amostras']} amostras aprovadas (v{calibracao['versao']})",
+                               "fonte": calibracao.get("fonte") or f"Calibração validada: mediana de {calibracao['amostras']} amostras aprovadas (v{calibracao['versao']})",
                                "status": "calibrado", "versao": int(calibracao["versao"])})
     return r
 
