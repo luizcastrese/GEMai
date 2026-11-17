@@ -72,7 +72,7 @@ function casca(conteudo, hash) {
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
   const iniciais = estado.usuario.nome.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
-  const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, 'Unidade', sel),
+  const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, estado.unidades.length > 1 ? ['Unidade', sel] : null),
     h('div', { class: 'who' }, h('span', { class: 'nome' }, estado.usuario.nome), h('span', { class: 'avatar', 'aria-hidden': 'true' }, iniciais),
       h('button', { class: 'sm', onclick: sair }, 'Sair')));
   return h('div', { class: 'shell' }, nav, h('main', null, topo, conteudo));

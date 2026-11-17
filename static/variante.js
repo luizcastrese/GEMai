@@ -20,8 +20,8 @@ export function cartaoCampos(produto, depois) {
   novo.tipo.addEventListener('change', ajusta);
   ajusta();
   const dica = (c) => (c.tipo === 'opcao' ? `Escolha: ${c.opcoes.join(', ')}` : c.tipo === 'numero' ? `Número${c.unidade ? ` em ${c.unidade}` : ''}` : 'Texto');
-  return h('div', { class: 'card' }, h('h2', null, '1. O que muda de um pedido para outro'),
-    h('p', { class: 'muted small' }, `O produto é o tipo de coisa que você faz (ex.: "${produto.nome}"). Aqui você diz o que muda de um pedido para outro, como tamanho e tipo. Os valores e a quantidade de parafusos de cada pedido você informa no plano de trabalho.`),
+  return h('div', { class: 'card' }, h('h2', null, 'Campos do pedido'),
+    h('p', { class: 'muted small' }, 'O que muda de um pedido para outro, como largura ou tipo. Os valores você informa em cada plano.'),
     campos.length ? campos.map((c, i) => h('div', { class: 'lig' }, h('span', null, h('strong', null, c.nome), ` · ${dica(c)}${c.obrigatorio ? ' · obrigatório' : ''}`),
       h('button', { class: 'sm dng', title: 'Remover campo', onclick: () => confirmar(`Remover o campo "${c.nome}"? Planos já criados mantêm o valor que guardaram.`, () => salvar(campos.filter((_, j) => j !== i)), 'Remover') }, '✕')))
       : h('p', { class: 'muted' }, 'Nenhum campo ainda. Sem campos, todos os pedidos deste produto são tratados como iguais no relatório.'),

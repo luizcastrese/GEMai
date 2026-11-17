@@ -361,3 +361,5 @@ nav.side a[href="#/calibracao"]{--ic:url("data:image/svg+xml,%3Csvg xmlns='http:
 .prova-l{display:flex;justify-content:space-between;gap:1rem;font-size:.86rem;color:var(--tx2);margin-bottom:.25rem}
 .prova .bar>i{background:var(--bd3)}.prova.on .bar>i{background:linear-gradient(90deg,var(--pri),color-mix(in srgb,var(--pri) 70%,var(--gold)))}
 .prova.on .prova-l{color:var(--tx);font-weight:600}
+h1+.inline{margin:.6rem 0 1rem}
+.inline+.card{margin-top:1rem}
