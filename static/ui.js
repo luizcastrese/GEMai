@@ -113,7 +113,7 @@ export function tabela(colunas, linhas, vazio = 'Nenhum registro.') {
 }
 export const kpi = (rotulo, valor, tom = '') => h('div', { class: `card kpi ${tom}` }, h('div', { class: 'v' }, valor), h('div', { class: 'l' }, rotulo));
 
-export function barras(rotulos, valores, { sufixo = '', cor = '#1f5fbf' } = {}) {
+export function barras(rotulos, valores, { sufixo = '', cor = '#1f4d43' } = {}) {
   const ns = 'http://www.w3.org/2000/svg';
   const W = 520, H = 130, pad = 22;
   const svg = document.createElementNS(ns, 'svg');
