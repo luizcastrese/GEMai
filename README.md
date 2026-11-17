@@ -1,308 +1,657 @@
-# ERP de Produção com IA
+# GEMai — ERP de Produção com IA
 
-ERP genérico orientado à produção, multiempresa, baseado no *Script Conceitual do Sistema ERP de Produção*
-(PUC-Campinas – Engenharia de Produção), construído como um **gêmeo digital da operação**.
+> **Documento-fonte do projeto e do TCC.** Descreve, com precisão, o que o sistema faz, em que literatura cada parte do
+> **tempo padrão** se apoia, o que ainda **não** está embasado e como corrigir. Foi escrito para ser lido por quem
+> (pessoa ou IA) vai redigir o Trabalho de Conclusão de Curso (Engenharia de Produção, PUC-Campinas).
+> Estado medido em **2026-11-17** (branch `main`).
 
-- A empresa descreve a operação com as próprias palavras; a IA sugere perguntas e uma estrutura de processo.
-- O processo é uma **reunião de blocos** (mão de obra + atividade + equipamento + espaço físico + item).
-- O **tempo padrão é SAÍDA**: o sistema o calcula a partir das condições (estrutura do produto, meios cadastrados, ambiente, jornada). Ninguém digita tempo, taxa de produção ou % de tolerância/fadiga. A IA **escolhe módulos** de um catálogo fechado e explica; nunca escreve tempo nem coeficiente.
-- Quando a ordem termina, o tempo **real é contrastado com o planejado**, e o histórico aprovado passa a substituir a estimativa.
-- **A IA sugere, o sistema valida** — o dado medido ou validado por pessoa sempre prevalece, e tudo fica na trilha de auditoria.
+---
 
-## Fluxo principal (foco do TCC): do produto ao tempo padrão
+## 0. Como usar este documento para redigir o TCC
 
-O problema atacado: o profissional faz o produto de forma heurística, não tem **tempo padrão** e acaba aceitando prazos sem saber quanto o trabalho leva.
-O caminho principal da interface tem só três passos (menu: *Início · 1. Produtos · 2. Oficina · 3. Planos de trabalho · Configurações*):
+**Regras de redação (obrigatórias):**
 
-1. **Produto:** o que será feito (texto livre interpretado pela IA, ou lista de peças e ligações).
-2. **Oficina:** locais, distância entre eles e máquinas, em **passo a passo** (locais → máquinas → ritmo opcional → distâncias → pronto) ou numa tela avançada só.
-   O tempo de máquina vem da **ficha técnica** (avanço, velocidade…), nunca de uma taxa digitada. **Quem quiser registrar quantas peças a máquina faz por hora**
-   (medição ou estimativa) clica em *"Não sei: a IA estima"*, descreve o equipamento e/ou envia uma **foto**; a IA **propõe** um valor com faixa, premissas e
-   confiança (nunca "alta"), e o usuário confere antes de gravar. Valor da IA fica rotulado *estimado pela IA* e entra nas premissas do plano (não alimenta o motor).
-   Sem IA externa habilitada, o sistema só aproveita um número escrito pelo usuário (não inventa).
-3. **Plano de trabalho:** a IA escolhe módulos do catálogo; o sistema calcula e mostra, em destaque, o **tempo padrão por unidade** (execução ÷ quantidade; o preparo do lote aparece à parte) e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
+1. **Não afirme além do que está aqui.** Cada capacidade do sistema vem marcada com um destes rótulos:
+   `[IMPLEMENTADO]`, `[PARCIAL]`, `[NÃO IMPLEMENTADO]`, `[NÃO VALIDADO EM CAMPO]`, `[PROPOSTA]` (desenho futuro). Reproduza o rótulo na linguagem do texto
+   ("o sistema implementa…", "está prevista…", "ainda não foi validado em campo…").
+2. **Não invente resultados.** Não há dados de piloto neste documento. A seção 10.4 define o que medir; os resultados serão do autor.
+3. **Cite apenas a literatura da seção 15.** Os dados bibliográficos foram escritos de memória por quem montou este documento e
+   **precisam ser conferidos** (edição, ano, páginas) antes da entrega. Itens com `[VERIFICAR]` exigem conferência na fonte original.
+4. **Separe "o método da literatura" de "a escolha do projeto".** Quando o sistema usa uma premissa própria (ex.: converter índice
+   de levantamento em % de fadiga), o texto deve dizê-lo explicitamente. O código já exige isso: percentual de tolerância sem fonte não existe.
+5. **O tempo padrão hoje NÃO está integralmente embasado na literatura.** A estrutura do cálculo está; vários coeficientes de base
+   são referências genéricas do projeto (seção 5.9 e 11). O TCC deve apresentar isso como limitação e o roadmap (seção 12) como proposta.
+6. **O sistema é genérico por desenho, validado em marcenaria.** O catálogo de módulos atual é de marcenaria (seção 6.6 e 12.2).
+7. **Idioma e norma:** português, ABNT (NBR 6023 referências, NBR 10520 citações, NBR 14724 estrutura).
 
-Dois apoios no caminho principal:
-- **Antes de gerar o plano**, o sistema confere a oficina. Se faltar dado (distância, ficha técnica de uma máquina que o plano usa, locais), mostra a lista e
-  leva direto ao bloco certo da tela *Oficina* (destacado), em vez de gerar um plano parcial. "Gerar mesmo assim" continua possível: os passos sem dado ficam "sem tempo", nunca zero.
-- **"Posso prometer esta data?"** (tela do plano, `POST /planos/{id}/prazo`): informe quantidade e prazo pedido; o sistema usa os tempos e a jornada do plano (sem IA, sem gravar nada)
-  e responde **cabe / não cabe / não dá para garantir**, quando termina e **até que dia dá para começar**. Plano com passos sem tempo nunca recebe "cabe". Com quantidade diferente da do plano,
-  só o tempo de execução é escalado (preparo fixo): é **estimativa proporcional**, declarada na tela.
+**Mapa sugerido: capítulo do TCC ← seção deste documento**
 
-## Produto como família, variante no pedido, e relatório de desempenho
+| Capítulo do TCC | Fonte neste documento |
+|---|---|
+| Resumo / Abstract | 1 |
+| Introdução (contexto, problema, justificativa, objetivos) | 2, 3 |
+| Metodologia | 4, 10.4 |
+| Fundamentação teórica | 5 |
+| Desenvolvimento: requisitos, arquitetura, modelo de dados | 6 |
+| Desenvolvimento: motor de tempo padrão | 7 (núcleo do trabalho) |
+| Desenvolvimento: uso de IA | 8 |
+| Segurança, privacidade e LGPD | 9 |
+| Verificação, validação e resultados | 10 |
+| Limitações e discussão | 11 |
+| Conclusão e trabalhos futuros | 12 |
+| Apêndices | 14 |
+| Referências | 15 |
 
-- **Produto = a família** ("Armário"), com nome geral e, opcionalmente, **campos que mudam de pedido para pedido** (ex.: Largura em cm, Altura, Tipo com opções), definidos uma vez no produto (`campos_especificacao`: número, texto ou escolha; obrigatório ou não).
-- **A variante vive no plano de trabalho.** Ao gerar ou recalcular um plano (`POST /planos`, `/planos/{id}/recalcular`, e também `/planos/arranjos`) o usuário informa os valores (`especificacoes`, validados contra os campos do produto) e pode ajustar as **peças e a quantidade de parafusos só daquele pedido** (`estrutura`, uma cópia editável do modelo base: `GET /produtos/{id}/modelo-base`). O produto não muda; o motor calcula com a estrutura do pedido. Sem `estrutura`, usa o modelo base (comportamento anterior).
-- A ordem gerada leva a variante na descrição (ex.: "Armário (Largura 80 cm · Tipo 2 portas)").
-- **Relatório** (menu *4. Relatório*, `GET /relatorios/desempenho`, planilha em `/relatorios/desempenho.csv?tipo=resumo|detalhe`, filtros por produto, unidade e período): uma linha por plano com variante, previsto, realizado, desvio e eficiência, e um **resumo por produto + variante**. Previsto × realizado só é comparado em **ordens concluídas com todos os passos previstos** (o que ainda não terminou, ou não tinha previsão, não entra no desvio). Desvio positivo = demorou mais que o previsto. O CSV usa `;`, vírgula decimal, BOM (abre direto no Excel) e neutraliza células que começam com `=`, `+`, `-` ou `@`.
-- **As medidas do pedido dimensionam as peças (o tempo padrão acompanha o tamanho).** Cada peça pode ter **fórmulas** em medidas, quantidade, peso, furos e borda, e cada ligação na quantidade de fixadores, escritas começando com `=` e usando os campos do produto entre chaves: `={Altura}`, `={Largura} - 0.036`, `=se({Tipo} == "2 portas"; 2; 1)`, `=teto({Altura} * 10)`. Decimais com **ponto** e argumentos separados por **`;`** (a vírgula é recusada de propósito). Campos em cm/mm/m entram na fórmula **já em metros**. Funções: `se, min, max, abs, arred, teto, piso`. O interpretador é próprio (`app/services/formulas.py`, **sem `eval`**), com limites de tamanho/profundidade; fórmula inválida é recusada ao salvar, dizendo o motivo. O valor numérico da peça é só o ponto de partida.
-  - Ao gerar o plano (e no arranjo recomendado), o **servidor** calcula as peças para as medidas informadas (`POST /produtos/{id}/montar` mostra isso antes de gravar). Resultado impossível (peça com comprimento ≤ 0) é recusado dizendo qual peça e qual fórmula.
-  - **Proteções contra mascarar o tempo real:** (1) medida informada que **nenhuma peça usa** gera a premissa "o tempo padrão NÃO muda com o tamanho" (e um aviso na tela do produto); (2) **peso fixo** de uma peça cuja medida varia é desconsiderado e o sistema volta a estimar por material e medidas; (3) ao recalcular com medidas novas as peças são **recalculadas**, nunca reaproveitadas do tamanho antigo; (4) ajuste manual sobre um valor que tinha fórmula fica registrado nas premissas ("a fórmula dava X"). O plano guarda as peças usadas (`estrutura`) e a tela mostra, com `ƒ`, o que veio de fórmula.
-- Limitação: o resumo agrupa por valores **idênticos** (80 cm e 81 cm são variantes diferentes); faixas de tamanho não existem ainda.
+**Perguntas que só o autor responde (não presumir):** objetivos formais aprovados pelo orientador; método de pesquisa adotado
+(a seção 4 é uma proposta); empresa e período do piloto; resultados do piloto; normas e edições de livros efetivamente consultadas.
 
-Ordens, fila, conferência de registros, processos e análises continuam no sistema, mas só aparecem no menu com **"Mostrar detalhes técnicos"** ligado (fase 2: medir o real para melhorar o padrão).
+---
 
-## Experiência do usuário: um só tipo de usuário, simples por padrão
+## 1. Resumo (rascunho)
 
-Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
+Profissionais que fabricam sob encomenda costumam estimar prazos de forma heurística, sem **tempo padrão**, e aceitam datas sem saber
+quanto o trabalho leva. Este trabalho apresenta o **GEMai**, um ERP de produção multiempresa, concebido como **gêmeo digital** da
+operação, em que o **tempo padrão é uma saída calculada** das condições do trabalho (estrutura do produto, meios cadastrados com ficha
+técnica, distâncias, jornada e perfil de mão de obra) e não um número digitado. O cálculo segue a estrutura clássica do estudo de
+tempos (tempo normal, tolerâncias, tempo padrão), com tempos de máquina derivados de parâmetros técnicos, elementos manuais
+compostos por vocabulário fechado e tolerâncias por fontes plugáveis (constantes da OIT, NIOSH, Murrell). Uma **inteligência
+artificial generativa apenas sugere** (escolhe módulos de um catálogo fechado e interpreta descrições); **o sistema valida e calcula**,
+e o dado medido e aprovado por pessoa sempre prevalece. Os tempos reais apontados na execução são contrastados com os planejados e
+alimentam uma **calibração por módulo e por produto**, validada por uma pessoa e testada com dados reservados. O sistema conta com
+322 testes automatizados e foi desenhado para validação em uma marcenaria. Discutem-se as limitações: coeficientes de base ainda
+genéricos, ergonomia parcialmente integrada ao fluxo principal e ausência de validação de campo.
 
-- **Início:** três cartões com o caminho principal (1. Produto → 2. Oficina → 3. Plano de trabalho), cada um com ✓ quando concluído e o que ainda falta, mais a lista de **planos recentes**.
-  O endpoint `GET /inicio` (lista de pendências: ordens atrasadas, paradas, registros e previsões a confirmar) continua na API, mas a interface atual **não o usa**.
-- **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
-- **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
-  1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **meios** (máquinas, ferramentas, postos, meios de movimentação) com **função** e **ficha técnica** (avanço, velocidade, capacidade — nunca "peças por hora"); 4. por tarefa: meio, de onde sai, para onde vai e **peso da peça**.
-  A IA já pergunta isso no diagnóstico e cria os locais citados. Dados opcionais (dimensões, ruído, temperatura…) ficam fora do mínimo. O contorno pode ser corrigido a qualquer momento, inclusive em processo publicado.
-- **Processo:** checklist "Está tudo pronto?" em português comum e um **único Publicar** (a IA prevê o tempo das tarefas na publicação). **A confirmação das previsões é manual**: botão "Confirmar previsões". Não existe mais "Já sei o tempo": o tempo vem do módulo escolhido para a tarefa (a IA sugere o módulo; uma pessoa confirma) e, depois, do histórico.
-- **Minha fila:** ▶ Iniciar → ■ Concluir (quantas peças ficaram boas) e "Algo deu errado? Avisar".
-- **Configurações:** empresa, equipe, histórico de alterações e a preferência **"Mostrar detalhes técnicos"** (tolerâncias, composição do tempo, normas, análises completas). Desligada por padrão.
+**Palavras-chave:** tempo padrão; estudo de tempos; ERP; gêmeo digital; inteligência artificial; ergonomia; calibração.
 
-Regras que substituem os papéis:
-- **Dois olhos nos registros de produção:** quem registrou um apontamento não o aprova sozinho, a menos que a equipe tenha uma só pessoa. Só histórico conferido por outra pessoa melhora as estimativas.
-- **A equipe precisa de ao menos uma pessoa ativa;** ninguém desativa a si mesmo.
-- **Unidades:** por padrão todos acessam todas as unidades; opcionalmente uma pessoa pode ser restrita a algumas (redes com várias unidades).
-- Alertas de segurança (carga, ruído, esforço) aparecem para todos, em linguagem simples; a referência normativa fica nos detalhes técnicos.
+---
 
-## Motor modular de tempo padrão (princípio central)
+## 2. Contexto, problema e justificativa
 
-> **O tempo padrão é SAÍDA do sistema.** Entradas válidas são *condições* (produto, meios, ambiente, jornada, perfil), nunca o tempo.
-> A IA **escolhe módulos de um catálogo fechado**, mapeia dados do produto para parâmetros e **explica/propõe arranjos**; **nunca escreve tempos nem coeficientes**.
-> Dado que falta vira **pendência** (nunca valor escondido). A IA sugere, uma pessoa valida.
+- **Problema.** O profissional faz o produto de forma heurística, não tem tempo padrão e acaba aceitando prazos sem saber quanto o
+  trabalho leva. Sem tempo padrão não há preço, prazo, capacidade nem melhoria baseada em dados.
+- **Barreiras clássicas.** O estudo de tempos tradicional exige cronometragem, analista treinado e tempo; pequenas empresas raramente o fazem.
+  ERPs convencionais pedem que o usuário **digite** tempos e taxas, ou seja, mudam o problema de lugar.
+- **Proposta.** Inverter a lógica: o usuário descreve **produto**, **oficina** e **jornada**; o sistema deriva o tempo padrão e declara o grau
+  de incerteza; a execução real melhora o padrão ao longo do tempo (ciclo *estimar → medir → melhorar*).
+- **Natureza do trabalho.** O desenho é geral: toda operação produtiva combina **mão de obra + atividade + equipamento + espaço físico
+  + item**. A validação inicial é em marcenaria (seção 6.6).
+- **Origem conceitual.** *Script Conceitual do Sistema ERP de Produção* (PUC-Campinas, Engenharia de Produção); o mapeamento por seção
+  está no Apêndice A.
+
+---
+
+## 3. Objetivos e questões de pesquisa  `[PROPOSTA — confirmar com o orientador]`
+
+**Objetivo geral.** Desenvolver e documentar um ERP de produção genérico, com IA como apoio, que calcule o tempo padrão como saída a
+partir das condições do trabalho, fundamentado nos métodos da Engenharia de Produção, e que aprenda com o tempo real medido.
+
+**Objetivos específicos.**
+1. Modelar o tempo padrão como composição de elementos de vocabulário fechado (tempo normal, ritmo, tolerâncias).
+2. Embasar cada componente do cálculo em literatura de estudo de tempos, métodos predeterminados e ergonomia, declarando o que é premissa do projeto.
+3. Delimitar o papel da IA: sugerir e explicar, nunca produzir tempo ou coeficiente.
+4. Contrastar o tempo real com o planejado e calibrar o modelo com validação por pessoa e prova com dados reservados.
+5. Verificar o sistema com testes automatizados e planejar a validação de campo em uma marcenaria.
+
+**Questões de pesquisa.**
+- QP1. É possível obter um tempo padrão utilizável a partir de condições (e não de tempos digitados)?
+- QP2. Em que medida a calibração com histórico aprovado reduz o desvio entre previsto e realizado? `[A RESPONDER NO PILOTO]`
+- QP3. Um usuário sem formação em engenharia de métodos consegue ir do produto ao plano sem ajuda? `[A RESPONDER NO PILOTO]`
+
+---
+
+## 4. Metodologia  `[PROPOSTA — confirmar com o orientador]`
+
+Pesquisa **aplicada**, com desenvolvimento de **artefato** (sistema) segundo a lógica de *Design Science Research* (Hevner et al., 2004):
+identificação do problema, desenho do artefato, construção, avaliação (testes automatizados e piloto) e comunicação.
+O histórico de construção está no repositório: 60 *commits*, primeiro em 2026-10-08, com 14 migrações de banco que documentam a evolução do modelo de dados.
+A avaliação combina (i) verificação por testes automatizados, (ii) revisão de aderência à literatura (seção 5.9) e (iii) piloto em marcenaria (seção 10.4).
+
+---
+
+## 5. Fundamentação teórica
+
+### 5.1 Estudo de tempos e métodos
+Origem em Taylor (1911) e nos estudos de movimentos de Gilbreth. A formulação usada pelo sistema segue Barnes (1980), Niebel e Freivalds (2003)
+e a OIT (Kanawaty, 1992):
 
 ```
-produto ─► subconjuntos ─► componentes/ligações ─► módulos de trabalho ─► elementos de tempo
-                                                        │
- meios cadastrados (ficha técnica validada) ────────────┤  tempo-base (ritmo só no que depende do operador)
- ambiente · jornada · perfil ───────────────────────────┘  ─► tempo normal ─► × fator de calibração (validado)
-                                                           ─► × FT das tolerâncias (fontes plugáveis) ─► TEMPO PADRÃO
+tempo observado (TO) ──► × avaliação de ritmo (R/100) ──► TEMPO NORMAL (TN)
+TN ──► × fator de tolerâncias (FT) ──► TEMPO PADRÃO (TP)
+
+FT = 1 / (1 − p),    p = fração de tolerâncias sobre o tempo total       (tolerância aplicada sobre o tempo total, forma clássica)
 ```
 
-**Catálogo de módulos** (`app/services/modulos/`, `GET /modulos`): `movimentacao`, `corte`, `bordo`, `furacao`, `montagem`, `conferencia`.
-Cada módulo declara seus **parâmetros** (e de onde vêm: produto, meio, ambiente, pedido) e produz elementos do **vocabulário fechado** (`fixo`, `linear_driver`, `deslocamento`, `indices_most`).
-Cada **coeficiente** usado tem **valor, unidade, fonte, status** (`referencia_generica` ou `calibrado`) e **versão**, e aparece em cada passo do plano.
-Os coeficientes iniciais são os "genéricos do projeto" que já existiam (caminhada 75 m/min, carga manual 20 kg/pessoa, preparação de máquina 5 min, fixadores da montagem, índices MOST **ilustrativos**): confiança **baixa**, sempre rotulados, a serem substituídos por calibração. `capacidade_recurso` ("peças por hora") está **obsoleto**.
+- **Avaliação de ritmo:** o analista compara o desempenho observado ao "ritmo normal"; 100 = normal (Westinghouse, OIT).
+- **Tolerâncias:** necessidades pessoais, fadiga básica e variáveis (postura, carga, ambiente, monotonia), segundo tabelas da OIT.
+- **Tamanho da amostra:** nº de ciclos a cronometrar para confiança e erro dados; forma clássica
+  `N' = [ 40·√(N·Σx² − (Σx)²) / Σx ]²` (95 % de confiança, ±5 %) `[VERIFICAR em Niebel e Freivalds]`.
 
-**Cadastro assistido de meios** (`app/routers/meios.py`, tela *Contorno físico › Meios*): a pessoa dá nome e, se quiser, uma foto (JPEG/PNG; metadados/GPS removidos e **a imagem nunca é gravada**). A IA propõe candidatos de marca/modelo; **a pessoa confirma o modelo**. Só então o sistema busca a **ficha técnica** na web (ferramenta de busca do servidor, configurável em `ERP_IA_BUSCA_FERRAMENTA`; sem IA externa, a busca é do provedor local e devolve vazio). O resultado é **validado pelo sistema**: só parâmetros do catálogo de ficha (nome, unidade, faixa plausível) e com URL de fonte válida entram, como `ia_sugerido`/pendente; **uma pessoa valida** cada valor. Meio sem ficha validada gera pendência no plano.
+### 5.2 Sistemas de tempos predeterminados
+MTM (Maynard, Stegemerten e Schwab, 1948) e MOST (Zandin, 2003). No BasicMOST, a *Sequência de Movimento Geral* é **A B G A B P A**
+(deslocar, curvar, pegar, deslocar, curvar, posicionar, deslocar), com índices de valor 0, 1, 3, 6, 10 ou 16, e
 
-**Calibração por módulo** (`POST /calibracao/modulos`): mostra uma **prévia** do fator multiplicativo = mediana de (tempo normal observado ÷ tempo normal previsto) por módulo, com ≥ `ERP_MIN_AMOSTRAS_CALIBRACAO` (10) amostras de apontamentos aprovados, limitado a 0,5–2,0; com `aplicar=true` cria **propostas pendentes**; só depois que **uma pessoa valida** o fator passa a valer (`vigente`, versionado). O tempo observado é primeiro **normalizado pelo ritmo da pessoa**. O ritmo é relativo à equipe (veja abaixo), por isso a calibração do módulo tende a absorver o nível geral da equipe — o fator não é "verdade OIT".
+```
+tempo (TMU) = Σ índices × 10        1 TMU = 0,00001 h = 0,0006 min = 0,036 s
+```
 
-**Calibração por família (produto × módulo).** Pedidos do mesmo produto com dimensões diferentes compartilham o *núcleo de cálculo* (peças, fórmulas, módulos); o que muda é o quanto o módulo erra conforme o tamanho. Por isso, além do fator geral, cada produto com ≥ `ERP_MIN_AMOSTRAS_FAMILIA` (8) amostras ganha uma proposta de fator que **escala com o porte do pedido**: `fator(porte) = fator_ref × (porte ÷ porte_ref)^expoente`, em que *porte* = tempo normal previsto **por unidade** (já deriva das medidas pelas fórmulas; nada extra a informar). O ajuste é robusto (Theil–Sen sobre ln razão × ln porte), exige ≥ 3 tamanhos distintos e dispersão ≥ 1,25×, e limita expoente (−0,5…1,0) e fator (0,5–2,0). O que se aprende nos pedidos grandes informa os pequenos e vice-versa; fora do intervalo já observado (+/− 50 %) o porte é travado na borda e o passo é rotulado **extrapolado**. No cálculo vale: família validada do produto > fator geral validado do módulo > coeficientes genéricos. A família também só entra depois de **validada por uma pessoa**.
+Os índices dependem de cartões **certificados** (licenciados); o sistema **não os reproduz** (ver 5.9, item 7).
 
-**Prova com dados reservados.** Toda proposta (geral ou de família) traz o erro típico medido em pedidos que ficaram de fora do cálculo (*leave-one-out*): sem calibração, com um fator único e com a proposta. A escala com o porte só é proposta se reduzir esse erro em ≥ 10 % frente ao fator constante; senão a família fica com o fator constante e a proposta diz isso. Se um fator geral não melhora o erro (o desvio depende do tamanho, não de um nível geral), a proposta avisa. A tela **Calibração** (menu *Detalhes técnicos*) mostra isso em linguagem simples e permite validar ou rejeitar.
+### 5.3 Dados padrão e tempos de máquina
+Para operações com máquina, o tempo vem de **parâmetros técnicos do processo**, p. ex. corte `t = comprimento ÷ avanço` (Groover, 2010, `[VERIFICAR edição]`).
+O sistema adota essa lógica, com os parâmetros vindos da **ficha técnica do equipamento**, validada por uma pessoa.
 
-**Tolerâncias por fontes plugáveis** (`app/services/tolerancias/`): cada fonte devolve `{categoria, percentual, fonte, premissa?}`. O código **impede percentual sem fonte**; conversão que não é da norma vai em `premissa`; faltante vira pendência.
+### 5.4 Ergonomia e fadiga
+- **NIOSH** (Waters et al., 1993; Waters, Putz-Anderson e Garg, 1994): `RWL = 23 kg · HM · VM · DM · AM · FM · CM`; `LI = carga ÷ RWL`.
+  LI > 1 indica risco aumentado. A norma **não** converte LI em minutos de descanso.
+- **Murrell** (1965): descanso por gasto energético `R = T · (W − S) / (W − 1,5)`, com `W` = gasto no trabalho (kcal/min) e `S` = limite adotado.
+  Os limites `S` por sexo e jornada **divergem entre fontes**; o sistema não embute valor.
+- **RULA** (McAtamney e Corlett, 1993): avaliação postural de membros superiores, pontuação de 1 a 7 com níveis de ação. **Não produz tempo nem percentual de descanso**;
+  qualquer conversão em tolerância seria premissa. `[NÃO IMPLEMENTADO]`
+- **Normas brasileiras:** NR-17 (ergonomia), NR-15 (ruído, calor), CLT arts. 58, 59, 71 (jornada e intervalos) e 198, 390, 405 (carga). Usadas como **alertas**; a vigência deve ser conferida `[VERIFICAR]`.
+- O sistema é **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
 
-| Fonte | O que faz | Estado |
+### 5.5 ERP e sistemas de apoio à produção
+ERP integra informação de produção, estoque, vendas e finanças. O GEMai trata o recorte **planejamento e controle da produção** (PCP): roteiros,
+tempos, ordens, apontamentos, desvios. Escopo excluído: seção 12.3.
+
+### 5.6 Gêmeo digital
+Representação virtual de um sistema físico, alimentada por dados do real (Grieves, 2014; Grieves e Vickers, 2017). No GEMai, o "gêmeo" é o modelo
+**blocos → elementos de tempo → minutos**, contrastado com o apontado e recalibrado.
+
+### 5.7 IA generativa com fronteira de confiança
+Modelos de linguagem produzem texto plausível, não necessariamente correto. A arquitetura adotada separa **sugestão** (IA) de **cálculo e validação** (sistema):
+catálogo fechado, esquemas validados, dado faltante vira pendência, sugestão nunca grava sozinha (seção 8).
+
+### 5.8 Estatística da calibração
+Mediana (robusta a *outliers*); regressão robusta de **Theil–Sen** (Theil, 1950; Sen, 1968) para aprender como o erro escala com o porte do pedido;
+**validação cruzada *leave-one-out*** (Stone, 1974) como prova com dados reservados.
+
+### 5.9 Matriz de rastreabilidade: cada componente do tempo padrão × literatura  *(núcleo do TCC)*
+
+| # | Componente | Como o sistema calcula | Base na literatura | Status | Lacuna e ação |
+|---|---|---|---|---|---|
+| 1 | Estrutura TN → TP | `TP = TN · FT`, `FT = 1/(1−p)`, `p ≤ 50 %` | Barnes; Niebel e Freivalds; OIT | `[IMPLEMENTADO]` | O teto de 50 % é escolha do projeto |
+| 2 | Ritmo (TN a partir do observado) | `TN = TO · R/100`; ritmo da pessoa > do perfil > 100; só no que depende do operador | Barnes; OIT (avaliação de ritmo) | `[PARCIAL]` | O ritmo calibrado é **relativo à equipe** (mediana = 100), **não** avaliação por observação. Ação: modo cronoanálise (12.1) |
+| 3 | Tolerâncias constantes | necessidades pessoais 5 % + fadiga básica 4 % (valor único, sem distinção por sexo) | OIT, *Introduction to Work Study* | `[IMPLEMENTADO]` | Valores conferidos em fonte secundária `[VERIFICAR na publicação original]`. A literatura clássica apresenta valores diferentes por sexo para necessidades pessoais; o valor único é **decisão de projeto** (não discriminar), e deve ser declarada |
+| 4 | Tolerância por carga | `LI` pela equação NIOSH; `LI → %` por tabela do projeto (≤1: 0 %; ≤2: 5 %; ≤3: 10 %; >3: 15 %) | Waters et al. (1993) para o LI; **conversão é premissa** | `[PARCIAL]` | **No fluxo principal (Produto → Oficina → Plano) os dados de levantamento nunca são fornecidos**, logo não entra no plano. Só no fluxo legado de processos |
+| 5 | Tolerância por gasto energético | Murrell, com `S` do perfil | Murrell (1965) | `[PARCIAL]` | Mesma lacuna do item 4 (gasto energético não alimentado no plano) |
+| 6 | Postura | ponto de extensão | RULA, REBA, OWAS | `[NÃO IMPLEMENTADO]` | Implementar só com as tabelas originais conferidas |
+| 7 | Ambiente (ruído, temperatura) | **alerta**, sem percentual | NR-15 | `[PARCIAL]` | Calor (IBUTG) e iluminação não calculados: texto oficial não verificado |
+| 8 | Tempo de máquina | corte: `m ÷ avanço`; borda: `m ÷ velocidade`; furação: `ciclos · curso ÷ avanço` | Dados de processo de usinagem (Groover) | `[IMPLEMENTADO]` | Não inclui **alimentação e retirada manual**; o avanço da ficha vale para todos os materiais e espessuras |
+| 9 | Deslocamento | `viagens = ⌈qtd ÷ itens por viagem⌉`; `t = viagens · distância ÷ velocidade · 2` | Princípio de movimentação de materiais | `[PARCIAL]` | Caminhada 75 m/min e 20 kg/pessoa são **referências genéricas sem fonte** |
+| 10 | Pegar e posicionar | `(levantamento curvado + posicionamento preciso)` em MOST ⇒ 29 índices × 10 × 0,0006 = **0,174 min/peça** | BasicMOST (Zandin) | `[PARCIAL]` | Índices **ilustrativos**, não conferidos com cartão certificado |
+| 11 | Fixação (parafuso, dobradiça…) | `n × coeficiente` (ex.: 0,30 min/parafuso; 1,5 min/dobradiça) | Dados padrão/tempos sintetizados (Barnes) | `[NÃO EMBASADO]` | **Referências genéricas do projeto, sem fonte.** Ação: cronoanálise ou MOST certificado |
+| 12 | Preparação | máquina 5 min; posto 2 min | — | `[NÃO EMBASADO]` | Genérico. Ação: medição |
+| 13 | Conferência final | 5 min por unidade | — | `[NÃO EMBASADO]` | Genérico. Ação: medição |
+| 14 | Divisão do trabalho entre pessoas | trabalho manual `÷ n` (caso ideal) | — | `[PARCIAL]` | Sem curva de aprendizagem nem perda de coordenação; é premissa declarada |
+| 15 | Calibração por módulo | `fator = mediana(TN observado ÷ TN previsto)`, limitado a 0,5–2,0, ≥ 10 amostras, validação por pessoa | Estatística robusta | `[IMPLEMENTADO]` | **Problema conhecido com equipes (11.2, item 4)** |
+| 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % para valer | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmos pré-requisitos de dados do item 15 |
+| 17 | Nº mínimo de amostras | fixo (3 histórico; 5 ritmo; 10 módulo; 8 família) | Tamanho de amostra (Niebel) | `[PARCIAL]` | Limites **heurísticos**, não calculados por confiança e erro |
+| 18 | Fadiga ao longo do turno | fora do cálculo | — | `[NÃO IMPLEMENTADO]` | Só entra quando aprendida de dados |
+| 19 | Jornada e agenda | blocos de horário, intervalos, só dias úteis | CLT arts. 58, 59, 71 (alertas) | `[IMPLEMENTADO]` | Sem feriados. Sequência única, sem paralelismo (exceto no arranjo recomendado) |
+
+**Consequência para a redação:** o TCC pode afirmar que a **estrutura** do tempo padrão segue a literatura (itens 1, 3, 8, 15, 16, 19) e que há
+**pontos explicitamente não embasados** (itens 11 a 13) e **não integrados ao fluxo** (4 a 7), com plano de correção (seção 12.1).
+Na prática, hoje, o fator de tolerância do plano é quase sempre `1/(1−0,09) ≈ 1,099`, pois só as constantes da OIT entram.
+
+---
+
+## 6. O sistema
+
+### 6.1 Princípios
+1. **O tempo padrão é saída.** Entradas válidas são *condições* (produto, meios, ambiente, jornada, perfil), nunca o tempo. Ninguém digita tempo, taxa ou % de tolerância.
+2. **A IA sugere, o sistema valida.** A IA escolhe módulos de um catálogo fechado e explica; nunca escreve tempo nem coeficiente.
+3. **Sem dado, sem chute.** Dado faltante vira pendência e o passo fica "sem tempo", nunca zero.
+4. **O medido prevalece.** Dado medido ou validado por pessoa vence a estimativa; tudo fica na trilha de auditoria.
+5. **Confiança honesta.** A confiança do plano nunca é "alta"; só chega a "média" se o plano é completo, a IA não declarou "baixa" e nada no cálculo é coeficiente genérico ou capacidade estimada pela IA. Os motivos aparecem nas premissas.
+
+### 6.2 Requisitos (resumo)
+**Funcionais:** cadastro de produto (peças e ligações) com descrição por IA; contorno físico (locais, distâncias, meios com ficha técnica, peso); plano de trabalho com tempo
+padrão por unidade, agenda e verificação de prazo; arranjo recomendado (equipe, lotes, meio); ordem de produção, fila, apontamento com aprovação por segunda pessoa; calibração com validação;
+relatório previsto × realizado por variante; auditoria.
+**Não funcionais:** multiempresa com isolamento rígido; reprodutibilidade (todo coeficiente com valor, unidade, fonte, status e versão); rastreabilidade; LGPD; execução em Docker e Render; PostgreSQL em produção.
+
+### 6.3 Arquitetura e tecnologias
+- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (14 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
+- **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
+- **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
+- **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
+- **Dimensão (2026-11-17):** ~12 mil linhas de Python na aplicação, ~4,6 mil de testes, ~2,5 mil de JavaScript, 29 entidades, 123 *endpoints*, 322 testes.
+
+```
+ navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
+                                        │                         │
+                                        │                         └──►  IA (provedor local | Claude)  ──► validação por esquema
+                                        └──►  Ctx (empresa, unidades)  ·  auditoria append-only
+```
+
+```
+app/            API (routers/), regras (services/), IA (services/ia/), modelos e esquemas
+  services/modulos/      catálogo de módulos de tempo
+  services/tolerancias/  fontes plugáveis de tolerância
+  services/arranjo/      recomendação de arranjo
+static/         interface web
+migrations/     Alembic
+tests/          pytest (322 testes)
+```
+
+### 6.4 Modelo de dados (principais entidades, `app/models.py`)
+| Grupo | Entidades |
+|---|---|
+| Organização | `Empresa`, `Unidade`, `Usuario`, `UsuarioUnidade` |
+| Processo (fluxo legado/avançado) | `Processo`, `Etapa`, `Operacao`, `Material`, `Parametro`, `ModeloTempo`, `DiagnosticoPergunta` |
+| Contorno físico | `Espaco`, `Distancia`, `Recurso` (com ficha técnica via `Parametro`), `Pessoa`, `PerfilMaoDeObra` |
+| Produto e plano | `Produto`, `Componente`, `Ligacao`, `PlanoTrabalho`, `PlanoPasso`, `ReferenciaTempo` |
+| Execução | `Ordem`, `OrdemOperacao`, `Apontamento`, `Ocorrencia` |
+| Calibração | `CalibracaoModulo` (geral e por família) |
+| Transversais | `RecomendacaoIA`, `AuditLog` |
+
+Todo dado de negócio tem `empresa_id`. Todo parâmetro tem **origem** (`informado`, `medido`, `calculado`, `ia_sugerido`), status de validação e versão. Apontamentos nunca são apagados, só anulados com motivo.
+
+### 6.5 Fluxo do usuário
+Um **único tipo de usuário** (sem papéis). O caminho principal tem três passos, mais o relatório:
+
+```
+Entrar → Início → 1. Produto → 2. Oficina → 3. Plano de trabalho → 4. Relatório
+                                                   │  (com "Mostrar detalhes técnicos" ligado)
+                                                   ▼
+                  Gerar ordem → Liberar → Fila (iniciar/concluir) → Aprovar registros → Calibração → validar → próximo plano
+```
+
+- **Entrada.** Primeiro acesso cria empresa, unidade e usuário (senha de 10+ caracteres com maiúscula, minúscula e número). Sessão por JWT; expira com aviso.
+- **Início.** Três cartões (um por passo, com ✓ quando concluído e o que falta) e os planos recentes.
+- **1. Produto.** Nome geral ("Armário", não "Armário 2 portas 80 cm"). Estrutura por **descrição em texto livre** (a IA propõe a lista; o usuário confere antes de gravar; nada é salvo antes)
+  ou **à mão** (peças com medidas em metros, peso, furos, borda; ligações com método e nº de fixadores). Campos de variante (largura, tipo…) ligam-se às peças por **fórmulas** que começam com `=`
+  (`={Altura}`, `=teto({Largura} * 10)`); o sistema avisa quando uma medida não afeta nenhuma peça. Sem peso, estima por densidade × medidas e rotula "estimado".
+- **2. Oficina.** Assistente de 5 passos, salvo ao preencher: **locais** → **máquinas** (função e local) → **ritmo** (opcional; peças/h medidas ou estimadas pela IA, que **não alimenta o cálculo**) →
+  **distâncias** (opções rápidas ou metros) → **pronto** (lista do que falta). A tela avançada acrescenta **ficha técnica** (avanço, velocidade, cabeçotes, capacidade de carga), peso por tarefa, ambiente e o
+  **cadastro assistido de meios** (nome ou foto → candidatos de modelo → pessoa confirma → busca da ficha → **pessoa valida cada valor**).
+- **3. Plano.** Antes de gerar, o sistema **confere a oficina** e lista pendências com atalho ao bloco certo ("Gerar mesmo assim" é possível). O pedido informa quantidade, início, equipe, jornada e perfil.
+  A tela mostra o **tempo padrão por unidade**, o preparo do lote à parte, o término, alertas, pendências, os passos com horário e as premissas.
+  **"Posso prometer esta data?"** responde cabe / não cabe / não dá para garantir, com o **último dia para começar**. Ações: confirmar, recalcular, imprimir, CSV, cancelar, **recomendar arranjo**.
+- **4. Relatório.** Previsto × realizado por produto e variante, com desvio e planilha.
+- **Fase 2 (detalhes técnicos).** Gerar ordem (plano confirmado) → liberar → **fila** (▶ iniciar, ■ concluir, quem executa) → **conferir registros** (a segunda pessoa aprova; quem registrou não aprova, salvo equipe de uma pessoa) → **calibração** → validar.
+
+### 6.6 Generalidade e o pacote de marcenaria
+O **motor** (vocabulário de elementos, tolerâncias plugáveis, calibração, agenda, multiempresa, auditoria) é genérico. O **catálogo de módulos e o modelo de produto** são, hoje, de marcenaria:
+
+| Forma de cálculo | Módulos atuais | Fórmula |
 |---|---|---|
-| `oit_constantes` | necessidades pessoais 5 % + fadiga básica 4 % | OIT (fonte secundária) |
-| `niosh` | LI pela equação NIOSH; LI → % é **premissa rotulada** | só com dados de levantamento; incompleto → pendência |
-| `murrell` | R = T(W − S)/(W − 1,5), S vem do **perfil** | sem S → pendência (sem valor padrão) |
-| `ambiente` | ruído > 85 dB(A) e temperatura extrema geram **alerta**; umidade/iluminância são registradas | **sem percentual**: o texto oficial do IBUTG (NR-15, Anexo 3) não foi verificado e exige globo/bulbo úmido, que o local não registra |
-| `postura` | **ponto de extensão** | **RULA não implementado**: as tabelas originais (McAtamney & Corlett, 1993) não foram verificadas; implementar de memória é proibido |
+| Processamento por meio | corte, bordo, furação | quantidade de um *driver* ÷ taxa da ficha técnica + preparo |
+| Deslocamento | movimentação | viagens × distância ÷ velocidade |
+| Trabalho manual por contagem | montagem | n × tempo por ação ÷ pessoas |
+| Verificação | conferência | tempo fixo por unidade |
 
-A **fadiga de turno** não tem campo e **está fora do cálculo** até ser aprendida de dados reais (declarado nas premissas do plano).
+Estado: o catálogo é fixo no código (`Literal` com seis chaves) e igual para toda empresa; a montagem das condições de cada passo é um `if` por chave de módulo; o produto é lista de peças
+com colunas fixas (comprimento, largura, espessura, furos, borda); o planejador local fixa a sequência corte → borda → furação → montagem. O campo `segmento` da empresa só vai como contexto para a IA.
+Desenho-alvo (**`[PROPOSTA]`**) na seção 12.2.
 
-**Arranjo recomendado** (`POST /planos/arranjos`, tela *Recomendar arranjo*): o sistema gera, de forma **determinística**, candidatos de equipe (1–8 pessoas), lotes (1/2/4), regra de prioridade e **meio de movimentação**, e escalona cada um com **recursos limitados** (equipe; cada máquina/meio faz uma coisa por vez; máquinas da mesma função formam um pool) respeitando as **dependências derivadas da estrutura do produto**. Cada candidato é calculado pelo motor modular: prazo (makespan), pessoas-hora, ocupação por recurso, **gargalo** e carga ergonômica. Devolve os melhores (fronteira de Pareto) com os trade-offs; **o usuário escolhe** e `POST /planos/de-arranjo` gera o plano da escolha (recalculado pelo motor). A IA (opcional) só **explica** e pode sugerir alternativas dentro do espaço, que o sistema **recalcula**. O plano só usa **meios cadastrados** (com ficha validada); meio de movimentação substitui a premissa de "pessoa carregando até 20 kg"; sem meio, o cálculo a pé segue como **premissa declarada**.
+---
 
-**Obsoleto/removido** (aceito na API apenas para não quebrar clientes, **sem efeito no cálculo**, com aviso): parâmetros `tempo_unitario_min`/`tempo_preparacao_min` (422 ao criar), `capacidade` (un/h) dos recursos (ainda é guardada, mas **não alimenta mais o tempo**), `fadiga_pct_hora`, `tolerancia_ambiente_pct`, `referencias-tempo`, `POST /operacoes/{id}/parametros/atualizar-historico` (410) e a geração de modelo de tempo por IA ("modelo_ia" só continua lendo modelos legados já gravados).
+## 7. Motor de tempo padrão
 
-## Gêmeo digital: como o tempo planejado nasce
-
+### 7.1 Pipeline
 ```
-blocos (lego)                         IA propõe                    sistema calcula             contraste
-mão de obra (função, nº pessoas) ┐
-equipamento (capacidade un/h)    ├─►  modelo de tempo      ─►    minutos por elemento   ─►   planejado × real
-espaços + distâncias (m)         │    (elementos + premissas      (fórmulas de vocabulário    por fonte de estimativa
-item físico (peso, dimensões)    ┘     + dados faltantes)          FECHADO, sem eval)         (painel de acurácia)
-```
-
-1. **Contorno físico estruturado:** *Espaços* (dimensões, piso, temperatura), *distâncias* entre espaços, *equipamentos* com capacidade, *item típico* da operação (peso/dimensões) que o *produto* da ordem sobrepõe.
-2. **Operação = composição de blocos:** função e nº de pessoas, equipamento, espaço de origem e destino, item e **marcos de início/fim do apontamento** (para o tempo medido ser comparável ao planejado).
-3. **Modelo de tempo (legado; hoje o caminho é o motor modular acima):** decompõe a operação em elementos (`preparacao`, `deslocamento`, `manuseio`, `processamento`…) usando 4 métodos fechados — `fixo`, `linear_driver` (peso, área, comprimento, volume, distância), `deslocamento` e `capacidade_recurso`. Traz **premissas**, **confiança** e **dados faltantes**. Nada que a IA escreva é executado: o sistema calcula.
-4. **Sem dado, sem chute:** se falta distância, peso ou capacidade, o elemento **não vira zero**; o modelo fica incompleto e o sistema lista o que falta.
-5. **Prioridade do tempo planejado:** `histórico aprovado` (normalizado pelo ritmo e com as tolerâncias) > `módulo` (condições + ficha dos meios, com calibração validada) > `modelo da IA` (legado, rotulado) > `sem base`. Parâmetro de tempo digitado **não é mais fonte**.
-6. **Prontidão do processo:** checagem determinística (e revisão narrativa por IA) apontando como o processo deve ser descrito e medido para os parâmetros ficarem consistentes.
-7. **Contraste e acurácia:** o painel mostra, por fonte (modelo IA, parâmetro, histórico), o desvio médio e o erro médio do planejado contra o real.
-
-### Fatores humanos e normas (engenharia de métodos e ergonomia)
-
-O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo normal → ritmo → tolerâncias → tempo padrão**.
-
-| Fator | Como entra | Base |
-|---|---|---|
-| **Tipo de movimento** | Elemento `indices_most`: Σ índices × 10 TMU (1 TMU = 0,036 s), sequência *General Move* (A B G A B P A). Tipos pré-definidos usam índices **ilustrativos** | Inspirado no BasicMOST (Maynard). Conferir com o cartão certificado |
-| **Peso / tamanho do item** | Peso e dimensões do item típico (o do produto da ordem prevalece); alimentam manuseio, deslocamento (itens por viagem) e NIOSH | — |
-| **Carga manual** | Triagem **NIOSH** (RWL, índice de levantamento) com os multiplicadores HM/VM/DM/AM/FM/CM; LI > 1 gera alerta e uma tolerância de fadiga | NIOSH Pub. 94-110; tabelas FM/CM conferidas em fontes secundárias |
-| **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
-| **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda. No modelo, o ritmo gera a previsão *para aquele ritmo* (padrão 100). No histórico, o ritmo **da pessoa** normaliza o que ela executou (ver abaixo) | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
-| **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %, aplicado **só ao tempo que depende do operador** (não ao tempo de máquina), por **fontes plugáveis** (veja o motor modular): necessidades pessoais 5 % + fadiga básica 4 % + o que NIOSH/Murrell calcularem com dados | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
-| **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** |
-| **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica; **não** vira tolerância (não há folga digitada) | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
-| **Postura / altura de trabalho** | Postura entra nas tolerâncias; altura de trabalho é comparada à altura do cotovelo do perfil, **sem julgar** (as faixas recomendadas divergem entre fontes) | — |
-
-**Sexo, estatura e peso corporal:** ficam no **perfil de mão de obra** (referência, não é uma pessoa) e são usados **apenas** para limites de carga e conferências ergonômicas.
-Eles **não alteram o tempo nem medem produtividade** (há teste automatizado garantindo isso). O ritmo é calibrado por medição. Não use esses dados
-para decisões de contratação ou alocação de pessoas; se vincular perfis a pessoas reais, trate como dado pessoal (LGPD: finalidade, minimização e consentimento).
-
-#### Histórico normalizado pelo ritmo da pessoa
-
-O histórico **calibra** o modelo de tempo; não o substitui. Para cada operação com amostras suficientes, por apontamento aprovado e não anulado:
-
-```
-tempo observado ─► × (f·ritmo/100 + 1 − f) ─► tempo normal ─► mediana das amostras ─► × FT (tolerâncias do modelo) ─► tempo padrão
+produto (peças, ligações) + oficina (meios, ficha técnica, distâncias) + pedido (quantidade, medidas, equipe, jornada, perfil)
+        │
+        ▼  IA/regras ESCOLHEM módulos e mapeiam peças, máquinas, locais       (nunca tempos)
+        ▼  sistema deriva condições (medidas, pesos, distâncias, ficha validada)
+        ▼  módulo → ELEMENTOS de vocabulário fechado → minutos
+        ▼  ritmo (só no que depende do operador) → TEMPO NORMAL
+        ▼  × fator de calibração validado (padrão 1)  → × FT (tolerâncias) → TEMPO PADRÃO
+        ▼  agenda na jornada → plano (horários, pessoas-hora, término) → "posso prometer?"
 ```
 
-- `f` é a fração do tempo que depende do operador (minutos dos elementos com `depende_operador` ÷ total do modelo ativo, calculado com o contexto da operação). Sem modelo utilizável, `f = 1` e o sistema **avisa** ("assumido 100% dependente do operador").
-- A normalização é **por apontamento** (várias pessoas podem apontar a mesma ordem_operacao); só depois soma-se por ordem e obtém-se a amostra por unidade/lote.
-- **Ritmo efetivo** (função única `services/ritmo.ritmo_efetivo`): `pessoa.ritmo_pct` > `ritmo_pct` do perfil da pessoa > 100. Apontamento sem pessoa, ou de pessoa sem ritmo nem perfil, entra com 100 e é **contado num aviso** ("N de M apontamentos sem pessoa/ritmo, não normalizados").
-- **Tolerâncias:** com modelo ativo (validado, ou não validado se `ERP_USAR_MODELO_IA_NAO_VALIDADO=true`), aplica-se `FT = 1/(1 − Σp)` ao tempo normal (execução e preparação vindas do histórico). Sem modelo, **não se inventa tolerância**: o resultado é tempo normal, avisado como "não padrão". Uma preparação que vem do parâmetro validado (histórico de preparação insuficiente) entra como está, sem FT.
-- `fonte` continua `historico`. Se o modelo (a ritmo 100) e o histórico normalizado divergem mais de 30 %, vem um aviso de premissa possivelmente errada.
+### 7.2 Vocabulário fechado de elementos (`modelo_tempo.py`)
+| Método | Fórmula |
+|---|---|
+| `fixo` | `t = a · (qtd se por unidade)` |
+| `linear_driver` | `t = (a + b · driver) · (qtd se por unidade)`; driver ∈ peso, área, comprimento, volume, distância |
+| `deslocamento` | `t = ⌈qtd / itens por viagem⌉ · distância / velocidade · (2 se ida e volta)` |
+| `indices_most` | `t = Σ índices · 10 · 0,0006 min` |
+| `capacidade_recurso` | `t = qtd / capacidade · 60` — **obsoleto**: só calcula se um chamador fornecer a capacidade (testes do motor); a capacidade digitada na oficina **não** alimenta o cálculo |
 
-**Ritmo por pessoa** (cadastro de pessoas: perfil e `ritmo_pct`, 50–150): informado à mão (`origem = informado`) ou **calibrado pela equipe** (`origem = calibrado`).
-`POST /pessoas/calibrar-ritmo` mostra a **prévia** sem gravar; com `"aplicar": true` grava (com auditoria). O sistema sugere, uma pessoa confirma; ritmo `informado` nunca é sobrescrito.
-Método: por operação com ≥ `ERP_MIN_AMOSTRAS_HISTORICO` amostras e 2+ pessoas, referência = mediana dos tempos por unidade; por pessoa e operação com ≥ `ERP_MIN_AMOSTRAS_RITMO` amostras (padrão 5),
-razão = referência ÷ mediana da pessoa; ritmo = mediana das razões × 100, limitado a 50–150, exigindo ≥ `ERP_MIN_OPERACOES_RITMO` operações distintas (padrão 1; **2 ou mais é mais robusto**).
+Tipos: preparação, deslocamento, manuseio, processamento, inspeção, espera fixa, outro. Elementos `paralelizavel` são divididos pelo nº de pessoas. Nada que a IA escreva é executado (não há `eval`).
+Se falta dado físico (distância, peso, ficha), o elemento **não vira zero**: o resultado é marcado incompleto e a pendência é listada.
 
-> **Esse ritmo é RELATIVO À EQUIPE** (a mediana da equipe vale 100). **Não é avaliação de ritmo no sentido OIT** (comparação com o ritmo normal de um operador qualificado, por observação cronometrada): uma equipe toda lenta ainda resulta em ritmos próximos de 100.
-> Serve só para normalizar o histórico.
+### 7.3 Camadas e fórmulas (`modelo_tempo.calcular`, `modulos/motor.py`)
+1. **Tempo-base** de cada elemento, vezes o fator de ambiente (limitado a 0,5–3, padrão 1).
+2. **Ritmo:** elementos que dependem do operador × `100 / ritmo_pct` (ritmo limitado a 50–150). Tempo de máquina (`depende_operador = false`) **não** recebe ritmo nem tolerância.
+3. **Tempo normal** = preparação + execução, antes das tolerâncias.
+4. **Fator de calibração** do módulo `k ∈ [0,5; 2,0]`, só se validado por pessoa, multiplicando tudo.
+5. **Tolerâncias:** `FT = 1/(1 − p)`, `p = Σ percentuais/100 ≤ 50 %`, aplicadas **só ao tempo do operador**. Cada tolerância aparece como linha da composição:
+   `minutos_i = base_operador · (FT − 1) · p_i / Σp`.
+6. **Tempo padrão** = tempo normal × calibração + tolerâncias; **preparação** separada da execução. **Tempo padrão por unidade = execução ÷ quantidade**; o preparo do lote é uma vez só e aparece à parte.
+7. **Fração dependente do operador** `f` = minutos dos elementos que dependem do operador ÷ total (usada para normalizar o histórico pelo ritmo).
 
-**Privacidade (LGPD):** o ritmo por pessoa é **dado de desempenho individual**. Não é usado nem exibido no dashboard nem em `gestao.py`, e a tela não ordena nem ranqueia pessoas por ritmo
-(fica sob "Mostrar detalhes técnicos"). Já `GET /analise/comparacao`, anterior a esta mudança, mostra o tempo mediano por pessoa: é dado de desempenho individual da mesma natureza; avalie se deve ficar disponível. Não use para contratação, alocação, remuneração ou avaliação; trate com finalidade, minimização e consentimento (mesma linha do aviso sobre sexo/porte acima).
-Experiência, sexo, estatura e peso continuam **sem** entrar como multiplicador de tempo.
-
-**Ainda não coberto** (próximos passos): curva de aprendizagem/experiência como multiplicador (não há coeficiente com fonte), tabelas MTM-1 completas, **RULA/REBA/OWAS** (só o ponto de extensão existe; faltam as tabelas originais verificadas),
-Snook & Ciriello (empurrar/puxar), **exposição a calor (IBUTG)** (texto oficial da NR-15 Anexo 3 não verificado; local sem globo/bulbo úmido), **iluminação por tarefa**, **fadiga cumulativa por turno** (fora do cálculo até ser aprendida de dados),
-calibração automática de coeficientes **por elemento** (hoje só o fator por módulo, validado por pessoa), módulos além dos seis do catálogo (ex.: lixamento, pintura, acabamento), sequenciamento entre **vários produtos/ordens** (o arranjo cobre um produto por vez), e os módulos de ferramentas/postos como recurso com capacidade própria.
-O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
-
-`ERP_USAR_MODELO_IA_NAO_VALIDADO=false` exige que uma pessoa da equipe valide o modelo antes de ele valer como tempo planejado (vale para o modelo de tempo por operação de processo; o plano de trabalho tem a própria confirmação manual).
-O provedor local usa referências genéricas (caminhada 75 m/min, carga manual 20 kg/pessoa, manuseio 0,15 min + 0,012 min/kg,
-preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, o modelo é derivado do contexto da empresa.
-
-## Do produto ao plano de trabalho
-
-Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de trabalho → Ordem de produção**.
-
-1. **Produto:** o usuário informa os **componentes** (nome, quantidade, material, medidas, peso, furos, borda) e **como se ligam** (método e nº de fixadores:
-   parafuso, cavilha, minifix, dobradiça, corrediça, cola, prego, encaixe, puxador). Também pode **descrever em texto livre** ("armário de MDF com 2 portas,
-   3 prateleiras…"): a IA **propõe** a lista, o usuário confere e só então ela é gravada (`POST /produtos/{id}/interpretar` não grava nada).
-2. **Contorno físico:** locais (com tipo: estoque, montagem…), distâncias, equipamentos (*para que serve* + peças/h) e, se quiser, tempos de montagem da própria
-   oficina e condições do ambiente. O que não for informado vira **pendência**, nunca um valor inventado.
-3. **Plano de trabalho** (`POST /planos`, ou `POST /planos/de-arranjo` a partir de um arranjo escolhido): a IA (ou o provedor local, por regras) **propõe os passos** — transporte do estoque, usinagem (corte, borda, furação),
-   montagem por subconjunto, montagem final e conferência — cada um **ligado a um módulo do catálogo**. O **sistema calcula** cada tempo pelo módulo e considera:
-   movimentação (distância, meio cadastrado ou pessoa carregando como premissa declarada), **ficha técnica validada dos meios**, ligações/fixadores,
-   tolerâncias por fontes plugáveis (OIT 5 % + 4 %, NIOSH/Murrell quando há dados; **nenhuma folga digitada**), ritmo do perfil (só no que depende do operador), a calibração **validada** do módulo,
-   alertas de carga (CLT), ruído (NR-15) e temperatura extrema, e **agenda os passos na jornada** (blocos de horário, intervalos, só dias úteis), com avisos
-   de jornada/intervalo (CLT arts. 58/59/71 — conferir com jurídico/SESMT). Não há campo de fadiga por hora.
-4. **Saída:** passos com início/fim previstos, tempo de trabalho, pessoas-hora, término e dias; **imprimir** e **planilha CSV** (protegida contra injeção de fórmulas).
-   O plano nasce como **rascunho**; a **confirmação é manual**. Plano confirmado → **ordem de produção** (`POST /planos/{id}/gerar-ordem`), cujos passos
-   ficam com fonte `plano`; passos sem tempo entram como "sem base". Depois os apontamentos reais permitem o planejado × realizado.
-
-Limites assumidos (declarados na tela e nas premissas do plano): `POST /planos` gera a sequência **em série, com uma só frente de trabalho** (para trabalho em paralelo entre pessoas e máquinas use o **arranjo recomendado**); os tempos de montagem e
-conferência partem de **referências genéricas do catálogo** até serem calibrados; a confiança do plano **nunca é "alta"** (a que a IA declare é descartada) e só chega a "média" se nada no cálculo for coeficiente genérico, capacidade estimada pela IA ou ainda não calibrado (os motivos aparecem nas premissas). **Previsto × realizado:** o que o plano prevê é **tempo padrão** (com ritmo, calibração e tolerâncias); o realizado é a soma BRUTA dos apontamentos — comparar os dois exige cuidado, e a calibração por módulo compara o *tempo normal* observado com o previsto.
-O plano **depende de dados que ainda precisam ser cadastrados**: ficha técnica dos meios, distâncias, peso/material dos componentes; sem eles o passo fica *incompleto* e o plano lista o que falta.
-Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
-
-## Limitações conhecidas do cálculo
-
-Revisão da lógica (leitura do código e experimentos pontuais), com as correções já feitas e o que ainda está em aberto. Leia antes de confiar num prazo.
-
-**Corrigido** (com testes em `tests/test_plano.py`, `tests/test_modulos.py` e `tests/test_fatores_humanos.py`):
-- **Pessoas e prazo:** na montagem, o trabalho manual é dividido entre as pessoas (elementos `paralelizavel`); usinagem e transporte não dividem (a máquina dita o ritmo; mais pessoas só aumentam a carga por viagem). É o **caso ideal**, sem perda de coordenação, e a premissa aparece no plano.
-- **Tolerâncias só no tempo da pessoa:** ritmo e tolerâncias (pessoal, fadiga, ambiente) não multiplicam mais o tempo de máquina (`capacidade_recurso` ou `depende_operador=false`). 60 peças a 60 peças/h voltaram a ser 60 min (antes 65,9).
-- **Horário de início dos passos:** o passo começa quando o trabalho recomeça (13:00 após o almoço, 08:00 do dia útil seguinte), e não no fim do bloco anterior.
-- **Tempo padrão por unidade:** é só a execução ÷ quantidade. O **preparo do lote** (`tempo_preparo_min`, feito uma vez) aparece à parte na tela do plano e em "Posso prometer esta data?" (`preparo_lote_min`). O número deixa de crescer ou encolher com a quantidade pedida.
-- **Confiança do plano:** só chega a "média" se o plano é completo, a IA não declarou "baixa" e nada no cálculo é coeficiente de referência genérico (ainda não calibrado) ou capacidade estimada pela IA. Cada motivo de confiança baixa é listado nas premissas. Nunca é "alta".
-
-**Em aberto:**
-
-| # | Limitação | Efeito | Onde |
+### 7.4 Catálogo de módulos (`app/services/modulos/`)
+| Módulo | O que calcula | Entradas (de onde vêm) | Pendência quando… |
 |---|---|---|---|
-| 5 | **Ordens geradas por plano só alimentam a calibração por módulo** (fator multiplicativo validado por pessoa), não o histórico por operação (`services/estimativa.py` só lê operações de processo) | Sem ≥ 10 ordens concluídas e aprovadas por módulo (≥ 8 por produto), o plano segue com os coeficientes genéricos; a calibração propõe e uma pessoa valida | `services/calibracao_modulos.py`, `services/plano.py` (`gerar_ordem`) |
-| 6 | **Os coeficientes de montagem e conferência são referências genéricas** (ex.: 0,30 min por parafuso, 1,5 min por dobradiça) e os índices MOST são ilustrativos | Sem medição da oficina ou calibração validada, o "tempo padrão" é uma estimativa de ordem de grandeza (declarado na confiança) | `services/modulos/coeficientes.py` |
-| 7 | **Sequência única de passos**, sem trabalho em paralelo entre eles; pessoas-hora assumem toda a equipe ocupada em todos os passos (inclusive nos de máquina e na conferência) | Prazo tende a ser superestimado quando há equipe, e as pessoas-hora também | `services/plano.py` |
-| 8 | **Divisão ideal do trabalho:** mais pessoas dividem a montagem por igual, sem curva de aprendizagem nem perda de coordenação | Com equipes grandes o ganho de prazo pode ser otimista | `services/modulos/montagem.py` |
+| `movimentacao` | levar peças entre dois locais | distância (ambiente), peso máx. e médio (produto), meio (ficha: velocidade, capacidade de carga) | falta distância, peso, velocidade ou capacidade; peça mais pesada acima da capacidade do meio |
+| `corte` | preparação + `metros de corte ÷ avanço` (perímetro de cada peça; conservador) | comp., larg. (produto); `avanco_corte_m_min` (ficha) | falta medida, equipamento ou avanço |
+| `bordo` | preparação + `metros de borda ÷ velocidade` | `bordas_m` (produto); `velocidade_bordo_m_min` (ficha) | idem |
+| `furacao` | preparação + `ciclos · curso ÷ avanço`, com `ciclos = ⌈furos ÷ cabeçotes⌉ · qtd` | `furos` (produto); cabeçotes, curso, avanço (ficha) | idem |
+| `montagem` | pegar/posicionar (MOST ilustrativo) + fixação por método (`n · coeficiente`), dividido pelas pessoas; peso define o mínimo de pessoas (`⌈peso ÷ 20 kg⌉`) | ligações e fixadores (produto); equipe (pedido) | faltam ligações e fixadores |
+| `conferencia` | tempo fixo por unidade do produto | quantidade | — |
 
-Já estão cobertos por testes: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; a confiança do plano nunca é "alta"; sexo, estatura e peso corporal não alteram o tempo.
+**Movimentação sem meio:** pessoa carregando a 75 m/min e até 20 kg por pessoa (**referência genérica, declarada**). `itens por viagem = ⌊(20 · pessoas) ÷ peso médio⌋`. **Com meio:** `⌊capacidade ÷ peso médio⌋`.
+**Registrados mas sem efeito no tempo** (não há coeficiente com fonte): altura de trabalho, precisão, tipo de piso.
 
-## Rodando
+### 7.5 Tolerâncias por fontes plugáveis (`services/tolerancias/`)
+Cada fonte devolve itens `{categoria, percentual, fonte, premissa?}`. O código **impede percentual sem fonte**; conversão que não é da norma vai em `premissa`; dado faltante vira pendência.
+| Fonte | Faz | Status |
+|---|---|---|
+| `oit_constantes` | 5 % necessidades pessoais + 4 % fadiga básica | `[IMPLEMENTADO]` e **única que entra no plano hoje** |
+| `niosh` | LI → alerta; LI → % de fadiga por tabela do projeto | `[PARCIAL]`: sem dados de levantamento no fluxo principal |
+| `murrell` | `R = T(W−S)/(W−1,5)` convertido em percentual do tempo total, `S` do perfil | `[PARCIAL]`: sem gasto energético no fluxo principal |
+| `ambiente` | alerta de ruído (> 85 dB(A)) e temperatura extrema; **sem percentual** | `[PARCIAL]` |
+| `postura` | ponto de extensão (RULA/REBA/OWAS) | `[NÃO IMPLEMENTADO]` |
 
+A **fadiga de turno** não tem campo e está fora do cálculo até ser aprendida de dados reais. Sexo, estatura e peso corporal **não alteram o tempo** (há teste automatizado); só entram em limites de carga.
+
+### 7.6 Ritmo
+Precedência: `pessoa.ritmo_pct` > `perfil.ritmo_pct` > 100 (sinalizado como "padrão"). O ritmo individual é dado de desempenho (LGPD): não há ranking, e a calibração apenas **sugere**; uma pessoa confirma e o ritmo `informado` nunca é sobrescrito.
+**Calibração do ritmo pela equipe:** por operação com amostras suficientes e 2+ pessoas, referência = mediana dos tempos por unidade; por pessoa, razão = referência ÷ mediana da pessoa; ritmo = mediana das razões × 100, limitado a 50–150.
+> É um ritmo **relativo à equipe** (mediana = 100), **não** a avaliação de ritmo da OIT por observação. Uma equipe toda lenta ainda dá ritmos próximos de 100.
+
+### 7.7 Histórico normalizado (fluxo de processos)
+Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 + 1 − f)`; mediana das amostras; `× FT` do modelo; sem modelo, **não se inventa tolerância** (resultado é tempo normal, avisado).
+**Prioridade do tempo planejado:** histórico aprovado > módulo (com calibração validada) > modelo da IA (legado, rotulado) > sem base. Parâmetro de tempo digitado **não é mais fonte**.
+
+### 7.8 Calibração por módulo e por família (`calibracao_modulos.py`)
+- **Amostra:** uma operação concluída (ordem não cancelada) com módulo e previsão. Observado = apontamentos **aprovados** e não anulados (preparação + execução), normalizados **por apontamento** pelo ritmo de quem executou (só na fração `f`).
+  Previsto = tempo normal em ritmo 100 **sem** fator de calibração (para não calibrar sobre a calibração).
+- **Fator geral do módulo:** mediana das razões, ≥ 10 amostras por (unidade, módulo), limitado a 0,5–2,0.
+- **Família (produto × módulo):** `fator(porte) = fator_ref · (porte ÷ porte_ref)^b`, com **porte** = tempo normal previsto por unidade do pedido; `b` por Theil–Sen sobre ln(razão) × ln(porte), limitado a −0,5…1,0.
+  Exige ≥ 8 amostras do produto, ≥ 3 tamanhos distintos e dispersão de porte ≥ 1,25×. Fora do intervalo observado (±50 %) o porte é travado na borda e o passo é rotulado **extrapolado**.
+- **Prova com dados reservados (*leave-one-out*):** cada pedido é previsto pelos **outros**; a escala só é proposta se reduzir o erro típico em ≥ 10 % frente a um fator constante; senão fica o constante, e a proposta diz isso.
+  Se um fator geral não melhora o erro, a proposta avisa.
+- **Governança:** a prévia não grava; registrar cria **proposta pendente**; só uma pessoa a **valida** (validado + vigente, versionado). Precedência no cálculo: família validada > fator geral validado > coeficientes genéricos.
+
+### 7.9 Agenda e prazo (`plano.py`)
+- **Agendamento sequencial:** cada passo começa no primeiro instante de trabalho após o anterior (13:00 depois do almoço; 08:00 do dia útil seguinte), respeitando blocos de horário (padrão 08–12 e 13–17) e só dias úteis; não há feriados.
+- **"Posso prometer esta data?"** (`POST /planos/{id}/prazo`, sem IA, sem gravar): reaproveita tempos e jornada do plano; com outra quantidade, escala **só a execução** (preparo fixo) e declara "estimativa proporcional".
+  `cabe` se o fim ≤ fim do último bloco do prazo e o plano é completo; plano incompleto nunca recebe "cabe" (no máximo "não dá para garantir"). Calcula o **último dia para começar** olhando para trás.
+- **Arranjo recomendado** (`services/arranjo/`): gera candidatos de equipe (1–8), lotes (1/2/4), regra de prioridade e meio de movimentação; escalona com **recursos limitados** (equipe; cada máquina faz uma coisa por vez)
+  respeitando dependências derivadas da estrutura do produto; devolve a **fronteira de Pareto** (prazo, pessoas-hora, gargalo, carga ergonômica). O usuário escolhe; o plano é recalculado pelo motor. A IA só **explica**.
+
+### 7.10 Fórmulas das peças (`formulas.py`)
+Interpretador **próprio e fechado** (sem `eval`), com limites de tamanho e profundidade; campos entre chaves, decimal com ponto, argumentos separados por `;`.
+Funções: `se`, `min`, `max`, `abs`, `arred`, `teto`, `piso`; operadores `+ − * /` e comparações. Liga medidas do pedido a medidas, quantidades, pesos, furos, bordas e fixadores. Proteções contra mascarar o tempo real:
+medida que nenhuma peça usa gera aviso e premissa; peso fixo de peça cuja medida varia é desconsiderado; ao recalcular, as peças são **recalculadas**, nunca reaproveitadas; ajuste manual sobre valor com fórmula fica registrado.
+
+---
+
+## 8. Inteligência artificial no sistema
+
+| Uso | O que a IA faz | O que o sistema faz |
+|---|---|---|
+| Interpretar produto | propõe componentes e ligações a partir de texto | mostra para conferência; **não grava** antes da confirmação |
+| Planejar | escolhe módulos do catálogo e mapeia peças, máquinas, locais | recebe só nomes, medidas e pesos (nenhum tempo ou coeficiente); calcula todo tempo |
+| Identificar meio e ficha | propõe marca/modelo (por texto ou foto); busca ficha na web | só parâmetros do catálogo, com faixa plausível e URL de fonte entram, como `ia_sugerido`; **pessoa valida** |
+| Estimar capacidade | propõe peças/h com faixa, premissas e confiança (nunca "alta") | rotula "estimado pela IA"; **não alimenta o motor** |
+| Explicar arranjos | explica diferenças e sugere alternativas | **recalcula** qualquer alternativa |
+| Diagnóstico e estrutura (fluxo avançado) | perguntas adaptativas e proposta de processo, etapas, recursos, indicadores | cria **rascunho** editável |
+
+**Salvaguardas:** (i) textos da empresa entram como **dados**, não instruções; (ii) toda saída é validada contra esquema (Pydantic) e saneada (limites de tamanho e de valores);
+(iii) módulo fora do catálogo é recusado (tipo `Literal`); (iv) falha ou saída inválida do provedor cai para o **provedor local por regras**; (v) IA externa exige consentimento da empresa **e** chave no servidor;
+(vi) fotos têm metadados/GPS removidos e **nunca são gravadas**; (vii) tempos e coeficientes **não** estão ao alcance da IA.
+**Provedor local:** regras determinísticas; sem IA externa, só aproveita números escritos pelo usuário (não inventa).
+
+---
+
+## 9. Segurança, privacidade e auditoria
+- **Isolamento multiempresa:** `empresa_id` em toda tabela de negócio; acesso por `Ctx` filtra por empresa e unidades; recurso de outro *tenant* responde 404 (`tests/test_tenancy.py`).
+- **Autenticação:** Argon2id; política mínima; bloqueio temporário após falhas; mensagens e tempos iguais para usuário inexistente; JWT curto com `token_versao` (trocar senha, desativar ou mudar perfil derruba sessões).
+- **Entrada e navegador:** `extra="forbid"` impede injetar `empresa_id`; corpo ≤ 1 MB; CSP estrita; `X-Frame-Options`; HSTS em produção; `/docs` desligado em produção; a interface nunca usa `innerHTML`; CSV protegido contra injeção de fórmulas.
+- **Produção:** a aplicação não inicia sem `ERP_SECRET_KEY` de 32+ caracteres.
+- **Auditoria *append-only*** com antes/depois, usuário e IP.
+- **Dois olhos:** quem registrou o apontamento não o aprova (salvo equipe de uma pessoa); só histórico aprovado melhora estimativas.
+- **LGPD (Lei 13.709/2018):** ritmo individual é dado de desempenho (finalidade, minimização, consentimento; sem ranking); perfil de mão de obra é referência, não pessoa; foto de meio não é armazenada. `GET /analise/comparacao` mostra tempo mediano por pessoa — avaliar se deve ficar disponível.
+- **Limitações assumidas:** sem papéis, **qualquer usuário pode redefinir senha de outro e alterar o consentimento de IA externa** (tudo auditado); sem 2FA nem recuperação por e-mail; limitador de tentativas em memória (por processo); backups e retenção são de quem opera.
+
+---
+
+## 10. Verificação e validação
+
+### 10.1 Testes automatizados `[IMPLEMENTADO]`
+**322 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+
+| Arquivo(s) | O que verifica |
+|---|---|
+| `test_timecalc`, `test_formulas`, `test_modulos`, `test_tolerancias` | fórmulas, elementos, módulos, FT |
+| `test_plano`, `test_fluxo`, `test_arranjo` | plano, agenda, prazo, arranjos, ordem |
+| `test_calibracao_modulos`, `test_ritmo_historico` | calibração, normalização pelo ritmo, validação por pessoa |
+| `test_fatores_humanos`, `test_contorno`, `test_meios` | ergonomia, oficina, fichas técnicas |
+| `test_auth`, `test_tenancy`, `test_equipe` | segurança, isolamento, equipe |
+| `test_capacidade_ia`, `test_simples`, `test_variantes_relatorio` | IA com resposta simulada, fluxo simples, relatório |
+| `test_infra_deploy` | configuração de produção e migrações |
+
+Invariantes com teste: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; confiança nunca é "alta"; sexo, estatura e peso não alteram o tempo; 60 peças a 60 peças/h voltam a ser 60 min (tolerância não multiplica tempo de máquina).
+
+### 10.2 Conferência de fontes
+Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em **fontes públicas secundárias**, não nas publicações originais `[VERIFICAR]`.
+
+### 10.3 O que **não** foi validado
+- Execução contra **PostgreSQL real** (testes em SQLite); os últimos *commits* corrigiram implantação no Render.
+- Chamadas reais à API da Anthropic (o provedor foi testado com resposta simulada).
+- **Qualquer validação de campo**: não há dados de uso real.
+- Usabilidade com o público-alvo.
+
+### 10.4 Protocolo de validação de campo (marcenaria) `[PROPOSTA]`
+1. **Preparação:** cadastrar locais, máquinas e **fichas técnicas validadas**; produtos reais (3 a 5) com peças, ligações e pesos. Cadastro público de empresa desligado.
+2. **Execução:** gerar planos, abrir ordens, apontar pela fila (com pessoa executora) e aprovar por segunda pessoa. Definir de antemão a duração e o volume mínimo (a calibração pede ≥ 10 amostras por módulo e ≥ 8 por produto; uma ordem gera uma amostra por passo).
+3. **Medidas de sucesso:** (a) desvio previsto × realizado por variante (antes e depois da calibração); (b) erro típico na prova com dados reservados; (c) fração de planos completos sem pendência; (d) usuário vai de Produto a Plano **sem ajuda** (teste de uso, separado do cálculo).
+4. **Ameaças:** equipe de 1 ou 2 pessoas (aprovação por segunda pessoa); viés da calibração com equipe (11.2, item 4); coeficientes genéricos dominando o erro; amostras insuficientes.
+5. **Congelar** o motor durante o piloto: mudar o cálculo no meio impede atribuir melhorias ao uso real.
+
+---
+
+## 11. Limitações conhecidas e problemas abertos
+
+### 11.1 Limitações do cálculo (declaradas ao usuário)
+1. Ordens geradas por plano só alimentam a **calibração por módulo** (fator validado), não o histórico por operação.
+2. Coeficientes de montagem, preparação e conferência são **referências genéricas**; os índices MOST são **ilustrativos**. O tempo padrão é uma estimativa de **ordem de grandeza** até haver medição ou calibração.
+3. **Sequência única de passos**, sem trabalho em paralelo entre eles; pessoas-hora assumem toda a equipe ocupada em todos os passos (prazo tende a ser superestimado com equipe).
+4. **Divisão ideal do trabalho** entre pessoas, sem curva de aprendizagem nem perda de coordenação (prazo pode ser otimista com equipes grandes).
+5. Sem feriados; sem fadiga de turno; piso, altura de trabalho e precisão não alteram o tempo.
+
+### 11.2 Problemas identificados na revisão (2026-11-17)
+| # | Problema | Evidência | Impacto | Correção proposta |
+|---|---|---|---|---|
+| 1 | **Tempos de máquina não incluem alimentação e retirada manual** das peças | `modulos/usinagem.py` (premissa `_NAO_MANUSEIO`) | Subestima corte, furação e borda | Elementos manuais com coeficiente de fonte; ou medição |
+| 2 | **NIOSH e Murrell não recebem dados no fluxo do plano** | `plano.py`: o contexto de tolerâncias só tem local e perfil | Só 9 % (FT ≈ 1,099) entra; o README anterior dizia o contrário | Atributos de condição de trabalho por passo (frequência, altura, gasto energético) |
+| 3 | **Nenhuma checagem de cobertura do plano** | `plano.persistir`: `completo` só olha dado faltante | Se a IA omitir um passo, o plano sai "completo" e mais curto | Validar que toda peça está em algum passo e que existe montagem |
+| 4 | **Viés da calibração com equipe de 2+ pessoas** | **Reproduzido em teste**: montagem de 2 pessoas, previsto 10 min corridos, real 10 min; razão = 1,0 se uma pessoa aponta e **2,0** se as duas apontam | Fator inflado até o teto de 2,0; pune quem aponta melhor | `observado = união dos intervalos × média ponderada do ritmo` (`timecalc.uniao_minutos` já existe); 3 testes de regressão |
+| 5 | Caminho do histórico por operação (`estimativa._pelo_historico`) pode ter o mesmo viés | não verificado | idem | Verificar ao corrigir o item 4 |
+| 6 | Calibrar o ritmo e o módulo juntos pode absorver o nível da equipe | documentado no código | O fator "não é verdade OIT" | Declarar no texto; modo cronoanálise |
+| 7 | Limite de 50 % para tolerâncias e mínimos de amostra são escolhas heurísticas | `LIMITE_TOLERANCIA`, `min_amostras_*` | — | Calcular tamanho de amostra por confiança e erro |
+| 8 | O assistente da Oficina pergunta "peças por hora", dado que o cálculo ignora; a ficha técnica só é editada na tela avançada | `telas_contorno.js` | Confunde o usuário | Reordenar o assistente; destacar a ficha técnica |
+| 9 | O ciclo "medir e melhorar" fica atrás do interruptor de detalhes técnicos | `app.js` (rotas com flag) | Quem seguir só o menu principal nunca mede o real | Modo piloto com o ciclo visível |
+| 10 | Catálogo acoplado à marcenaria (seção 6.6) | `catalogo.py`, `entradas.py` | Não é genérico na prática | Seção 12.2 |
+
+### 11.3 Outras limitações
+README anterior citava 306 testes (hoje 322). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+
+---
+
+## 12. Trabalhos futuros e roadmap de embasamento
+
+### 12.1 Fechar o embasamento do tempo padrão na literatura  `[PROPOSTA]`
+Ordem sugerida (do que mais reduz a distância entre o que se afirma e o que se calcula):
+1. **Integrar a ergonomia ao fluxo principal:** cada passo ganha condições de trabalho (frequência de levantamento, alturas, gasto energético) para NIOSH e Murrell entrarem no FT.
+2. **Corrigir os itens 3 e 4 da seção 11.2** (cobertura do plano; viés da calibração com equipe).
+3. **Modo cronoanálise** (Barnes; Niebel e Freivalds): registro de ciclos por elemento, avaliação de ritmo por observação, **tamanho de amostra** pela fórmula clássica, tempo padrão por elemento. Substitui os coeficientes genéricos (itens 11 a 13 da 5.9) por dados com fonte e rastreabilidade.
+4. **Sistema de tempos predeterminados** (MOST ou MTM) com índices conferidos no cartão certificado — ou declarar explicitamente que não é usado e remover o "ilustrativo".
+5. **RULA** (McAtamney e Corlett, 1993) a partir das **tabelas originais**; conversão score → tolerância sempre rotulada como premissa.
+6. **Tempos manuais de alimentação e retirada** nos módulos de máquina; fadiga de turno aprendida de dados; feriados na agenda; curva de aprendizagem.
+7. **Conferir as fontes originais** das constantes da OIT (valor único × por sexo), NIOSH e Murrell.
+
+### 12.2 Generalizar o catálogo (pacotes de módulos)  `[PROPOSTA]`
+Os seis módulos são instâncias de poucas formas (seção 6.6). Desenho-alvo:
+- **Módulo como dado:** forma de cálculo + fórmula do *driver* (reaproveita o interpretador de `formulas.py`) + parâmetros da ficha + coeficientes + preparo.
+- **Registro de pacotes** no lugar do `Literal` fixo; o esquema da IA e a validação saem do registro. **Marcenaria = primeiro pacote** (congelado como v1); outro segmento = novo conjunto de dados.
+- **Item de produto com atributos livres** (mantendo as colunas atuais e migrando por etapas).
+- **Interface por pacote** ("Oficina" → "Local de produção"; sugestões de locais, máquinas, métodos).
+- **Sequência padrão** declarada no pacote, para o planejador local funcionar sem IA externa.
+- **Pré-requisito:** testes de regressão com planos completos de marcenaria em minutos fixos, para que a refatoração dê exatamente o mesmo número.
+
+### 12.3 Fora do escopo atual (seção 20 do script conceitual)
+Estoque e compras, vendas/CRM, integrações, importação de listas de materiais, IoT/CNC, modelos preditivos, aplicativo móvel, manutenção, módulo de qualidade, programação da produção entre vários produtos e simulação de capacidade.
+Também: curva de aprendizagem, MTM-1 completo, REBA/OWAS, Snook e Ciriello, IBUTG, iluminação por tarefa, módulos de lixamento/pintura/acabamento.
+
+---
+
+## 13. Operação
+
+### 13.1 Rodar localmente
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload          # http://localhost:8000  (API em /docs, só fora de produção)
 python -m pytest -q                    # suíte de testes
 ```
+Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produção use migrações: `alembic upgrade head`.
 
-Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produção use migrações:
-`alembic upgrade head`. Configuração por variáveis `ERP_*` (veja `.env.example`).
+### 13.2 Variáveis (`ERP_*`, veja `.env.example`)
+| Variável | Padrão | Função |
+|---|---|---|
+| `ERP_AMBIENTE` | `desenvolvimento` | `producao` exige segredo forte e desliga `/docs` |
+| `ERP_DATABASE_URL` | `sqlite:///./erp.db` | em produção, `postgresql://` (normalizado para `postgresql+psycopg://`) |
+| `ERP_SECRET_KEY` | — | 32+ caracteres aleatórios |
+| `ERP_TOKEN_MINUTOS` | 60 | validade do token |
+| `ERP_PERMITIR_CADASTRO_PUBLICO` | `true` | `false` = só a equipe cria usuários |
+| `ERP_CORS_ORIGENS` | vazio | vazio = só mesma origem |
+| `ERP_MIN_AMOSTRAS_HISTORICO` | 3 | amostras para o histórico valer |
+| `ERP_MIN_AMOSTRAS_RITMO` / `ERP_MIN_OPERACOES_RITMO` | 5 / 1 | calibração do ritmo |
+| `ERP_MIN_AMOSTRAS_CALIBRACAO` / `ERP_MIN_AMOSTRAS_FAMILIA` | 10 / 8 | calibração por módulo / por família |
+| `ERP_USAR_MODELO_IA_NAO_VALIDADO` | `true` | modelo legado não validado vale como tempo planejado (rotulado) |
+| `ERP_IA_PROVEDOR` | `auto` | `auto` \| `heuristica` \| `claude` |
+| `ERP_ANTHROPIC_API_KEY`, `ERP_IA_MODELO` | — / `claude-opus-5-5` | IA externa (opcional) |
+| `POSTGRES_PASSWORD`, `FORWARDED_ALLOW_IPS` | — / `127.0.0.1` | `docker-compose` e proxy reverso |
 
-Produção com Docker: `cp .env.example .env`, preencha `ERP_SECRET_KEY` e `POSTGRES_PASSWORD`, `docker compose up -d`
-e ponha um proxy reverso com HTTPS na frente.
+### 13.3 Produção
+- **Docker:** `cp .env.example .env`; preencha `ERP_SECRET_KEY` e `POSTGRES_PASSWORD`; `docker compose up -d`; ponha um proxy reverso com HTTPS na frente e ajuste `FORWARDED_ALLOW_IPS` (senão o limitador de tentativas vê todos como um IP).
+- **Render:** *Blueprint* (`render.yaml`): serviço Docker + PostgreSQL, `healthCheckPath: /api/v1/saude`, segredo gerado.
+- **Primeiro acesso:** o `render.yaml` sobe com `ERP_PERMITIR_CADASTRO_PUBLICO=true` para criar a primeira empresa; **depois, mude para `false`**. No `docker-compose.yml` o padrão é `false` e **não existe comando** para criar a primeira empresa: defina `true`, cadastre a empresa, volte para `false` e reinicie.
 
-**Primeiro acesso em produção:** o `docker-compose.yml` assume `ERP_PERMITIR_CADASTRO_PUBLICO=false` e **ainda não existe comando para criar a primeira empresa**.
-Para criar a primeira, defina `ERP_PERMITIR_CADASTRO_PUBLICO=true` no `.env`, suba, cadastre a empresa pela tela de entrada, volte o valor para `false` e reinicie.
-Depois disso, novos usuários são criados por quem já está na equipe (*Configurações › Equipe*).
-Atrás de proxy reverso, ajuste `FORWARDED_ALLOW_IPS` para o IP do proxy; caso contrário o limitador de tentativas enxerga todos os usuários como um só IP.
+---
 
-## O que cada seção do documento virou
+## 14. Apêndices
 
-| Documento | Implementação |
+### Apêndice A — Mapeamento do *Script Conceitual* → implementação
+| Seção do script | Implementação |
 |---|---|
 | Tela 1 – Cadastro e descrição | Unidade com descrição, objetivo, problemas, fontes (`/unidades`) |
 | Tela 2 – Diagnóstico inteligente | Perguntas adaptativas por grupo (11 grupos), respostas gravadas (`/unidades/{id}/diagnostico`) |
-| Tela 3 – Estrutura automática | Proposta da IA (processo › etapas › operações, recursos, materiais, indicadores, etapas possivelmente omitidas), **editável** antes de aprovar; cria **rascunho** |
-| Tela 4 – Recursos | Ficha do recurso (capacidade, espaço onde está); tempo médio e de preparação **calculados do histórico aprovado** |
-| (novo) Produto → plano | Componentes, ligações, plano de trabalho com horários, ordem a partir do plano — ver seção acima |
-| (novo) Motor modular | Catálogo de módulos, meios com ficha técnica, calibração por módulo, tolerâncias plugáveis e arranjo recomendado — ver o início desta seção |
-| (novo) Gêmeo digital | Espaços, distâncias, modelo de tempo por operação, simulação (what-if), prontidão e acurácia — ver seção acima |
-| Tela 5 – Ordem | Roteiro copiado do processo ativo, estimativa por operação, status planejada → liberada → em produção ⇄ parada → concluída/cancelada |
-| §10 Tempo e cálculo | `app/services/timecalc.py` — fórmulas configuráveis por operação (`linear`, `lote`, `fixo`) |
+| Tela 3 – Estrutura automática | Proposta da IA (processo › etapas › operações, recursos, materiais, indicadores, etapas possivelmente omitidas), editável antes de aprovar; cria rascunho |
+| Tela 4 – Recursos | Ficha do recurso (capacidade, espaço); tempo médio e de preparação calculados do histórico aprovado |
+| Tela 5 – Ordem | Roteiro do processo ativo ou do plano; status planejada → liberada → em produção ⇄ parada → concluída/cancelada |
+| §10 Tempo e cálculo | `services/timecalc.py` (fórmulas `linear`, `lote`, `fixo`) e o motor modular |
 | §11 IA em uso | Perguntas, estrutura, indicadores, operações semelhantes, explicação de desvios, gargalos, relatório (sempre como sugestão com evidências) |
-| §12 Ergonomia | Fatores por operação + **sinalização** (não é avaliação ergonômica formal) |
+| §12 Ergonomia | Fatores por operação + sinalização (não é avaliação ergonômica formal) |
 | §13 Dashboard | Ordens abertas/atrasadas, planejado × realizado, gargalos, paradas, retrabalho, produtividade, utilização, qualidade, tendência semanal |
 | §14 Entidades | `app/models.py` |
-| §17 IA sugere, sistema valida | Ver abaixo |
-| §18 Segurança e permissões | Ver abaixo |
+| §17 IA sugere, sistema valida | seção 8 |
+| §18 Segurança e permissões | seção 9 |
+| §20 Fora do MVP | seção 12.3 |
 
-### Regras de negócio que merecem atenção
+### Apêndice B — Coeficientes e constantes do catálogo (todas **referências genéricas do projeto**, exceto onde indicado)
+| Chave | Valor | Unidade | Observação |
+|---|---|---|---|
+| `velocidade_caminhada_m_min` | 75 | m/min | genérico |
+| `carga_manual_max_kg` | 20 | kg/pessoa | genérico (distinto dos limites legais, que são só alertas) |
+| `preparacao_maquina_min` / `preparacao_posto_min` | 5 / 2 | min | genérico |
+| `pegar_posicionar_peca_min` | 0,174 | min/peça | MOST **ilustrativo**: (20 + 9) índices × 10 × 0,0006 |
+| `fixador:parafuso` | 0,30 | min/un | genérico |
+| `fixador:cavilha` / `minifix` | 0,20 / 0,45 | min/un | genérico |
+| `fixador:dobradica` / `corredica` | 1,50 / 2,00 | min/un | genérico |
+| `fixador:cola` / `prego` / `encaixe` | 0,50 / 0,10 / 0,15 | min/un | genérico |
+| `fixador:puxador` / `outro` | 0,80 / 0,50 | min/un | genérico |
+| `conferencia_final` | 5,0 | min/unidade | genérico |
+| tolerância pessoal / fadiga básica | 5 / 4 | % | OIT (fonte secundária) |
+| `FADIGA_POR_LI` | ≤1: 0; ≤2: 5; ≤3: 10; >3: 15 | % | **premissa do projeto** |
+| Densidades (estimar peso) | mdf 700; mdp 650; compensado 600; pinus 500; madeira 600; aço 7850; alumínio 2700; vidro 2500 | kg/m³ | referência, sempre rotulada "estimado" |
+| Limites do motor | ritmo 50–150; fator ambiente 0,5–3; tolerância ≤ 50 %; calibração 0,5–2,0; expoente −0,5…1,0 | — | escolhas do projeto |
+| Calibração da família | ≥ 3 tamanhos; dispersão ≥ 1,25×; extrapolação ±50 %; ganho ≥ 10 % | — | escolhas do projeto |
+| Limites legais (alertas) | 60 kg (CLT 198); 20 kg contínuo / 25 kg ocasional (CLT 390, 405 §5º); ruído 85 dB(A) (NR-15) | — | conferir vigência |
 
-- **Origem do dado.** Todo parâmetro tem origem (`informado`, `medido`, `calculado`, `ia_sugerido`), status de validação e versão. Só parâmetro **vigente e validado** entra nas estimativas; sugestão da IA nunca entra sozinha.
-- **Tempo da IA é rotulado, nunca disfarçado.** A estimativa da IA vem do modelo de tempo, com fonte `modelo_ia`, flag de validação e composição por elemento. Sem modelo, parâmetro nem histórico (ou com dado físico faltando), a operação fica `sem_base`.
-- **Estimativa.** Histórico (apontamentos **aprovados** e não anulados, mín. `ERP_MIN_AMOSTRAS_HISTORICO`) > módulo > modelo da IA (legado) > sem base. A fonte é exibida em cada operação. O histórico é **normalizado pelo ritmo de quem executou** e recebe as **tolerâncias do modelo** (vira tempo padrão); sem modelo, é tempo normal e isso é avisado. A antiga "Atualizar pelo histórico" (mediana bruta gravada como parâmetro) foi **desativada** (410): o histórico entra na estimativa e na calibração por módulo.
-- **Referências genéricas do catálogo** (velocidade de caminhada, carga manual, manuseio) são aproximações e não substituem estudo de tempos; valide ou substitua por medições. Para um modelo calibrado à sua empresa, use o provedor Claude e/ou um modelo manual.
-- **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. **Atenção:** o "realizado" segue sendo a soma BRUTA dos apontamentos, mas o planejado vindo do histórico agora é **tempo padrão** (normalizado pelo ritmo e acrescido das tolerâncias). O desvio deixa de ser só "erro de estimativa": trabalhar exatamente no tempo normal aparece como desvio negativo (realizado < padrão), e a eficiência passa de 100 %. Ordens e dados já gravados antes dessa mudança continuam com o planejado antigo; compare períodos com cuidado. Fila entre operações é calculada (fim da anterior → início da próxima). Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
-- **Versionamento de processo.** Cada versão é uma linha; só rascunho edita estrutura; ordens ficam presas à versão em que nasceram.
-- **Apontamentos nunca são apagados**, só anulados com motivo. Todos da equipe veem os registros; "Minha fila" mostra os apontamentos abertos de quem está logado.
+### Apêndice C — Estados e regras de negócio
+- **Plano:** rascunho → confirmado (manual) → ordem gerada; ou cancelado. Plano com passos sem tempo pode ser confirmado, com aviso; os passos entram na ordem como "sem base".
+- **Ordem:** planejada → liberada → em produção ⇄ parada → concluída | cancelada.
+- **Apontamento:** registrado → aprovado | rejeitado; anulável com motivo; nunca apagado.
+- **Calibração:** pendente → validado (vigente, versionado) | rejeitado; nova versão aposenta a vigente.
+- **Convenções de tempo:** realizado = preparação + execução + retrabalho (soma bruta dos apontamentos); total = realizado + espera; desvio = realizado − estimado (positivo = demorou mais); eficiência = estimado ÷ realizado.
+  **Atenção:** o previsto do plano é **tempo padrão** (com tolerâncias), e o realizado é tempo bruto: trabalhar exatamente no tempo normal aparece como desvio negativo. A calibração compara tempo **normal** observado com o previsto.
 
-## Segurança (uso por terceiros)
+### Apêndice D — Mapa de endpoints (123 rotas)
+| Área | Rotas principais |
+|---|---|
+| Autenticação e equipe | `/auth/registrar`, `/auth/login`, `/auth/renovar`, `/auth/eu`, `/usuarios` |
+| Empresa e unidades | `/empresa`, `/unidades` |
+| Produto e plano | `/produtos/{id}/estrutura`, `/componentes`, `/ligacoes`, `/interpretar`, `/montar`; `/planos` (criar, recalcular, confirmar, `/prazo`, `/gerar-ordem`, `/exportar.csv`, `/arranjos`, `/de-arranjo`) |
+| Oficina | `/contorno`, `/espacos`, `/distancias`, `/recursos`, `/recursos/{id}/ficha-tecnica`, `/meios/identificar`, `/recursos/{id}/estimar-capacidade` |
+| Módulos e modelo | `/modulos`, `/operacoes/{id}/estimativa`, `/modulo/sugerir`, `/modelo-tempo`, `/ergonomia`, `/processos/{id}/prontidao` |
+| Execução | `/ordens`, `/operador/fila`, `/apontamentos` (iniciar, finalizar, aprovar, rejeitar, anular), `/ocorrencias` |
+| Calibração | `/calibracao/modulos` (prévia, aplicar, validar, rejeitar), `/pessoas/calibrar-ritmo` |
+| Análise | `/relatorios/desempenho(.csv)`, `/dashboard`, `/analise/comparacao`, `/auditoria` |
+| Processos (fluxo avançado) | `/processos`, `/etapas`, `/operacoes`, `/parametros`, `/unidades/{id}/diagnostico` |
+| IA | `/recomendacoes`, `/ia/analises` |
+| Saúde | `/api/v1/saude` |
 
-- **Isolamento multiempresa:** toda tabela de negócio tem `empresa_id`; todo acesso passa por `Ctx` (`app/deps.py`) que filtra por empresa e, quando a pessoa tem unidades atribuídas, por essas **unidades**. Recurso de outro tenant responde 404. Há testes dedicados (`tests/test_tenancy.py`).
-- **Um único tipo de usuário** por empresa (sem papéis). O isolamento entre empresas continua rígido; veja a regra dos "dois olhos" e a restrição opcional por unidade acima. Qualquer pessoa da equipe gerencia usuários e vê o histórico — trate o acesso como de confiança dentro da empresa.
-- Senhas com Argon2id; política mínima; bloqueio temporário após falhas; mensagens/tempos iguais para usuário inexistente; JWT curto com `token_versao` (trocar senha, desativar ou mudar perfil derruba sessões).
-- Entradas validadas (`extra="forbid"` impede injetar `empresa_id`), limite de corpo de 1 MB, CSP estrita, `X-Frame-Options`, HSTS em produção, `/docs` desligado em produção, e a UI nunca usa `innerHTML`.
-- Em produção a aplicação **não inicia** sem `ERP_SECRET_KEY` forte.
-- **IA externa só com consentimento:** a empresa precisa habilitar "IA externa" na empresa **e** o servidor precisa ter `ERP_ANTHROPIC_API_KEY`. Textos da empresa vão ao modelo como *dados* (não instruções), a saída é validada por schema e saneada, e falha do provedor cai para o provedor local.
-- Auditoria append-only (`/auditoria`, visível a toda a equipe) com antes/depois, usuário e IP.
+### Apêndice E — Glossário
+**Tempo normal:** tempo que um operador qualificado leva em ritmo normal. **Tolerância:** acréscimo para necessidades pessoais, fadiga e variáveis do trabalho. **Tempo padrão:** tempo normal mais tolerâncias.
+**Ritmo:** avaliação do desempenho em relação ao normal (100). **TMU:** unidade de tempo do MTM/MOST (0,036 s). **Módulo:** unidade de cálculo do catálogo. **Elemento:** parcela de tempo de vocabulário fechado.
+**Ficha técnica:** parâmetros do equipamento (avanço, velocidade, capacidade). **Contorno físico / oficina:** locais, distâncias, meios e pesos. **Arranjo:** combinação de equipe, lotes, regra e meio.
+**Família:** conjunto de pedidos do mesmo produto com tamanhos diferentes. **Porte:** tempo normal previsto por unidade do pedido. **Pendência:** dado faltante listado, nunca valor escondido.
 
-### Limitações conhecidas / antes de abrir a terceiros em produção
+---
 
-- O limitador de tentativas é **em memória** (por processo). Com várias instâncias, use também o limitador do proxy/WAF ou troque por Redis.
-- Token JWT fica em `sessionStorage` (mitigado pela CSP estrita). Não há 2FA, recuperação de senha por e-mail nem convite por e-mail: qualquer pessoa da equipe define/redefine senhas. Se for relevante, são os próximos passos naturais.
-- Sem papéis, **qualquer usuário pode redefinir a senha de outro e alterar o consentimento de IA externa** (tudo auditado). Se isso não servir ao seu cenário, reintroduza um nível de permissão antes de abrir a terceiros.
-- Defina `ERP_PERMITIR_CADASTRO_PUBLICO=false` em implantações fechadas.
-- Backups e retenção de dados (LGPD) são responsabilidade de quem opera a implantação.
-- **Validação feita:** 306 testes automatizados (SQLite) + percursos no navegador (implantação, gêmeo digital, fatores humanos, produto → plano → ordem, cadastro de meios e arranjo recomendado). Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e tolerâncias da OIT foram conferidas em fontes públicas (não nas publicações originais). **Não validado aqui:** execução contra PostgreSQL real e chamadas reais à API da Anthropic (o provedor Claude foi testado com resposta simulada; confirme com sua chave).
+## 15. Referências  `[VERIFICAR edição, ano e páginas de cada item antes da entrega]`
 
-## Estrutura
+BARNES, R. M. **Motion and time study: design and measurement of work**. 7. ed. New York: Wiley, 1980.
 
-```
-app/            API (routers/), regras (services/), IA (services/ia/), modelos e esquemas
-static/         interface web (JS puro, sem build)
-migrations/     Alembic
-tests/          pytest
-```
+BRASIL. **Decreto-Lei nº 5.452, de 1º de maio de 1943** (Consolidação das Leis do Trabalho), arts. 58, 59, 71, 198, 390 e 405.
 
-## Fora do MVP (seção 20 do documento)
+BRASIL. **Lei nº 13.709, de 14 de agosto de 2018** (Lei Geral de Proteção de Dados Pessoais).
 
-Estoque/compras, vendas/CRM, integrações, importação de listas de materiais, IoT/CNC, modelos preditivos,
-app móvel, manutenção, módulo de qualidade, programação da produção e simulação de capacidade.
+BRASIL. Ministério do Trabalho e Emprego. **NR 15 – Atividades e operações insalubres** e **NR 17 – Ergonomia** (redação vigente).
+
+GRIEVES, M. **Digital twin: manufacturing excellence through virtual factory replication**. White paper, 2014.
+
+GRIEVES, M.; VICKERS, J. Digital twin: mitigating unpredictable, undesirable emergent behavior in complex systems. In: KAHLEN, F.-J.; FLUMERFELT, S.; ALVES, A. (ed.). **Transdisciplinary perspectives on complex systems**. Cham: Springer, 2017. p. 85–113.
+
+GROOVER, M. P. **Fundamentals of modern manufacturing: materials, processes, and systems**. 4. ed. Hoboken: Wiley, 2010.
+
+HEVNER, A. R.; MARCH, S. T.; PARK, J.; RAM, S. Design science in information systems research. **MIS Quarterly**, v. 28, n. 1, p. 75–105, 2004.
+
+IIDA, I.; BUARQUE, L. **Ergonomia: projeto e produção**. 3. ed. São Paulo: Blucher, 2016.
+
+KANAWATY, G. (ed.). **Introduction to work study**. 4. ed. (rev.). Geneva: International Labour Office, 1992.
+
+MARTINS, P. G.; LAUGENI, F. P. **Administração da produção**. 2. ed. São Paulo: Saraiva, 2005.
+
+MAYNARD, H. B.; STEGEMERTEN, G. J.; SCHWAB, J. L. **Methods-time measurement**. New York: McGraw-Hill, 1948.
+
+McATAMNEY, L.; CORLETT, E. N. RULA: a survey method for the investigation of work-related upper limb disorders. **Applied Ergonomics**, v. 24, n. 2, p. 91–99, 1993.
+
+MURRELL, K. F. H. **Ergonomics: man in his working environment**. London: Chapman and Hall, 1965.
+
+NIEBEL, B. W.; FREIVALDS, A. **Methods, standards, and work design**. 11. ed. New York: McGraw-Hill, 2003.
+
+SEN, P. K. Estimates of the regression coefficient based on Kendall's tau. **Journal of the American Statistical Association**, v. 63, n. 324, p. 1379–1389, 1968.
+
+STONE, M. Cross-validatory choice and assessment of statistical predictions. **Journal of the Royal Statistical Society, Series B**, v. 36, n. 2, p. 111–147, 1974.
+
+TAYLOR, F. W. **The principles of scientific management**. New York: Harper & Brothers, 1911.
+
+THEIL, H. A rank-invariant method of linear and polynomial regression analysis. **Proceedings of the Koninklijke Nederlandse Akademie van Wetenschappen**, v. 53, p. 386–392, 521–525, 1397–1412, 1950.
+
+WATERS, T. R.; PUTZ-ANDERSON, V.; GARG, A.; FINE, L. J. Revised NIOSH equation for the design and evaluation of manual lifting tasks. **Ergonomics**, v. 36, n. 7, p. 749–776, 1993.
+
+WATERS, T. R.; PUTZ-ANDERSON, V.; GARG, A. **Applications manual for the revised NIOSH lifting equation**. Cincinnati: DHHS (NIOSH), 1994. (Publication n. 94-110).
+
+ZANDIN, K. B. **MOST work measurement systems**. 3. ed. New York: Marcel Dekker, 2003.
+
+> **Fontes citadas no código** (para conferência cruzada): OIT, *Introduction to Work Study* (constantes de tolerância); NIOSH Pub. 94-110 e CCOHS/CDC (tabelas FM e CM, conferidas em fonte secundária);
+> McAtamney e Corlett (1993) (RULA, **não implementado**); NR-15 Anexo 1 (ruído, 85 dB(A), 8 h).
