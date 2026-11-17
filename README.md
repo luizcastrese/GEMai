@@ -1,27 +1,34 @@
 # GEMai — ERP de Produção com IA
 
-> **Documento-fonte do projeto e do TCC.** Descreve, com precisão, o que o sistema faz, em que literatura cada parte do
-> **tempo padrão** se apoia, o que ainda **não** está embasado e como corrigir. Foi escrito para ser lido por quem
-> (pessoa ou IA) vai redigir o Trabalho de Conclusão de Curso (Engenharia de Produção, PUC-Campinas).
-> Estado medido em **2026-11-17** (branch `main`).
+> **Especificação do sistema e documento-fonte do TCC.** Descreve o **sistema-alvo**: um ERP de produção genérico, em que o
+> **tempo padrão é uma saída calculada e embasada na literatura** de estudo de tempos, tempos predeterminados e ergonomia.
+> O TCC deve ser escrito a partir desta especificação. Para cada componente, a **matriz de conformidade (seção 5.9)** e o **estado
+> de implementação (seção 11)** dizem o que o código já faz e o que falta para convergir ao alvo.
+> Estado medido em **2026-11-17** (branch `main`). Escrito para ser lido por quem (pessoa ou IA) vai redigir o Trabalho de
+> Conclusão de Curso (Engenharia de Produção, PUC-Campinas).
 
 ---
 
 ## 0. Como usar este documento para redigir o TCC
 
+Este documento é a **especificação-alvo**: o que o sistema **deve ser**. O código existente implementa parte dela. A redação do TCC
+deve, portanto, distinguir **o que o trabalho propõe** (desenho completo) do **que está implementado e verificado** (estado).
+
 **Regras de redação (obrigatórias):**
 
-1. **Não afirme além do que está aqui.** Cada capacidade do sistema vem marcada com um destes rótulos:
-   `[IMPLEMENTADO]`, `[PARCIAL]`, `[NÃO IMPLEMENTADO]`, `[NÃO VALIDADO EM CAMPO]`, `[PROPOSTA]` (desenho futuro). Reproduza o rótulo na linguagem do texto
-   ("o sistema implementa…", "está prevista…", "ainda não foi validado em campo…").
+1. **Desenho × implementação.** Descreva o sistema completo como **o sistema proposto** (capítulos de fundamentação, desenho e arquitetura).
+   Nos capítulos de **implementação, verificação e resultados**, afirme como feito **somente** o que a matriz 5.9 e a seção 11 marcam como `[IMPLEMENTADO]`.
+   O restante é `[PARCIAL]`, `[NÃO IMPLEMENTADO]` ou `[PLANEJADO]` e deve aparecer como **trabalho em convergência** ou **trabalho futuro**.
+   Afirmar como pronto algo que o código não faz é erro de integridade acadêmica e será detectado em banca.
 2. **Não invente resultados.** Não há dados de piloto neste documento. A seção 10.4 define o que medir; os resultados serão do autor.
 3. **Cite apenas a literatura da seção 15.** Os dados bibliográficos foram escritos de memória por quem montou este documento e
    **precisam ser conferidos** (edição, ano, páginas) antes da entrega. Itens com `[VERIFICAR]` exigem conferência na fonte original.
 4. **Separe "o método da literatura" de "a escolha do projeto".** Quando o sistema usa uma premissa própria (ex.: converter índice
-   de levantamento em % de fadiga), o texto deve dizê-lo explicitamente. O código já exige isso: percentual de tolerância sem fonte não existe.
-5. **O tempo padrão hoje NÃO está integralmente embasado na literatura.** A estrutura do cálculo está; vários coeficientes de base
-   são referências genéricas do projeto (seção 5.9 e 11). O TCC deve apresentar isso como limitação e o roadmap (seção 12) como proposta.
-6. **O sistema é genérico por desenho, validado em marcenaria.** O catálogo de módulos atual é de marcenaria (seção 6.6 e 12.2).
+   de levantamento em % de fadiga), o texto deve dizê-lo. O código já exige isso: percentual de tolerância sem fonte não existe.
+5. **Princípio-alvo do tempo padrão:** todo componente do tempo padrão tem **fonte na literatura ou medição da própria empresa**, e o que for
+   apenas referência genérica é **rotulado** e rebaixa a confiança do plano. A matriz 5.9 mostra, componente a componente, a distância
+   entre o alvo e o código atual; o TCC deve apresentá-la como resultado de verificação, não escondê-la.
+6. **O sistema é genérico por desenho** (pacotes de módulos por segmento) e **validado em marcenaria**, que é o primeiro pacote (seção 6.6).
 7. **Idioma e norma:** português, ABNT (NBR 6023 referências, NBR 10520 citações, NBR 14724 estrutura).
 
 **Mapa sugerido: capítulo do TCC ← seção deste documento**
@@ -58,8 +65,8 @@ compostos por vocabulário fechado e tolerâncias por fontes plugáveis (constan
 artificial generativa apenas sugere** (escolhe módulos de um catálogo fechado e interpreta descrições); **o sistema valida e calcula**,
 e o dado medido e aprovado por pessoa sempre prevalece. Os tempos reais apontados na execução são contrastados com os planejados e
 alimentam uma **calibração por módulo e por produto**, validada por uma pessoa e testada com dados reservados. O sistema conta com
-322 testes automatizados e foi desenhado para validação em uma marcenaria. Discutem-se as limitações: coeficientes de base ainda
-genéricos, ergonomia parcialmente integrada ao fluxo principal e ausência de validação de campo.
+322 testes automatizados e é validado em uma marcenaria. Discutem-se a convergência entre o sistema proposto e o implementado e as
+limitações do piloto.
 
 **Palavras-chave:** tempo padrão; estudo de tempos; ERP; gêmeo digital; inteligência artificial; ergonomia; calibração.
 
@@ -134,7 +141,7 @@ MTM (Maynard, Stegemerten e Schwab, 1948) e MOST (Zandin, 2003). No BasicMOST, a
 tempo (TMU) = Σ índices × 10        1 TMU = 0,00001 h = 0,0006 min = 0,036 s
 ```
 
-Os índices dependem de cartões **certificados** (licenciados); o sistema **não os reproduz** (ver 5.9, item 7).
+Os índices dependem de cartões **certificados** (licenciados); o sistema **não os reproduz** (ver 5.9, item 10).
 
 ### 5.3 Dados padrão e tempos de máquina
 Para operações com máquina, o tempo vem de **parâmetros técnicos do processo**, p. ex. corte `t = comprimento ÷ avanço` (Groover, 2010, `[VERIFICAR edição]`).
@@ -166,33 +173,37 @@ catálogo fechado, esquemas validados, dado faltante vira pendência, sugestão 
 Mediana (robusta a *outliers*); regressão robusta de **Theil–Sen** (Theil, 1950; Sen, 1968) para aprender como o erro escala com o porte do pedido;
 **validação cruzada *leave-one-out*** (Stone, 1974) como prova com dados reservados.
 
-### 5.9 Matriz de rastreabilidade: cada componente do tempo padrão × literatura  *(núcleo do TCC)*
+### 5.9 Matriz de conformidade com a literatura: cada componente do tempo padrão  *(núcleo do TCC)*
 
-| # | Componente | Como o sistema calcula | Base na literatura | Status | Lacuna e ação |
+Princípio: todo componente tem **fonte na literatura ou medição da empresa**. "Estado hoje" é o que o código faz em 2026-11-17.
+
+| # | Componente | Especificação-alvo | Base na literatura | Estado hoje | Para convergir |
 |---|---|---|---|---|---|
-| 1 | Estrutura TN → TP | `TP = TN · FT`, `FT = 1/(1−p)`, `p ≤ 50 %` | Barnes; Niebel e Freivalds; OIT | `[IMPLEMENTADO]` | O teto de 50 % é escolha do projeto |
-| 2 | Ritmo (TN a partir do observado) | `TN = TO · R/100`; ritmo da pessoa > do perfil > 100; só no que depende do operador | Barnes; OIT (avaliação de ritmo) | `[PARCIAL]` | O ritmo calibrado é **relativo à equipe** (mediana = 100), **não** avaliação por observação. Ação: modo cronoanálise (12.1) |
-| 3 | Tolerâncias constantes | necessidades pessoais 5 % + fadiga básica 4 % (valor único, sem distinção por sexo) | OIT, *Introduction to Work Study* | `[IMPLEMENTADO]` | Valores conferidos em fonte secundária `[VERIFICAR na publicação original]`. A literatura clássica apresenta valores diferentes por sexo para necessidades pessoais; o valor único é **decisão de projeto** (não discriminar), e deve ser declarada |
-| 4 | Tolerância por carga | `LI` pela equação NIOSH; `LI → %` por tabela do projeto (≤1: 0 %; ≤2: 5 %; ≤3: 10 %; >3: 15 %) | Waters et al. (1993) para o LI; **conversão é premissa** | `[PARCIAL]` | **No fluxo principal (Produto → Oficina → Plano) os dados de levantamento nunca são fornecidos**, logo não entra no plano. Só no fluxo legado de processos |
-| 5 | Tolerância por gasto energético | Murrell, com `S` do perfil | Murrell (1965) | `[PARCIAL]` | Mesma lacuna do item 4 (gasto energético não alimentado no plano) |
-| 6 | Postura | ponto de extensão | RULA, REBA, OWAS | `[NÃO IMPLEMENTADO]` | Implementar só com as tabelas originais conferidas |
-| 7 | Ambiente (ruído, temperatura) | **alerta**, sem percentual | NR-15 | `[PARCIAL]` | Calor (IBUTG) e iluminação não calculados: texto oficial não verificado |
-| 8 | Tempo de máquina | corte: `m ÷ avanço`; borda: `m ÷ velocidade`; furação: `ciclos · curso ÷ avanço` | Dados de processo de usinagem (Groover) | `[IMPLEMENTADO]` | Não inclui **alimentação e retirada manual**; o avanço da ficha vale para todos os materiais e espessuras |
-| 9 | Deslocamento | `viagens = ⌈qtd ÷ itens por viagem⌉`; `t = viagens · distância ÷ velocidade · 2` | Princípio de movimentação de materiais | `[PARCIAL]` | Caminhada 75 m/min e 20 kg/pessoa são **referências genéricas sem fonte** |
-| 10 | Pegar e posicionar | `(levantamento curvado + posicionamento preciso)` em MOST ⇒ 29 índices × 10 × 0,0006 = **0,174 min/peça** | BasicMOST (Zandin) | `[PARCIAL]` | Índices **ilustrativos**, não conferidos com cartão certificado |
-| 11 | Fixação (parafuso, dobradiça…) | `n × coeficiente` (ex.: 0,30 min/parafuso; 1,5 min/dobradiça) | Dados padrão/tempos sintetizados (Barnes) | `[NÃO EMBASADO]` | **Referências genéricas do projeto, sem fonte.** Ação: cronoanálise ou MOST certificado |
-| 12 | Preparação | máquina 5 min; posto 2 min | — | `[NÃO EMBASADO]` | Genérico. Ação: medição |
-| 13 | Conferência final | 5 min por unidade | — | `[NÃO EMBASADO]` | Genérico. Ação: medição |
-| 14 | Divisão do trabalho entre pessoas | trabalho manual `÷ n` (caso ideal) | — | `[PARCIAL]` | Sem curva de aprendizagem nem perda de coordenação; é premissa declarada |
-| 15 | Calibração por módulo | `fator = mediana(TN observado ÷ TN previsto)`, limitado a 0,5–2,0, ≥ 10 amostras, validação por pessoa | Estatística robusta | `[IMPLEMENTADO]` | **Problema conhecido com equipes (11.2, item 4)** |
-| 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % para valer | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmos pré-requisitos de dados do item 15 |
-| 17 | Nº mínimo de amostras | fixo (3 histórico; 5 ritmo; 10 módulo; 8 família) | Tamanho de amostra (Niebel) | `[PARCIAL]` | Limites **heurísticos**, não calculados por confiança e erro |
-| 18 | Fadiga ao longo do turno | fora do cálculo | — | `[NÃO IMPLEMENTADO]` | Só entra quando aprendida de dados |
-| 19 | Jornada e agenda | blocos de horário, intervalos, só dias úteis | CLT arts. 58, 59, 71 (alertas) | `[IMPLEMENTADO]` | Sem feriados. Sequência única, sem paralelismo (exceto no arranjo recomendado) |
+| 1 | Estrutura TN → TP | `TP = TN · FT`, `FT = 1/(1−p)`, `p ≤ 50 %` | Barnes; Niebel e Freivalds; OIT | `[IMPLEMENTADO]` | O teto de 50 % é escolha do projeto (declarar) |
+| 2 | Ritmo | Avaliação de ritmo **por observação** na cronoanálise (7.12); o ritmo relativo à equipe serve só para normalizar histórico, **rotulado como tal** | Barnes; OIT (avaliação de ritmo); Westinghouse | `[PARCIAL]` | Só existe o ritmo relativo à equipe; falta a avaliação por observação (7.12) |
+| 3 | Tolerâncias constantes | necessidades pessoais 5 % + fadiga básica 4 % | OIT, *Introduction to Work Study* | `[IMPLEMENTADO]` | Valor único é decisão de projeto (não discriminar); conferir na publicação original `[VERIFICAR]` |
+| 4 | Tolerância por carga | `LI` pela equação NIOSH com dados do passo (7.13); `LI → %` por tabela **rotulada como premissa** | Waters et al. (1993); NIOSH 94-110 | `[PARCIAL]` | Equação pronta; **os dados do passo não chegam do fluxo principal** |
+| 5 | Tolerância por gasto energético | Murrell com `W` do passo e `S` do perfil | Murrell (1965) | `[PARCIAL]` | Idem: falta o gasto energético por passo (7.13) |
+| 6 | Postura | Avaliação postural como **alerta** e, se convertida, premissa rotulada | RULA (McAtamney e Corlett, 1993); REBA; OWAS | `[NÃO IMPLEMENTADO]` | Implementar a partir das tabelas **originais** conferidas |
+| 7 | Ambiente | Alerta de ruído e temperatura; calor por IBUTG quando houver dado | NR-15 | `[PARCIAL]` | Alerta sim; IBUTG e iluminação não |
+| 8 | Tempo de máquina | corte `m ÷ avanço`; borda `m ÷ velocidade`; furação `ciclos·curso ÷ avanço` **+ alimentação e retirada manual medidas** | Dados de processo de usinagem (Groover) | `[PARCIAL]` | Parte de máquina sim; **parte manual ausente** |
+| 9 | Deslocamento | `⌈qtd ÷ itens por viagem⌉ · distância ÷ velocidade · 2`, com velocidade e carga **medidas ou de fonte** | Movimentação de materiais; cronoanálise | `[PARCIAL]` | Fórmula sim; 75 m/min e 20 kg são genéricos sem fonte |
+| 10 | Pegar e posicionar | Índices **MOST ou MTM** conferidos no cartão certificado | Zandin (2003); Maynard et al. (1948) | `[PARCIAL]` | Índices hoje **ilustrativos** |
+| 11 | Fixação (parafuso, dobradiça…) | **Tempos medidos por cronoanálise** ou predeterminados certificados | Barnes; Niebel e Freivalds | `[NÃO IMPLEMENTADO]` | Valores hoje **genéricos do projeto, sem fonte** |
+| 12 | Preparação | Medida (cronoanálise) | Barnes | `[NÃO IMPLEMENTADO]` | 5 min (máquina) e 2 min (posto) genéricos |
+| 13 | Conferência final | Medida (cronoanálise) | Barnes | `[NÃO IMPLEMENTADO]` | 5 min genérico |
+| 14 | Divisão do trabalho entre pessoas | Balanceamento com perdas de coordenação e curva de aprendizagem | Niebel e Freivalds | `[PARCIAL]` | Hoje caso ideal `÷ n`, declarado |
+| 15 | Calibração por módulo | `fator = mediana(TN observado ÷ TN previsto)` em **tempo corrido**, 0,5–2,0, validado por pessoa | Estatística robusta | `[PARCIAL]` | **Viés com equipe de 2+ pessoas (11.2, item 4)** |
+| 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmo pré-requisito de dados do item 15 |
+| 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos heurísticos (3, 5, 10, 8) |
+| 18 | Fadiga ao longo do turno | Aprendida de dados reais | — | `[NÃO IMPLEMENTADO]` | Fora do cálculo, declarado |
+| 19 | Jornada e agenda | Blocos, intervalos, dias úteis e **feriados** | CLT arts. 58, 59, 71 | `[PARCIAL]` | Sem feriados |
+| 20 | Hierarquia de fontes do tempo-base | **medido pela empresa > predeterminado certificado > referência genérica rotulada** (7.11) | Barnes; Zandin | `[PARCIAL]` | Hoje só o nível 3 (genérico) |
+| 21 | Cobertura do plano | Toda peça em algum passo; deve existir montagem (7.14) | — | `[NÃO IMPLEMENTADO]` | `completo` só olha dado faltante |
 
-**Consequência para a redação:** o TCC pode afirmar que a **estrutura** do tempo padrão segue a literatura (itens 1, 3, 8, 15, 16, 19) e que há
-**pontos explicitamente não embasados** (itens 11 a 13) e **não integrados ao fluxo** (4 a 7), com plano de correção (seção 12.1).
-Na prática, hoje, o fator de tolerância do plano é quase sempre `1/(1−0,09) ≈ 1,099`, pois só as constantes da OIT entram.
+**Consequência para a redação:** a **estrutura** do tempo padrão (itens 1, 3, 8, 16) segue a literatura e está implementada. Os componentes marcados
+`[PARCIAL]` e `[NÃO IMPLEMENTADO]` são o **trabalho de convergência** (seção 12.1) e devem constar no TCC como tal. Na prática, hoje o fator de
+tolerância do plano é quase sempre `1/(1−0,09) ≈ 1,099`, pois só as constantes da OIT entram.
 
 ---
 
@@ -272,23 +283,29 @@ Entrar → Início → 1. Produto → 2. Oficina → 3. Plano de trabalho → 4.
 - **4. Relatório.** Previsto × realizado por produto e variante, com desvio e planilha.
 - **Fase 2 (detalhes técnicos).** Gerar ordem (plano confirmado) → liberar → **fila** (▶ iniciar, ■ concluir, quem executa) → **conferir registros** (a segunda pessoa aprova; quem registrou não aprova, salvo equipe de uma pessoa) → **calibração** → validar.
 
-### 6.6 Generalidade e o pacote de marcenaria
-O **motor** (vocabulário de elementos, tolerâncias plugáveis, calibração, agenda, multiempresa, auditoria) é genérico. O **catálogo de módulos e o modelo de produto** são, hoje, de marcenaria:
+### 6.6 Generalidade: pacotes de módulos, validados em marcenaria
 
-| Forma de cálculo | Módulos atuais | Fórmula |
+**Especificação.** A natureza do trabalho produtivo é a mesma entre segmentos: **mão de obra + atividade + equipamento + espaço físico + item**. O **motor** (vocabulário de elementos,
+tolerâncias plugáveis, calibração, agenda, multiempresa, auditoria) é independente de segmento. O que é específico de um segmento vive em um **pacote de módulos** (dado, não código):
+
+| Forma de cálculo (arquétipo) | Exemplo em marcenaria | Fórmula |
 |---|---|---|
 | Processamento por meio | corte, bordo, furação | quantidade de um *driver* ÷ taxa da ficha técnica + preparo |
 | Deslocamento | movimentação | viagens × distância ÷ velocidade |
 | Trabalho manual por contagem | montagem | n × tempo por ação ÷ pessoas |
 | Verificação | conferência | tempo fixo por unidade |
 
-Estado: o catálogo é fixo no código (`Literal` com seis chaves) e igual para toda empresa; a montagem das condições de cada passo é um `if` por chave de módulo; o produto é lista de peças
-com colunas fixas (comprimento, largura, espessura, furos, borda); o planejador local fixa a sequência corte → borda → furação → montagem. O campo `segmento` da empresa só vai como contexto para a IA.
-Desenho-alvo (**`[PROPOSTA]`**) na seção 12.2.
+Um pacote declara: módulos (arquétipo, fórmula do *driver* sobre os atributos do item, parâmetros da ficha técnica, coeficientes e preparo), atributos do item, métodos de ligação,
+sequência padrão de passos (para o planejador funcionar sem IA externa) e vocabulário da interface. O mesmo motor atende outros segmentos (ex.: alimentação, gráfica) com outro pacote.
+
+**Estado.** `[PARCIAL]`: só existe o **pacote de marcenaria**, embutido no código. O catálogo é fixo (`Literal` com seis chaves) e igual para toda empresa; a montagem das condições de cada passo é um `if` por
+chave; o produto é lista de peças com colunas fixas; o planejador local fixa corte → borda → furação → montagem; o campo `segmento` só serve de contexto para a IA. Convergência na seção 12.2.
 
 ---
 
 ## 7. Motor de tempo padrão
+
+> Este capítulo descreve o **motor-alvo**. Cada subseção indica o **Estado** quando ele difere do código atual; as subseções 7.11 a 7.14 especificam o que ainda está por implementar.
 
 ### 7.1 Pipeline
 ```
@@ -361,6 +378,8 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
 ### 7.8 Calibração por módulo e por família (`calibracao_modulos.py`)
 - **Amostra:** uma operação concluída (ordem não cancelada) com módulo e previsão. Observado = apontamentos **aprovados** e não anulados (preparação + execução), normalizados **por apontamento** pelo ritmo de quem executou (só na fração `f`).
   Previsto = tempo normal em ritmo 100 **sem** fator de calibração (para não calibrar sobre a calibração).
+  **Especificação:** o observado é o **tempo corrido** da operação (união dos intervalos dos apontamentos, ponderada pelo ritmo médio), coerente com o previsto, que também é tempo corrido;
+  assim o fator não depende de quantas pessoas registram o apontamento. **Estado:** `[PARCIAL]` — hoje soma as durações, o que infla a razão com equipe de 2+ pessoas (reproduzido em teste; 11.2, item 4).
 - **Fator geral do módulo:** mediana das razões, ≥ 10 amostras por (unidade, módulo), limitado a 0,5–2,0.
 - **Família (produto × módulo):** `fator(porte) = fator_ref · (porte ÷ porte_ref)^b`, com **porte** = tempo normal previsto por unidade do pedido; `b` por Theil–Sen sobre ln(razão) × ln(porte), limitado a −0,5…1,0.
   Exige ≥ 8 amostras do produto, ≥ 3 tamanhos distintos e dispersão de porte ≥ 1,25×. Fora do intervalo observado (±50 %) o porte é travado na borda e o passo é rotulado **extrapolado**.
@@ -379,6 +398,30 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
 Interpretador **próprio e fechado** (sem `eval`), com limites de tamanho e profundidade; campos entre chaves, decimal com ponto, argumentos separados por `;`.
 Funções: `se`, `min`, `max`, `abs`, `arred`, `teto`, `piso`; operadores `+ − * /` e comparações. Liga medidas do pedido a medidas, quantidades, pesos, furos, bordas e fixadores. Proteções contra mascarar o tempo real:
 medida que nenhuma peça usa gera aviso e premissa; peso fixo de peça cuja medida varia é desconsiderado; ao recalcular, as peças são **recalculadas**, nunca reaproveitadas; ajuste manual sobre valor com fórmula fica registrado.
+
+### 7.11 Hierarquia de fontes do tempo-base  `[PARCIAL]`
+Todo coeficiente de tempo-base (fixação, preparação, deslocamento, conferência) tem **status** e **fonte** e segue a precedência:
+1. **`medido`** — cronoanálise da própria empresa (7.12), com nº de ciclos e confiança registrados;
+2. **`predeterminado`** — MTM ou MOST com índices conferidos no cartão certificado (Maynard et al., 1948; Zandin, 2003);
+3. **`referencia_generica`** — ponto de partida do catálogo, **rotulado**, que rebaixa a confiança do plano a "baixa".
+
+A confiança "média" só é possível quando nenhum coeficiente do plano é genérico. **Estado:** só o nível 3 existe hoje; o status `calibrado` (fator multiplicativo validado) já é suportado.
+
+### 7.12 Modo cronoanálise  `[NÃO IMPLEMENTADO]`
+Base: Barnes (1980); Niebel e Freivalds (2003); OIT (Kanawaty, 1992).
+- **Registro:** o analista divide a operação em **elementos**, cronometra **ciclos** por elemento (inclusive pela fila de apontamentos) e registra a **avaliação de ritmo por observação** (escala 100 = normal; sistema Westinghouse: habilidade, esforço, condições, consistência — **tabelas originais a conferir** `[VERIFICAR]`).
+- **Tamanho da amostra:** nº de ciclos pela fórmula clássica `N' = [40·√(N·Σx² − (Σx)²) / Σx]²` (95 %, ±5 %); o sistema informa quando a amostra é insuficiente.
+- **Resultado:** tempo normal por elemento (`TO · R/100`) e, com as tolerâncias, tempo padrão por elemento, gravado como coeficiente `medido`, versionado, com `n`, dispersão e responsável.
+- **Uso:** substitui os coeficientes genéricos (itens 11 a 13 da 5.9) por dados com fonte e rastreabilidade; alimenta a calibração.
+
+### 7.13 Condições de trabalho por passo  `[NÃO IMPLEMENTADO]`
+Cada passo do plano ganha condições opcionais de trabalho: frequência e duração do levantamento, alturas e distâncias de pega (parâmetros do NIOSH), gasto energético (kcal/min) por atividade de fonte publicada `[FONTE A DEFINIR]`,
+postura e ambiente do local. Com elas, as fontes `niosh`, `murrell` e `ambiente` passam a **entrar no fator de tolerância do plano** (hoje só entram no fluxo legado de processos). O que faltar vira pendência, nunca valor.
+A avaliação postural (RULA) entra como alerta; qualquer conversão em percentual é premissa rotulada.
+
+### 7.14 Validação de cobertura do plano  `[NÃO IMPLEMENTADO]`
+Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do pedido aparece em ao menos um passo de processamento ou montagem pertinente à sua função, (ii) existe passo de montagem se há ligações e
+(iii) as ligações de cada subconjunto e as finais estão cobertas. Cobertura incompleta vira **pendência**, e o plano não recebe "cabe". Isso protege contra a omissão de passos por uma sugestão da IA ou por uma regra local.
 
 ---
 
@@ -447,16 +490,16 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 
 ---
 
-## 11. Limitações conhecidas e problemas abertos
+## 11. Estado de implementação: lacunas entre o sistema-alvo e o código
 
-### 11.1 Limitações do cálculo (declaradas ao usuário)
+### 11.1 Limitações do cálculo declaradas ao usuário (premissas do sistema atual)
 1. Ordens geradas por plano só alimentam a **calibração por módulo** (fator validado), não o histórico por operação.
 2. Coeficientes de montagem, preparação e conferência são **referências genéricas**; os índices MOST são **ilustrativos**. O tempo padrão é uma estimativa de **ordem de grandeza** até haver medição ou calibração.
 3. **Sequência única de passos**, sem trabalho em paralelo entre eles; pessoas-hora assumem toda a equipe ocupada em todos os passos (prazo tende a ser superestimado com equipe).
 4. **Divisão ideal do trabalho** entre pessoas, sem curva de aprendizagem nem perda de coordenação (prazo pode ser otimista com equipes grandes).
 5. Sem feriados; sem fadiga de turno; piso, altura de trabalho e precisão não alteram o tempo.
 
-### 11.2 Problemas identificados na revisão (2026-11-17)
+### 11.2 Lacunas e defeitos identificados na verificação (2026-11-17)
 | # | Problema | Evidência | Impacto | Correção proposta |
 |---|---|---|---|---|
 | 1 | **Tempos de máquina não incluem alimentação e retirada manual** das peças | `modulos/usinagem.py` (premissa `_NAO_MANUSEIO`) | Subestima corte, furação e borda | Elementos manuais com coeficiente de fonte; ou medição |
@@ -475,19 +518,19 @@ README anterior citava 306 testes (hoje 322). O sistema é triagem de apoio à d
 
 ---
 
-## 12. Trabalhos futuros e roadmap de embasamento
+## 12. Plano de convergência ao sistema-alvo e trabalhos futuros
 
-### 12.1 Fechar o embasamento do tempo padrão na literatura  `[PROPOSTA]`
+### 12.1 Convergir o tempo padrão ao embasamento na literatura  `[PLANEJADO]`
 Ordem sugerida (do que mais reduz a distância entre o que se afirma e o que se calcula):
-1. **Integrar a ergonomia ao fluxo principal:** cada passo ganha condições de trabalho (frequência de levantamento, alturas, gasto energético) para NIOSH e Murrell entrarem no FT.
-2. **Corrigir os itens 3 e 4 da seção 11.2** (cobertura do plano; viés da calibração com equipe).
-3. **Modo cronoanálise** (Barnes; Niebel e Freivalds): registro de ciclos por elemento, avaliação de ritmo por observação, **tamanho de amostra** pela fórmula clássica, tempo padrão por elemento. Substitui os coeficientes genéricos (itens 11 a 13 da 5.9) por dados com fonte e rastreabilidade.
+1. **Integrar a ergonomia ao fluxo principal** (7.13): cada passo ganha condições de trabalho (frequência de levantamento, alturas, gasto energético) para NIOSH e Murrell entrarem no FT.
+2. **Corrigir os itens 3 e 4 da seção 11.2** (cobertura do plano, 7.14; viés da calibração com equipe, 7.8).
+3. **Modo cronoanálise** (7.12; Barnes; Niebel e Freivalds): registro de ciclos por elemento, avaliação de ritmo por observação, **tamanho de amostra** pela fórmula clássica, tempo padrão por elemento. Substitui os coeficientes genéricos (itens 11 a 13 da 5.9) por dados com fonte e rastreabilidade.
 4. **Sistema de tempos predeterminados** (MOST ou MTM) com índices conferidos no cartão certificado — ou declarar explicitamente que não é usado e remover o "ilustrativo".
 5. **RULA** (McAtamney e Corlett, 1993) a partir das **tabelas originais**; conversão score → tolerância sempre rotulada como premissa.
 6. **Tempos manuais de alimentação e retirada** nos módulos de máquina; fadiga de turno aprendida de dados; feriados na agenda; curva de aprendizagem.
 7. **Conferir as fontes originais** das constantes da OIT (valor único × por sexo), NIOSH e Murrell.
 
-### 12.2 Generalizar o catálogo (pacotes de módulos)  `[PROPOSTA]`
+### 12.2 Pacotes de módulos (generalização)  `[PLANEJADO]`
 Os seis módulos são instâncias de poucas formas (seção 6.6). Desenho-alvo:
 - **Módulo como dado:** forma de cálculo + fórmula do *driver* (reaproveita o interpretador de `formulas.py`) + parâmetros da ficha + coeficientes + preparo.
 - **Registro de pacotes** no lugar do `Literal` fixo; o esquema da IA e a validação saem do registro. **Marcenaria = primeiro pacote** (congelado como v1); outro segmento = novo conjunto de dados.
