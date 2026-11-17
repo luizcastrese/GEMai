@@ -77,17 +77,17 @@ def calcular_modulo(modulo: Modulo, entrada: EntradaModulo, *, tolerancias: list
     ft, p = mt.fator_tolerancia(tol)
     k = min(max(fator_calibracao, 0.5), 2.0)
     base100 = calc if ritmo_pct == 100.0 else mt.calcular(mo.elementos, fator_ambiente, ctx, tol, 100.0)
-    r.normal_base = round((base100.prep + base100.exec) / ft, 3)
+    r.normal_base = round(base100.normal, 3)
     r.fracao_operador = mt.fracao_operador(mo.elementos, ctx).geral
     r.ft, r.tolerancia_pct = ft, round(p * 100, 3)
     r.fator_calibracao, r.calibrado = k, calibrado and k != 1.0
     r.composicao = [{**l, "minutos": round(l["minutos"] * k, 3)} if l.get("minutos") is not None else l for l in calc.elementos]
     r.prep, r.exec = round(calc.prep * k, 3), round(calc.exec * k, 3)
     r.total = round(r.prep + r.exec, 3)
-    r.normal = round(r.total / ft, 3)
+    r.normal = round(calc.normal * k, 3)
     if calibracao and k != 1.0:
         r.coeficientes.append({"chave": f"calibracao:{modulo.chave}", "valor": round(k, 4), "unidade": "×",
-                               "fonte": f"Calibração validada: mediana de {calibracao['amostras']} amostras aprovadas (v{calibracao['versao']})",
+                               "fonte": calibracao.get("fonte") or f"Calibração validada: mediana de {calibracao['amostras']} amostras aprovadas (v{calibracao['versao']})",
                                "status": "calibrado", "versao": int(calibracao["versao"])})
     return r
 

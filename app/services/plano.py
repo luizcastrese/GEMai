@@ -29,6 +29,20 @@ ROTULO_TIPO = {"movimentacao": "Transporte", "corte": "Corte", "furacao": "Fura�
 LIMITE_JORNADA_MIN = 8 * 60  # CLT art. 58 (jornada normal de 8 h/dia). Conferir com o jurídico/SESMT.
 
 
+# ------------------------------------------------------------------ confiança
+def _motivos_confianca_baixa(base, linhas: list[dict]) -> list[str]:
+    """Por que o plano não pode ter confiança "média": coeficiente genérico ainda não calibrado ou capacidade estimada pela IA."""
+    motivos = []
+    genericos = sorted({c["chave"] for l in linhas for c in l["r"].coeficientes if c["status"] == "referencia_generica"})
+    if genericos:
+        motivos.append("Confiança baixa: o tempo usa coeficientes de referência genéricos do catálogo, ainda não calibrados com o histórico da "
+                       f"sua oficina ({', '.join(genericos[:4])}{'…' if len(genericos) > 4 else ''}).")
+    ia_cap = sorted({l["rec"].nome for l in linhas if l["rec"] is not None and l["rec"].capacidade_origem == "ia"})
+    if ia_cap:
+        motivos.append("Confiança baixa: a capacidade de " + ", ".join(ia_cap) + " foi estimada pela IA, não medida.")
+    return motivos
+
+
 # ------------------------------------------------------------------ entradas
 def estimar_peso(c: Componente) -> tuple[float | None, str | None]:
     if c.peso_kg is not None:
@@ -92,7 +106,8 @@ def agendar(inicio: datetime, blocos, uteis: bool, duracoes: list[float | None])
         if d is None:
             saida.append((cursor, cursor, None))
             continue
-        inicio_passo = cursor
+        # o passo começa no primeiro instante de trabalho depois do anterior (não no almoço nem no fim do expediente)
+        inicio_passo = _inicio_util(cursor, blocos, uteis)
         efetiva = d
         restante, t = efetiva, inicio_passo
         while restante > 1e-9:
@@ -225,7 +240,9 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
     distancia = None
     if o and d:
         distancia = 0.0 if o.id == d.id else modelo_tempo.distancia_entre(db, ctx.empresa_id, o.id, d.id)
-    pessoas = max(p.pessoas, pessoas_cfg if pessoas_cfg is not None else base.pessoas_cfg)
+    # Quem divide o trabalho é a equipe informada (e o peso, via mínimo do módulo): o nº de pessoas que a IA propõe NÃO entra na conta,
+    # senão ela encurtaria a montagem só por pedir mais gente.
+    pessoas = pessoas_cfg if pessoas_cfg is not None else base.pessoas_cfg
     ent = entradas.entrada_do_passo(modulo, p, comps=base.comps_d, ligs=base.ligs_d, unidades_produto=quantidade, pessoas=pessoas,
                                     distancia_m=distancia, rec=rec, ficha=base.fichas.get(rec.id, {}) if rec else {},
                                     origem=o.nome if o else None, destino=d.nome if d else None)
@@ -233,8 +250,16 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
     # tolerâncias por fontes plugáveis (OIT constantes, NIOSH, Murrell, ambiente, postura); nada digitado
     tr = tolerancias.calcular(tolerancias.ContextoTolerancia(locais=[local], perfil=base.perfil))
     tol = tr.aplicadas
-    cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, base.unidade_id, modulo.chave)  # só calibração VALIDADA
-    r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo, calibracao=calibracao_modulos.como_dict(cal))
+    # só calibração VALIDADA: a da família (este produto) tem precedência sobre o fator geral do módulo
+    cal = calibracao_modulos.fator_vigente(db, ctx.empresa_id, base.unidade_id, modulo.chave, base.produto.id)
+    porte = None
+    if cal is not None and cal.produto_id is not None and cal.expoente:
+        # O fator da família escala com o porte do pedido (tempo normal previsto por unidade, ANTES de qualquer calibração):
+        # calcula uma vez sem fator só para medir o porte e depois aplica o fator daquele tamanho.
+        r0 = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo)
+        if r0.normal_base and quantidade > 0:
+            porte = r0.normal_base / quantidade
+    r = motor.calcular_modulo(modulo, ent, tolerancias=tol, ritmo_pct=base.ritmo, calibracao=calibracao_modulos.como_dict(cal, porte))
     pessoas = r.pessoas
     falt = list(r.faltantes)
     if modulo.precisa_recurso and rec is None and not any("equipamento" in f for f in falt):
@@ -287,12 +312,14 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     plano.especificacoes, plano.estrutura = espec, cfg.get("estrutura")
     cfg_guardada = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in cfg.items() if k not in ("nome", "estrutura", "especificacoes", "avisos_variante")}
     cfg_guardada.update(extras_config or {})
-    totais_p = totais_a = hh = 0.0
+    totais_p = totais_a = hh = prep_total = exec_total = 0.0
     incompletos = 0
     for i, (l, (ini, fim, efetiva)) in enumerate(zip(linhas, ag), 1):
         p = l["p"]
         if l["total"] is not None:
             totais_p += l["total"]
+            prep_total += l["prep"] or 0.0
+            exec_total += l["exec"] or 0.0
             totais_a += efetiva or 0
             hh += l["total"] * l["pessoas"] / 60
         else:
@@ -315,16 +342,22 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]]))
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
-    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa") else "media")
+    # Confiança: só vale "média" quando o plano é completo, a IA não declarou "baixa" e NADA no cálculo é genérico ou estimado.
+    # Sem histórico medido do plano nunca é "alta". A confiança que a IA declara é só um rótulo: o sistema a limita.
+    motivos = _motivos_confianca_baixa(base, linhas)
+    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa" or motivos) else "media")
     obsoleto = ["O campo 'fadiga % por hora' é obsoleto e foi ignorado: a fadiga por turno só entra no cálculo quando for aprendida dos dados."] \
         if cfg.get("fadiga_ignorada") else []
     estimadas = sorted({r.nome for r in base.recursos if r.capacidade_origem == "ia" and r.capacidade})
     nota_cap = [f"Capacidade estimada pela IA (não medida) em: {', '.join(estimadas)}. Substitua por uma medição para ganhar confiança."] if estimadas else []
-    plano.premissas = list(dict.fromkeys(list(cfg.get("avisos_variante") or []) + nota_cap + proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
+    plano.premissas = list(dict.fromkeys(list(cfg.get("avisos_variante") or []) + nota_cap + motivos + proposta.premissas + [x for l in linhas for x in l["r"].premissas] + premissas_coeficientes(linhas)
                                          + obsoleto + (extras_premissas or []) + ([aviso] if aviso else [])))
     plano.faltantes = faltantes
     plano.alertas = alertas_jornada(base.blocos)
     plano.totais = {"passos": len(linhas), "passos_incompletos": incompletos, "tempo_padrao_min": round(totais_p, 2),
+                    # tempo padrão por unidade = só a execução ÷ quantidade; o preparo é do LOTE (acontece uma vez, não cresce com a quantidade)
+                    "tempo_preparo_min": round(prep_total, 2), "tempo_execucao_min": round(exec_total, 2),
+                    "tempo_por_unidade_min": round(exec_total / quantidade, 3) if quantidade else None,
                     "tempo_agendado_min": round(totais_a, 2), "horas_homem": round(hh, 2), "dias": dias,
                     "inicio": (inicio_geral.replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if inicio_geral else None),
                     "fim": (fim_geral.replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if fim_geral else None),
@@ -394,7 +427,8 @@ def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | N
     if not comtempo:
         raise HTTPException(422, "Este plano ainda não tem nenhum passo com tempo calculado. Complete os dados e recalcule.")
     duracoes = [(p.tempo_prep_min or 0.0) + (p.tempo_exec_min or 0.0) * fator for p in comtempo]
-    por_unidade = sum(duracoes) / qtd
+    preparo_lote = sum(p.tempo_prep_min or 0.0 for p in comtempo)
+    por_unidade = sum((p.tempo_exec_min or 0.0) * fator for p in comtempo) / qtd  # o preparo é do lote, não da unidade
 
     agora = datetime.now(timezone.utc).astimezone(tz).replace(tzinfo=None)
     ini_local = inicio.astimezone(tz).replace(tzinfo=None) if inicio else agora
@@ -418,7 +452,7 @@ def responder_prazo(ctx: Ctx, plano: PlanoTrabalho, prazo, quantidade: float | N
     return {
         "veredito": veredito, "prazo": prazo, "quantidade": qtd, "aproximado": aprox, "completo": completo,
         "inicio": utc(ini_real), "termina_em": utc(fim), "folga_dias": (limite.date() - fim.date()).days,
-        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2),
+        "ultimo_dia_para_comecar": ultimo_inicio, "tempo_por_unidade_min": round(por_unidade, 2), "preparo_lote_min": round(preparo_lote, 2),
         "tempo_total_min": round(sum(duracoes), 2), "pessoas": int(cfg.get("pessoas") or 1),
     }
 

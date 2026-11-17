@@ -1261,6 +1261,7 @@ class PrazoOut(Out):
     folga_dias: int
     ultimo_dia_para_comecar: date | None
     tempo_por_unidade_min: float
+    preparo_lote_min: float = 0.0
     tempo_total_min: float
     pessoas: int
 
@@ -1331,6 +1332,16 @@ class CalibracaoModuloOut(Out):
     id: int
     unidade_id: int
     modulo: str
+    produto_id: int | None = None
+    titulo: str = ""  # nome do módulo (preenchido pela listagem)
+    produto_nome: str | None = None
+    expoente: float = 0.0
+    porte_ref: float | None = None
+    porte_min: float | None = None
+    porte_max: float | None = None
+    erro_sem_pct: float | None = None
+    erro_constante_pct: float | None = None
+    erro_com_pct: float | None = None
     fator: float
     mediana_bruta: float
     limitado: bool
@@ -1347,6 +1358,16 @@ class SugestaoModuloCalibOut(BaseModel):
     unidade_id: int
     modulo: str
     titulo: str
+    produto_id: int | None = None  # None = fator geral do módulo; com produto = calibração da família (escala com o porte)
+    produto_nome: str | None = None
+    expoente: float = 0.0  # fator(porte) = fator_sugerido × (porte ÷ porte_ref) ^ expoente
+    porte_ref: float | None = None
+    porte_min: float | None = None
+    porte_max: float | None = None
+    erro_sem_pct: float | None = None  # prova com dados reservados: erro típico (%) sem calibração, com fator constante e com o proposto
+    erro_constante_pct: float | None = None
+    erro_com_pct: float | None = None
+    nota: str = ""
     amostras: int
     minimo: int
     mediana_bruta: float | None

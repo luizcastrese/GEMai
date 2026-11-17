@@ -10,6 +10,7 @@ import * as contorno from './telas_contorno.js';
 import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
 import * as relatorio from './telas_relatorio.js';
+import * as calibracao from './telas_calibracao.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -35,6 +36,7 @@ const ROTAS = [
   [/^#\/processos$/, proc.lista, ['Detalhes técnicos', 'Processos', '#/processos', true]],
   [/^#\/processos\/(\d+)$/, proc.detalhe],
   [/^#\/cadastros$/, proc.cadastros],
+  [/^#\/calibracao$/, calibracao.calibracao, ['Detalhes técnicos', 'Calibração', '#/calibracao', true]],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
   [/^#\/painel$/, gestao.painel],
   [/^#\/ia$/, admin.recomendacoes, ['Detalhes técnicos', 'Sugestões da IA', '#/ia', true]],
@@ -65,12 +67,14 @@ function casca(conteudo, hash) {
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
   });
-  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'GEMai'),
+  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'GEM', h('span', null, 'ai')),
     Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
-  const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, 'Unidade:', sel),
-    h('div', { class: 'who' }, estado.usuario.nome, h('button', { class: 'sm', onclick: sair }, 'Sair')));
+  const iniciais = estado.usuario.nome.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+  const topo = h('div', { class: 'top' }, h('div', { class: 'who' }, estado.unidades.length > 1 ? ['Unidade', sel] : null),
+    h('div', { class: 'who' }, h('span', { class: 'nome' }, estado.usuario.nome), h('span', { class: 'avatar', 'aria-hidden': 'true' }, iniciais),
+      h('button', { class: 'sm', onclick: sair }, 'Sair')));
   return h('div', { class: 'shell' }, nav, h('main', null, topo, conteudo));
 }
 
@@ -95,12 +99,19 @@ function telaAuth() {
     campo('senha', modo === 'login' ? 'Senha' : 'Senha (mín. 10 caracteres, com maiúsculas, minúsculas e número)', 'password', modo === 'login' ? 'current-password' : 'new-password'),
     h('p', null, h('button', { class: 'pri', type: 'submit' }, modo === 'login' ? 'Entrar' : 'Criar empresa e entrar')));
     f.segmento && (f.segmento.required = false);
-    montar(raiz, h('div', { class: 'auth' }, h('h1', null, 'Entrar no GEMai'),
+    const painel = h('aside', { class: 'auth-brand' }, h('div', { class: 'brand' }, 'GEM', h('span', null, 'ai')),
+      h('p', { class: 'lede' }, 'Prazo ', h('em', null, 'realista'), ', calculado da sua oficina.'),
+      h('ul', null,
+        h('li', null, 'Do produto ao roteiro: o sistema monta as etapas e o tempo padrão por unidade.'),
+        h('li', null, 'Tempos vêm da ficha técnica e do histórico, nunca de um número digitado no escuro.'),
+        h('li', null, 'A IA sugere; o sistema valida.')));
+    const entrada = h('div', { class: 'auth' }, h('h1', null, 'Entrar no GEMai'),
       h('p', { class: 'muted' }, 'A IA sugere; o sistema valida.'),
       h('div', { class: 'card' }, form,
         h('p', { class: 'small' }, modo === 'login' ? 'Primeiro acesso? ' : 'Já tem conta? ',
           h('a', { href: '#', onclick: (e) => { e.preventDefault(); modo = modo === 'login' ? 'cadastro' : 'login'; desenhar(); } },
-            modo === 'login' ? 'Cadastre sua empresa' : 'Entrar')))));
+            modo === 'login' ? 'Cadastre sua empresa' : 'Entrar'))));
+    montar(raiz, h('div', { class: 'auth-split' }, painel, entrada));
   };
   desenhar();
 }

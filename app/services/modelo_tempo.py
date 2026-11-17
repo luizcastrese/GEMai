@@ -17,7 +17,9 @@ Camadas aplicadas, na ordem do estudo de tempos (OIT/Barnes/Niebel):
 1. tempo-base dos elementos; elementos `paralelizavel` ÷ nº de pessoas;
 2. ritmo: elementos que dependem do operador × 100/ritmo_pct (100 = ritmo normal). Tempo de máquina não muda;
 3. tolerâncias: tempo padrão = tempo normal · FT, com FT = 1/(1 − p) e p = Σ percentuais (pessoais, fadiga básica,
-   postura, carga, descanso…), limitado a 50 %. O sexo NÃO é multiplicador: entra apenas em limites de carga.
+   postura, carga, descanso…), limitado a 50 %. FT multiplica **só o tempo que depende do operador**: o tempo de
+   máquina (`capacidade_recurso` ou `depende_operador=false`) não recebe ritmo nem tolerâncias.
+   O sexo NÃO é multiplicador: entra apenas em limites de carga.
 Elementos do tipo `preparacao` compõem o tempo de preparação; os demais, o de execução.
 """
 from __future__ import annotations
@@ -222,6 +224,7 @@ class Resultado:
     elementos: list[dict] = field(default_factory=list)
     faltantes: list[str] = field(default_factory=list)
     fator_ambiente: float = 1.0
+    normal: float = 0.0  # prep + exec ANTES das tolerâncias (ritmo e ambiente já aplicados)
 
     @property
     def completo(self) -> bool:
@@ -322,7 +325,8 @@ def calcular(elementos: list[dict], fator_ambiente: float, c: Contexto, toleranc
     f = min(max(fator_ambiente or 1.0, 0.5), 3.0)
     ritmo = 100.0 / min(max(ritmo_pct or 100.0, RITMO_MIN), RITMO_MAX)
     ft, p = fator_tolerancia(tolerancias)
-    base_prep = base_exec = 0.0
+    # separa o tempo que depende da pessoa (recebe ritmo e tolerâncias) do tempo de máquina (não recebe)
+    prep_op = prep_maq = exec_op = exec_maq = 0.0
     linhas = []
     for e in elementos:
         t, falta = _elemento(e, c)
@@ -331,22 +335,24 @@ def calcular(elementos: list[dict], fator_ambiente: float, c: Contexto, toleranc
             linhas.append({"nome": e.get("nome", "?"), "tipo": e.get("tipo", "outro"), "minutos": None, "motivo": falta})
             continue
         t *= f
-        if depende_do_operador(e):
+        operador = depende_do_operador(e)
+        if operador:
             t *= ritmo
         linhas.append({"nome": e.get("nome", "?"), "tipo": e.get("tipo", "outro"), "minutos": round(t, 3)})
         if e.get("tipo") == "preparacao":
-            base_prep += t
+            prep_op, prep_maq = prep_op + (t if operador else 0.0), prep_maq + (0.0 if operador else t)
         else:
-            base_exec += t
-    base = base_prep + base_exec
+            exec_op, exec_maq = exec_op + (t if operador else 0.0), exec_maq + (0.0 if operador else t)
+    base_op = prep_op + exec_op
+    r.normal = prep_op + prep_maq + exec_op + exec_maq
     r.elementos = linhas
-    if ft > 1.0 and base > 0:
+    if ft > 1.0 and base_op > 0:
         total_p = sum(max(float(t.get("percentual", 0)), 0.0) for t in (tolerancias or [])) or 1.0
         for t in tolerancias or []:
             if float(t.get("percentual", 0)) > 0:
                 r.elementos.append({"nome": f"Tolerância: {t['categoria']} ({t['percentual']:g}%)", "tipo": "tolerancia",
-                                    "minutos": round(base * (ft - 1.0) * float(t["percentual"]) / total_p, 3)})
-    r.prep, r.exec = round(base_prep * ft, 3), round(base_exec * ft, 3)
+                                    "minutos": round(base_op * (ft - 1.0) * float(t["percentual"]) / total_p, 3)})
+    r.prep, r.exec = round(prep_op * ft + prep_maq, 3), round(exec_op * ft + exec_maq, 3)
     return r
 
 

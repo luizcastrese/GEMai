@@ -79,7 +79,7 @@ def test_corte_metros_sobre_avanco():
     # 3 peças de 1,0 × 0,5 (perímetro 3 m): 9 m de corte a 18 m/min = 0,5 min; preparação 5 min
     r = _calc("corte", quantidade=3, unidades_produto=1, recurso_nome="Serra", ficha={"avanco_corte_m_min": 18},
               componentes=[_painel(qtd=3)])
-    assert r.parametros["metros_de_corte"] == 9 and r.exec == pytest.approx(0.5 * FT, abs=0.001) and r.prep == pytest.approx(5 * FT, abs=0.001)
+    assert r.parametros["metros_de_corte"] == 9 and r.exec == pytest.approx(0.5, abs=0.001) and r.prep == pytest.approx(5 * FT, abs=0.001)  # tempo de máquina sem tolerância; preparar a máquina é da pessoa
     assert r.composicao[0]["tipo"] == "preparacao" and any(e["depende_operador"] is False for e in r.elementos)
 
 
@@ -93,14 +93,14 @@ def test_bordo_metros_sobre_velocidade():
     # 2 peças com 3,0 m de borda cada, a 6 m/min ⇒ 1 min
     r = _calc("bordo", quantidade=2, recurso_nome="Coladeira", ficha={"velocidade_bordo_m_min": 6},
               componentes=[_painel(qtd=2, bordas_m=3.0)])
-    assert r.parametros["metros_de_borda"] == 6 and r.exec == pytest.approx(1.0 * FT, abs=0.001)
+    assert r.parametros["metros_de_borda"] == 6 and r.exec == pytest.approx(1.0, abs=0.001)  # tempo de máquina: sem tolerância
 
 
 def test_furacao_ciclos_por_cabecotes():
     # 2 peças de 10 furos, 4 cabeçotes ⇒ ceil(10/4)=3 ciclos por peça ⇒ 6 ciclos de 20 mm a 40 mm/min = 3 min
     r = _calc("furacao", quantidade=2, recurso_nome="Furadeira", componentes=[_painel(qtd=2, furos=10)],
               ficha={"cabecotes_furacao": 4, "curso_furacao_mm": 20, "avanco_furacao_mm_min": 40})
-    assert r.parametros["ciclos"] == 6 and r.exec == pytest.approx(3.0 * FT, abs=0.001)
+    assert r.parametros["ciclos"] == 6 and r.exec == pytest.approx(3.0, abs=0.001)  # tempo de máquina: sem tolerância
 
 
 def test_usinagem_sem_ficha_ou_equipamento_nao_inventa_taxa():
@@ -123,7 +123,7 @@ def test_montagem_por_subconjunto_e_final():
     # final: 2 subconjuntos ⇒ 1 posicionamento por unidade; o peso do conjunto define o mínimo de pessoas (45 kg ⇒ 3)
     f = _calc("montagem", quantidade=2, unidades_produto=2, componentes=[_painel()], ligacoes=[{"metodo": "minifix", "fixadores": 4}],
               extras={"final": True, "n_pecas": 1.0, "peso_conjunto_kg": 45.0})
-    assert f.normal == pytest.approx((0.174 + 4 * 0.45) * 2, abs=0.001) and f.pessoas == 3
+    assert f.normal == pytest.approx((0.174 + 4 * 0.45) * 2 / 3, abs=0.001) and f.pessoas == 3  # o trabalho manual é dividido entre as 3 pessoas
     sem = _calc("montagem", quantidade=1, componentes=[_painel()])
     assert any("como se montam" in x for x in sem.faltantes)  # sem ligação: pendência
 

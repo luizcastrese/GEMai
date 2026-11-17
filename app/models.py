@@ -517,7 +517,18 @@ class CalibracaoModulo(Base):
     empresa_id: Mapped[int] = _empresa()
     unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"))
     modulo: Mapped[str] = mapped_column(String(30))
-    fator: Mapped[float] = mapped_column(Float)  # já limitado a 0,5–2,0
+    # None = fator GERAL do módulo (todos os produtos). Com produto: calibração da FAMÍLIA, que aprende como o tempo escala
+    # com o porte do pedido: fator(porte) = fator × (porte ÷ porte_ref) ^ expoente (porte = tempo normal previsto por unidade).
+    produto_id: Mapped[int | None] = mapped_column(ForeignKey("produtos.id"))
+    expoente: Mapped[float] = mapped_column(Float, default=0.0)
+    porte_ref: Mapped[float | None] = mapped_column(Float)
+    porte_min: Mapped[float | None] = mapped_column(Float)
+    porte_max: Mapped[float | None] = mapped_column(Float)
+    # prova com dados reservados (leave-one-out) no momento da proposta: erro típico em %
+    erro_sem_pct: Mapped[float | None] = mapped_column(Float)
+    erro_constante_pct: Mapped[float | None] = mapped_column(Float)
+    erro_com_pct: Mapped[float | None] = mapped_column(Float)
+    fator: Mapped[float] = mapped_column(Float)  # já limitado a 0,5–2,0 (na família: o fator no porte de referência)
     mediana_bruta: Mapped[float] = mapped_column(Float)  # antes do limite
     limitado: Mapped[bool] = mapped_column(Boolean, default=False)
     amostras: Mapped[int] = mapped_column(Integer)

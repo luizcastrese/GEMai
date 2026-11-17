@@ -20,7 +20,7 @@ O caminho principal da interface tem só três passos (menu: *Início · 1. Prod
    (medição ou estimativa) clica em *"Não sei: a IA estima"*, descreve o equipamento e/ou envia uma **foto**; a IA **propõe** um valor com faixa, premissas e
    confiança (nunca "alta"), e o usuário confere antes de gravar. Valor da IA fica rotulado *estimado pela IA* e entra nas premissas do plano (não alimenta o motor).
    Sem IA externa habilitada, o sistema só aproveita um número escrito pelo usuário (não inventa).
-3. **Plano de trabalho:** a IA escolhe módulos do catálogo; o sistema calcula e mostra, em destaque, o **tempo padrão por unidade** e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
+3. **Plano de trabalho:** a IA escolhe módulos do catálogo; o sistema calcula e mostra, em destaque, o **tempo padrão por unidade** (execução ÷ quantidade; o preparo do lote aparece à parte) e o prazo realista. Passos sem dado aparecem como pendência, nunca como zero.
 
 Dois apoios no caminho principal:
 - **Antes de gerar o plano**, o sistema confere a oficina. Se faltar dado (distância, ficha técnica de uma máquina que o plano usa, locais), mostra a lista e
@@ -46,7 +46,8 @@ Ordens, fila, conferência de registros, processos e análises continuam no sist
 
 Não há papéis (admin/gestor/operador): **todos da empresa veem as mesmas telas e podem fazer tudo**. A interface fala a língua da operação e esconde a engenharia.
 
-- **Início:** "o que precisa da sua atenção" (ordens atrasadas, paradas, registros e previsões para confirmar, contorno físico incompleto), atalhos e poucos números.
+- **Início:** três cartões com o caminho principal (1. Produto → 2. Oficina → 3. Plano de trabalho), cada um com ✓ quando concluído e o que ainda falta, mais a lista de **planos recentes**.
+  O endpoint `GET /inicio` (lista de pendências: ordens atrasadas, paradas, registros e previsões a confirmar) continua na API, mas a interface atual **não o usa**.
 - **Configurar com a IA:** a pessoa descreve a operação, responde às perguntas e a IA monta o processo.
 - **Contorno físico:** uma única tela com o **mínimo** que a IA precisa para prever o tempo, salva ao preencher e com barra de progresso:
   1. **locais** por onde a peça passa; 2. **distância** entre eles; 3. **meios** (máquinas, ferramentas, postos, meios de movimentação) com **função** e **ficha técnica** (avanço, velocidade, capacidade — nunca "peças por hora"); 4. por tarefa: meio, de onde sai, para onde vai e **peso da peça**.
@@ -83,6 +84,10 @@ Os coeficientes iniciais são os "genéricos do projeto" que já existiam (camin
 **Cadastro assistido de meios** (`app/routers/meios.py`, tela *Contorno físico › Meios*): a pessoa dá nome e, se quiser, uma foto (JPEG/PNG; metadados/GPS removidos e **a imagem nunca é gravada**). A IA propõe candidatos de marca/modelo; **a pessoa confirma o modelo**. Só então o sistema busca a **ficha técnica** na web (ferramenta de busca do servidor, configurável em `ERP_IA_BUSCA_FERRAMENTA`; sem IA externa, a busca é do provedor local e devolve vazio). O resultado é **validado pelo sistema**: só parâmetros do catálogo de ficha (nome, unidade, faixa plausível) e com URL de fonte válida entram, como `ia_sugerido`/pendente; **uma pessoa valida** cada valor. Meio sem ficha validada gera pendência no plano.
 
 **Calibração por módulo** (`POST /calibracao/modulos`): mostra uma **prévia** do fator multiplicativo = mediana de (tempo normal observado ÷ tempo normal previsto) por módulo, com ≥ `ERP_MIN_AMOSTRAS_CALIBRACAO` (10) amostras de apontamentos aprovados, limitado a 0,5–2,0; com `aplicar=true` cria **propostas pendentes**; só depois que **uma pessoa valida** o fator passa a valer (`vigente`, versionado). O tempo observado é primeiro **normalizado pelo ritmo da pessoa**. O ritmo é relativo à equipe (veja abaixo), por isso a calibração do módulo tende a absorver o nível geral da equipe — o fator não é "verdade OIT".
+
+**Calibração por família (produto × módulo).** Pedidos do mesmo produto com dimensões diferentes compartilham o *núcleo de cálculo* (peças, fórmulas, módulos); o que muda é o quanto o módulo erra conforme o tamanho. Por isso, além do fator geral, cada produto com ≥ `ERP_MIN_AMOSTRAS_FAMILIA` (8) amostras ganha uma proposta de fator que **escala com o porte do pedido**: `fator(porte) = fator_ref × (porte ÷ porte_ref)^expoente`, em que *porte* = tempo normal previsto **por unidade** (já deriva das medidas pelas fórmulas; nada extra a informar). O ajuste é robusto (Theil–Sen sobre ln razão × ln porte), exige ≥ 3 tamanhos distintos e dispersão ≥ 1,25×, e limita expoente (−0,5…1,0) e fator (0,5–2,0). O que se aprende nos pedidos grandes informa os pequenos e vice-versa; fora do intervalo já observado (+/− 50 %) o porte é travado na borda e o passo é rotulado **extrapolado**. No cálculo vale: família validada do produto > fator geral validado do módulo > coeficientes genéricos. A família também só entra depois de **validada por uma pessoa**.
+
+**Prova com dados reservados.** Toda proposta (geral ou de família) traz o erro típico medido em pedidos que ficaram de fora do cálculo (*leave-one-out*): sem calibração, com um fator único e com a proposta. A escala com o porte só é proposta se reduzir esse erro em ≥ 10 % frente ao fator constante; senão a família fica com o fator constante e a proposta diz isso. Se um fator geral não melhora o erro (o desvio depende do tamanho, não de um nível geral), a proposta avisa. A tela **Calibração** (menu *Detalhes técnicos*) mostra isso em linguagem simples e permite validar ou rejeitar.
 
 **Tolerâncias por fontes plugáveis** (`app/services/tolerancias/`): cada fonte devolve `{categoria, percentual, fonte, premissa?}`. O código **impede percentual sem fonte**; conversão que não é da norma vai em `premissa`; faltante vira pendência.
 
@@ -129,7 +134,7 @@ O tempo planejado segue a estrutura clássica do estudo de tempos: **tempo norma
 | **Carga manual** | Triagem **NIOSH** (RWL, índice de levantamento) com os multiplicadores HM/VM/DM/AM/FM/CM; LI > 1 gera alerta e uma tolerância de fadiga | NIOSH Pub. 94-110; tabelas FM/CM conferidas em fontes secundárias |
 | **Limites legais de carga** | Alertas: > 60 kg individual (CLT art. 198); referência de 20/25 kg para perfil feminino ou menor de 18 (CLT arts. 390/405 §5º) | **Verificar vigência/interpretação com SESMT/jurídico**; NR-17 exige peso compatível com saúde e segurança |
 | **Ritmo** | `ritmo_pct` do perfil (100 = normal) multiplica só o que depende do operador; máquina não muda. No modelo, o ritmo gera a previsão *para aquele ritmo* (padrão 100). No histórico, o ritmo **da pessoa** normaliza o que ela executou (ver abaixo) | Avaliação de ritmo (OIT/Barnes). **Calibre por medição** |
-| **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %, por **fontes plugáveis** (veja o motor modular): necessidades pessoais 5 % + fadiga básica 4 % + o que NIOSH/Murrell calcularem com dados | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
+| **Tolerâncias** | FT = 1/(1 − Σp), p ≤ 50 %, aplicado **só ao tempo que depende do operador** (não ao tempo de máquina), por **fontes plugáveis** (veja o motor modular): necessidades pessoais 5 % + fadiga básica 4 % + o que NIOSH/Murrell calcularem com dados | OIT (*Introduction to Work Study*): valores únicos, sem distinção por sexo |
 | **Gasto energético** | Descanso de Murrell R = T·(W − S)/(W − 1,5), com S = limite **informado no perfil** | Murrell. Limites por sexo/jornada divergem entre fontes: **não há valor embutido** |
 | **Ambiente** | Temperatura, umidade, ruído, iluminância por espaço; ruído > 85 dB(A) gera alerta; temperatura extrema pede avaliação específica; **não** vira tolerância (não há folga digitada) | NR-15 (ruído, 8 h). Sem percentual inventado para calor/iluminação |
 | **Postura / altura de trabalho** | Postura entra nas tolerâncias; altura de trabalho é comparada à altura do cotovelo do perfil, **sem julgar** (as faixas recomendadas divergem entre fontes) | — |
@@ -169,7 +174,7 @@ Snook & Ciriello (empurrar/puxar), **exposição a calor (IBUTG)** (texto oficia
 calibração automática de coeficientes **por elemento** (hoje só o fator por módulo, validado por pessoa), módulos além dos seis do catálogo (ex.: lixamento, pintura, acabamento), sequenciamento entre **vários produtos/ordens** (o arranjo cobre um produto por vez), e os módulos de ferramentas/postos como recurso com capacidade própria.
 O sistema é uma **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
 
-`ERP_USAR_MODELO_IA_NAO_VALIDADO=false` exige que um gestor valide o modelo antes de ele valer como tempo planejado.
+`ERP_USAR_MODELO_IA_NAO_VALIDADO=false` exige que uma pessoa da equipe valide o modelo antes de ele valer como tempo planejado (vale para o modelo de tempo por operação de processo; o plano de trabalho tem a própria confirmação manual).
 O provedor local usa referências genéricas (caminhada 75 m/min, carga manual 20 kg/pessoa, manuseio 0,15 min + 0,012 min/kg,
 preparação 5/2 min) **sempre declaradas nas premissas e com confiança baixa**; com a chave do Claude, o modelo é derivado do contexto da empresa.
 
@@ -193,10 +198,31 @@ Fluxo pensado para o dia a dia: **Produtos → (Contorno físico) → Planos de 
    ficam com fonte `plano`; passos sem tempo entram como "sem base". Depois os apontamentos reais permitem o planejado × realizado.
 
 Limites assumidos (declarados na tela e nas premissas do plano): `POST /planos` gera a sequência **em série, com uma só frente de trabalho** (para trabalho em paralelo entre pessoas e máquinas use o **arranjo recomendado**); os tempos de montagem e
-conferência partem de **referências genéricas do catálogo** até serem calibrados; a confiança do plano **nunca passa de "média"** (a de "alta" que a IA
-declare é descartada). **Previsto × realizado:** o que o plano prevê é **tempo padrão** (com ritmo, calibração e tolerâncias); o realizado é a soma BRUTA dos apontamentos — comparar os dois exige cuidado, e a calibração por módulo compara o *tempo normal* observado com o previsto.
+conferência partem de **referências genéricas do catálogo** até serem calibrados; a confiança do plano **nunca é "alta"** (a que a IA declare é descartada) e só chega a "média" se nada no cálculo for coeficiente genérico, capacidade estimada pela IA ou ainda não calibrado (os motivos aparecem nas premissas). **Previsto × realizado:** o que o plano prevê é **tempo padrão** (com ritmo, calibração e tolerâncias); o realizado é a soma BRUTA dos apontamentos — comparar os dois exige cuidado, e a calibração por módulo compara o *tempo normal* observado com o previsto.
 O plano **depende de dados que ainda precisam ser cadastrados**: ficha técnica dos meios, distâncias, peso/material dos componentes; sem eles o passo fica *incompleto* e o plano lista o que falta.
 Peso sem informação é **estimado** por densidade de referência × medidas e aparece rotulado como estimado.
+
+## Limitações conhecidas do cálculo
+
+Revisão da lógica (leitura do código e experimentos pontuais), com as correções já feitas e o que ainda está em aberto. Leia antes de confiar num prazo.
+
+**Corrigido** (com testes em `tests/test_plano.py`, `tests/test_modulos.py` e `tests/test_fatores_humanos.py`):
+- **Pessoas e prazo:** na montagem, o trabalho manual é dividido entre as pessoas (elementos `paralelizavel`); usinagem e transporte não dividem (a máquina dita o ritmo; mais pessoas só aumentam a carga por viagem). É o **caso ideal**, sem perda de coordenação, e a premissa aparece no plano.
+- **Tolerâncias só no tempo da pessoa:** ritmo e tolerâncias (pessoal, fadiga, ambiente) não multiplicam mais o tempo de máquina (`capacidade_recurso` ou `depende_operador=false`). 60 peças a 60 peças/h voltaram a ser 60 min (antes 65,9).
+- **Horário de início dos passos:** o passo começa quando o trabalho recomeça (13:00 após o almoço, 08:00 do dia útil seguinte), e não no fim do bloco anterior.
+- **Tempo padrão por unidade:** é só a execução ÷ quantidade. O **preparo do lote** (`tempo_preparo_min`, feito uma vez) aparece à parte na tela do plano e em "Posso prometer esta data?" (`preparo_lote_min`). O número deixa de crescer ou encolher com a quantidade pedida.
+- **Confiança do plano:** só chega a "média" se o plano é completo, a IA não declarou "baixa" e nada no cálculo é coeficiente de referência genérico (ainda não calibrado) ou capacidade estimada pela IA. Cada motivo de confiança baixa é listado nas premissas. Nunca é "alta".
+
+**Em aberto:**
+
+| # | Limitação | Efeito | Onde |
+|---|---|---|---|
+| 5 | **Ordens geradas por plano só alimentam a calibração por módulo** (fator multiplicativo validado por pessoa), não o histórico por operação (`services/estimativa.py` só lê operações de processo) | Sem ≥ 10 ordens concluídas e aprovadas por módulo (≥ 8 por produto), o plano segue com os coeficientes genéricos; a calibração propõe e uma pessoa valida | `services/calibracao_modulos.py`, `services/plano.py` (`gerar_ordem`) |
+| 6 | **Os coeficientes de montagem e conferência são referências genéricas** (ex.: 0,30 min por parafuso, 1,5 min por dobradiça) e os índices MOST são ilustrativos | Sem medição da oficina ou calibração validada, o "tempo padrão" é uma estimativa de ordem de grandeza (declarado na confiança) | `services/modulos/coeficientes.py` |
+| 7 | **Sequência única de passos**, sem trabalho em paralelo entre eles; pessoas-hora assumem toda a equipe ocupada em todos os passos (inclusive nos de máquina e na conferência) | Prazo tende a ser superestimado quando há equipe, e as pessoas-hora também | `services/plano.py` |
+| 8 | **Divisão ideal do trabalho:** mais pessoas dividem a montagem por igual, sem curva de aprendizagem nem perda de coordenação | Com equipes grandes o ganho de prazo pode ser otimista | `services/modulos/montagem.py` |
+
+Já estão cobertos por testes: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; a confiança do plano nunca é "alta"; sexo, estatura e peso corporal não alteram o tempo.
 
 ## Rodando
 
@@ -212,6 +238,11 @@ Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produç�
 
 Produção com Docker: `cp .env.example .env`, preencha `ERP_SECRET_KEY` e `POSTGRES_PASSWORD`, `docker compose up -d`
 e ponha um proxy reverso com HTTPS na frente.
+
+**Primeiro acesso em produção:** o `docker-compose.yml` assume `ERP_PERMITIR_CADASTRO_PUBLICO=false` e **ainda não existe comando para criar a primeira empresa**.
+Para criar a primeira, defina `ERP_PERMITIR_CADASTRO_PUBLICO=true` no `.env`, suba, cadastre a empresa pela tela de entrada, volte o valor para `false` e reinicie.
+Depois disso, novos usuários são criados por quem já está na equipe (*Configurações › Equipe*).
+Atrás de proxy reverso, ajuste `FORWARDED_ALLOW_IPS` para o IP do proxy; caso contrário o limitador de tentativas enxerga todos os usuários como um só IP.
 
 ## O que cada seção do documento virou
 
@@ -241,11 +272,11 @@ e ponha um proxy reverso com HTTPS na frente.
 - **Referências genéricas do catálogo** (velocidade de caminhada, carga manual, manuseio) são aproximações e não substituem estudo de tempos; valide ou substitua por medições. Para um modelo calibrado à sua empresa, use o provedor Claude e/ou um modelo manual.
 - **Convenções de tempo.** Realizado = preparação + execução + retrabalho (soma dos apontamentos, ou seja, tempo de trabalho). Total = realizado + espera. Desvio = realizado − estimado. Eficiência = estimado ÷ realizado. **Atenção:** o "realizado" segue sendo a soma BRUTA dos apontamentos, mas o planejado vindo do histórico agora é **tempo padrão** (normalizado pelo ritmo e acrescido das tolerâncias). O desvio deixa de ser só "erro de estimativa": trabalhar exatamente no tempo normal aparece como desvio negativo (realizado < padrão), e a eficiência passa de 100 %. Ordens e dados já gravados antes dessa mudança continuam com o planejado antigo; compare períodos com cuidado. Fila entre operações é calculada (fim da anterior → início da próxima). Se a sua empresa usa outra convenção, ajuste `timecalc.py`/`metricas.py`.
 - **Versionamento de processo.** Cada versão é uma linha; só rascunho edita estrutura; ordens ficam presas à versão em que nasceram.
-- **Apontamentos nunca são apagados**, só anulados com motivo; operador só vê os próprios.
+- **Apontamentos nunca são apagados**, só anulados com motivo. Todos da equipe veem os registros; "Minha fila" mostra os apontamentos abertos de quem está logado.
 
 ## Segurança (uso por terceiros)
 
-- **Isolamento multiempresa:** toda tabela de negócio tem `empresa_id`; todo acesso passa por `Ctx` (`app/deps.py`) que filtra por empresa e, para gestor/operador, pelas **unidades atribuídas**. Recurso de outro tenant responde 404. Há testes dedicados (`tests/test_tenancy.py`).
+- **Isolamento multiempresa:** toda tabela de negócio tem `empresa_id`; todo acesso passa por `Ctx` (`app/deps.py`) que filtra por empresa e, quando a pessoa tem unidades atribuídas, por essas **unidades**. Recurso de outro tenant responde 404. Há testes dedicados (`tests/test_tenancy.py`).
 - **Um único tipo de usuário** por empresa (sem papéis). O isolamento entre empresas continua rígido; veja a regra dos "dois olhos" e a restrição opcional por unidade acima. Qualquer pessoa da equipe gerencia usuários e vê o histórico — trate o acesso como de confiança dentro da empresa.
 - Senhas com Argon2id; política mínima; bloqueio temporário após falhas; mensagens/tempos iguais para usuário inexistente; JWT curto com `token_versao` (trocar senha, desativar ou mudar perfil derruba sessões).
 - Entradas validadas (`extra="forbid"` impede injetar `empresa_id`), limite de corpo de 1 MB, CSP estrita, `X-Frame-Options`, HSTS em produção, `/docs` desligado em produção, e a UI nunca usa `innerHTML`.
