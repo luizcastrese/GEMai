@@ -1,5 +1,5 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
-import { estado } from './estado.js';
+import { atributoDoPacote, estado } from './estado.js';
 import { cartaoCampos, editorEstrutura, formEspecificacoes } from './variante.js';
 import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tempoPorUnidade, tentar, toast } from './ui.js';
 
@@ -72,23 +72,25 @@ export async function produtoDetalhe(el, id) {
       });
       return i;
     };
+    const [temFuros, temBorda] = [atributoDoPacote('furos'), atributoDoPacote('bordas_m')];
+    const CABECALHO_ITENS = ['Item', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', temFuros ? 'Furos' : null, temBorda ? 'Borda (m)' : null, 'Outros dados', ''].filter((t) => t !== null);
     const linhas = comps.map((c) => h('tr', null,
-      h('td', null, celula(c, 'nome', 'text')), h('td', null, celulaF(c, 'quantidade', 'qtd.')), h('td', null, celula(c, 'material', 'text', 'ex.: MDF')),
+      h('td', null, celula(c, 'nome', 'text')), h('td', null, celulaF(c, 'quantidade', 'qtd.')), h('td', null, celula(c, 'material', 'text', 'material')),
       h('td', null, celula(c, 'grupo', 'text')),
       h('td', null, h('div', { class: 'inline nw' }, celulaF(c, 'comprimento_m', 'comp.'), celulaF(c, 'largura_m', 'larg.'), celulaF(c, 'espessura_m', 'esp.'))),
       h('td', { class: 'pk' }, celulaF(c, 'peso_kg', c.peso_estimado_kg ? `~${fmtNum(c.peso_estimado_kg)} est.` : 'kg')),
-      h('td', null, celulaF(c, 'furos', '')), h('td', null, celulaF(c, 'bordas_m', '')), h('td', null, celulaAtr(c)),
+      temFuros ? h('td', null, celulaF(c, 'furos', '')) : null, temBorda ? h('td', null, celulaF(c, 'bordas_m', '')) : null, h('td', null, celulaAtr(c)),
       h('td', null, h('button', { class: 'sm dng', title: 'Remover', onclick: () => confirmar(`Remover "${c.nome}" e suas ligações?`, async () => { if (await tentar(() => del(`/produtos/${id}/componentes/${c.id}`))) desenhar(); }, 'Remover') }, '✕'))));
-    const novo = { nome: h('input', { placeholder: 'ex.: Lateral' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: MDF)' }) };
-    const sComps = h('div', { class: 'card' }, h('h2', null, 'Peças'),
+    const novo = { nome: h('input', { placeholder: 'ex.: Tampa, Chapa, Lote de tecido' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: aço, MDF)' }) };
+    const sComps = h('div', { class: 'card' }, h('h2', null, 'Itens'),
       h('p', { class: 'muted small' }, 'Medidas em metros. Sem o peso, o sistema estima pelo material e pelas medidas.'),
       ajudaFormulas(p, comps, est.ligacoes),
-      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', 'Outros dados', ''].map((t) => h('th', null, t)))),
-        h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum componente ainda. Adicione abaixo ou use "Descrever com a IA".'),
+      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, CABECALHO_ITENS.map((t) => h('th', null, t)))),
+        h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum item ainda. Adicione abaixo ou use "Descrever com a IA".'),
       h('div', { class: 'row' }, novo.nome, novo.qtd, novo.mat, h('button', { onclick: async () => {
-        if (!novo.nome.value.trim()) return toast('Digite o nome do componente.', true);
+        if (!novo.nome.value.trim()) return toast('Digite o nome do item.', true);
         if (await tentar(() => post(`/produtos/${id}/componentes`, { nome: novo.nome.value.trim(), quantidade: Number(novo.qtd.value) || 1, material: novo.mat.value.trim() }))) desenhar();
-      } }, '+ Adicionar componente')));
+      } }, '+ Adicionar item')));
 
     const sel = (lista, vazio) => h('select', null, h('option', { value: '' }, vazio), lista.map(([v, r]) => h('option', { value: v }, r)));
     const [lc, la, lm, lf] = [sel(comps.map((c) => [c.id, c.nome]), 'Componente…'), sel(comps.map((c) => [c.id, c.nome]), 'ao conjunto'), sel(METODOS, ''),
@@ -129,7 +131,7 @@ function ajudaFormulas(p, comps, ligs) {
   const textos = [...comps.flatMap((c) => Object.values(c.formulas || {})), ...ligs.map((l) => l.formula_fixadores).filter(Boolean)].join(' ').toLowerCase();
   const soltos = campos.filter((c) => c.tipo === 'numero' && !textos.includes(`{${c.nome.toLowerCase()}}`));
   return h('div', null,
-    h('p', { class: 'muted small' }, 'Ligue as peças às medidas do pedido escrevendo uma fórmula que começa com "=" (nas medidas, quantidade, peso, furos ou borda). ',
+    h('p', { class: 'muted small' }, 'Ligue os itens às medidas do pedido escrevendo uma fórmula que começa com "=" (nas medidas, quantidade ou peso). ',
       'Campos entre chaves: ', campos.map((c) => h('code', null, `{${c.nome}}`)), '. Medidas em cm ou mm entram na fórmula já em metros. Ex.: ', h('code', null, '={Altura}'), ' · ', h('code', null, '={Largura} - 0.036'),
       ' · ', h('code', null, '=se({Tipo} == "2 portas"; 2; 1)'), ' · use ponto nos decimais e ; entre argumentos.'),
     soltos.length && comps.length ? h('div', { class: 'aviso' }, h('strong', null, 'Atenção: '), `${soltos.map((c) => c.nome).join(', ')} não ${soltos.length > 1 ? 'estão ligados' : 'está ligado'} a nenhuma peça. `,
@@ -176,13 +178,13 @@ export async function gerarComChecagem(args) {
   if (!c || !c.pendencias?.length) return abrirGerar(args);
   const resolver = (secao) => { estado.foco = secao; location.hash = '#/contorno'; };
   const lista = c.pendencias.slice(0, 6);
-  const fechar = modal(`Faltam ${c.pendencias.length} dado(s) da oficina`, h('div', null,
+  const fechar = modal(`Faltam ${c.pendencias.length} dado(s) do local de produção`, h('div', null,
     h('p', null, 'Sem eles, os passos afetados ficam "sem tempo" e o prazo real será maior do que o plano mostra.'),
     h('ul', { class: 'pend' }, lista.map((x) => h('li', null, x.texto, ' ',
-      h('button', { class: 'sm', onclick: () => { fechar(); resolver(x.secao); } }, `Preencher (${SECAO_ROTULO[x.secao] || 'Oficina'})`))),
+      h('button', { class: 'sm', onclick: () => { fechar(); resolver(x.secao); } }, `Preencher (${SECAO_ROTULO[x.secao] || 'Local de produção'})`))),
     c.pendencias.length > lista.length ? h('li', { class: 'muted' }, `e mais ${c.pendencias.length - lista.length}…`) : null)),
   { acoes: (f) => [h('button', { onclick: () => { f(); abrirGerar(args); } }, 'Gerar mesmo assim'),
-    h('button', { class: 'pri', onclick: () => { f(); resolver(c.pendencias[0].secao); } }, 'Preencher a oficina agora')] });
+    h('button', { class: 'pri', onclick: () => { f(); resolver(c.pendencias[0].secao); } }, 'Preencher o local de produção agora')] });
 }
 
 const isoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
@@ -216,6 +218,7 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     pess: entrada('number', cfg.pessoas ?? 1, { min: '1', step: '1' }),
     m1: entrada('time', bl[0][0]), m2: entrada('time', bl[0][1]), t1: entrada('time', bl[1][0]), t2: entrada('time', bl[1][1]),
     uteis: h('input', { type: 'checkbox', checked: cfg.so_dias_uteis ?? true }),
+    conf: h('input', { type: 'checkbox', checked: cfg.incluir_conferencia ?? true }),
     perfil: h('select', null, h('option', { value: '' }, 'Padrão'), perfis.map((x) => h('option', { value: x.id }, x.nome))),
   };
   if (cfg.perfil_id) f.perfil.value = cfg.perfil_id;
@@ -226,6 +229,7 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
     h('h3', null, 'Jornada de trabalho'),
     h('div', { class: 'row' }, h('div', null, h('label', null, 'Manhã: das'), f.m1), h('div', null, h('label', null, 'até'), f.m2), h('div', null, h('label', null, 'Tarde: das'), f.t1), h('div', null, h('label', null, 'até'), f.t2)),
     h('label', null, f.uteis, ' Trabalhar só de segunda a sexta'),
+    h('label', null, f.conf, ' Incluir conferência final de cada unidade'),
     h('h3', null, 'Quem vai fazer'),
     perfis.length ? h('div', null, h('label', null, 'Perfil da pessoa (ritmo e limites de carga)'), f.perfil, h('div', { class: 'muted small' }, '"Padrão" usa ritmo normal. Perfis são cadastrados em Configurações › Cadastros avançados (com detalhes técnicos ligados).')) : h('p', { class: 'muted small' }, 'Sem perfil cadastrado: o sistema usa o ritmo normal (100%) e os limites de carga padrão.'));
   modal(plano ? 'Recalcular plano' : `Plano de trabalho — ${produtoNome}`, corpo, { larga: true, acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
@@ -233,7 +237,7 @@ export async function abrirGerar({ produtoId, produtoNome, plano }) {
       const m = [[f.m1.value, f.m2.value], [f.t1.value, f.t2.value]].filter((b) => b[0] && b[1]);
       if (!m.length) return toast('Informe ao menos um bloco de horário.', true);
       const corpoReq = { produto_id: produtoId, unidade_id: estado.unidadeId, quantidade: Number(f.qtd.value) || 1, inicio: f.ini.value ? new Date(f.ini.value).toISOString() : null,
-        blocos: m, so_dias_uteis: f.uteis.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value),
+        blocos: m, so_dias_uteis: f.uteis.checked, incluir_conferencia: f.conf.checked, pessoas: Number(f.pess.value) || 1, perfil_id: num(f.perfil.value),
         especificacoes: espec.valores(), estrutura: pecas.valor() };
       e.target.disabled = true;
       const r = await tentar(() => (plano ? post(`/planos/${plano.id}/recalcular`, corpoReq) : post('/planos', corpoReq)));
@@ -316,8 +320,9 @@ function pecasDoPedido(est) {
   const f = (c, k) => (c.formulas?.[k] ? h('span', { class: 'form-c', title: `=${c.formulas[k]}` }, `${fmtNum(c[k], 4)} ƒ`) : fmtNum(c[k], 4));
   const nome = (n) => n || 'o conjunto';
   return h('div', null,
-    tabela([{ t: 'Peça', f: (c) => c.nome }, { t: 'Qtd.', f: (c) => f(c, 'quantidade') }, { t: 'Comp. (m)', f: (c) => f(c, 'comprimento_m') }, { t: 'Larg. (m)', f: (c) => f(c, 'largura_m') },
-      { t: 'Esp. (m)', f: (c) => f(c, 'espessura_m') }, { t: 'Peso (kg)', f: (c) => (c.peso_kg === null ? 'estimado' : f(c, 'peso_kg')) }, { t: 'Furos', f: (c) => f(c, 'furos') }], est.componentes),
+    tabela([{ t: 'Item', f: (c) => c.nome }, { t: 'Qtd.', f: (c) => f(c, 'quantidade') }, { t: 'Comp. (m)', f: (c) => f(c, 'comprimento_m') }, { t: 'Larg. (m)', f: (c) => f(c, 'largura_m') },
+      { t: 'Esp. (m)', f: (c) => f(c, 'espessura_m') }, { t: 'Peso (kg)', f: (c) => (c.peso_kg === null ? 'estimado' : f(c, 'peso_kg')) },
+      ...(atributoDoPacote('furos') ? [{ t: 'Furos', f: (c) => f(c, 'furos') }] : [])], est.componentes),
     est.ligacoes.length ? h('div', null, est.ligacoes.map((l) => h('div', { class: 'small muted' }, `${l.componente} → ${nome(l.ligado_a)} · ${rotMetodo(l.metodo)} · ${l.fixadores} un.${l.formula_fixadores ? ` ƒ =${l.formula_fixadores}` : ''}`))) : null,
     h('p', { class: 'muted small' }, 'ƒ = valor calculado pelas medidas do pedido (passe o mouse para ver a fórmula).'));
 }
@@ -360,7 +365,7 @@ export async function planoDetalhe(el, id) {
       : 'Este plano tem pendências (passos sem tempo). Confirmar mesmo assim? Esses passos ficarão "sem base" na ordem.', async () => {
       if (await tentar(() => post(`/planos/${id}/confirmar`), 'Plano confirmado.')) recarregar();
     }, 'Confirmar plano') }, 'Confirmar plano') : null,
-    estado.avancado && p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem de produção') : null,
+    p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem e medir o real') : null,
     p.ordem_id ? h('a', { class: 'btn big', href: `#/ordens/${p.ordem_id}` }, 'Abrir a ordem') : null,
     p.status === 'rascunho' ? h('button', { class: 'big', onclick: () => abrirGerar({ produtoId: p.produto_id, produtoNome: p.produto_nome, plano: p }) }, 'Recalcular') : null];
   const secundarias = [
@@ -382,7 +387,7 @@ export async function planoDetalhe(el, id) {
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
     p.estrutura?.componentes?.length ? detalhes('Peças deste pedido (como as medidas entraram)', pecasDoPedido(p.estrutura)) : null,
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
-      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher a Oficina'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
+      h('div', { class: 'inline noprint' }, h('a', { class: 'btn', href: '#/contorno' }, 'Preencher o local de produção'), h('a', { class: 'btn', href: `#/produtos/${p.produto_id}` }, 'Completar o produto'),
         p.status === 'rascunho' ? h('span', { class: 'muted small' }, 'Depois, use "Recalcular".') : null)) : null,
     unicos.length ? h('div', { class: 'card' }, h('h3', null, 'Atenção'), h('ul', null, unicos.map((a) => h('li', { class: a.categoria === 'seguranca' ? 'seg-l' : '' }, a.msg)))) : null,
     h('div', { class: 'card' }, h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['#', 'Passo', 'Começa', 'Tempo'].map((x) => h('th', null, x)))), h('tbody', null, linhas)))),

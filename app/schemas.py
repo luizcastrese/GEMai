@@ -29,9 +29,20 @@ class Out(BaseModel):
 
 
 # ------------------------------------------------------------------ auth
+def _pacote_ok(v: str) -> str:
+    from .services.modulos.catalogo import PACOTES_INFO
+    if v not in PACOTES_INFO:
+        raise ValueError(f"Pacote desconhecido: {v} (disponíveis: {', '.join(PACOTES_INFO)}).")
+    return v
+
+
+PacoteSegmento = Annotated[str, AfterValidator(_pacote_ok)]
+
+
 class RegistrarEmpresaIn(In):
     empresa_nome: Nome
     segmento: Annotated[str, Field(max_length=120)] = ""
+    pacotes: list[PacoteSegmento] | None = None  # None = sugeridos pelo segmento
     unidade_nome: Nome
     nome: Nome
     email: EmailStr
@@ -89,6 +100,9 @@ class EmpresaOut(Out):
     documento: str | None
     fuso: str
     permite_ia_externa: bool
+    pacotes: list[str] = []
+    pacotes_disponiveis: list[dict] = []  # pacotes de segmento: chave, título, atributos da peça que acrescentam
+    atributos_peca: list[dict] = []  # atributos da peça dos pacotes ATIVOS (a tela de produto mostra essas colunas)
     ia_disponivel: bool = False
     ia_provedor_ativo: str = "heuristica"
 
@@ -99,6 +113,7 @@ class EmpresaUpdate(In):
     documento: Annotated[str, Field(max_length=32)] | None = None
     fuso: Annotated[str, Field(max_length=64)] | None = None
     permite_ia_externa: bool | None = None
+    pacotes: list[PacoteSegmento] | None = Field(None, max_length=10)
 
 
 class UnidadeIn(In):
@@ -1200,6 +1215,8 @@ class PlanoGerarIn(In):
     so_dias_uteis: bool = True
     pessoas: int = Field(1, ge=1, le=50)
     perfil_id: int | None = None
+    # Conferência final por unidade: opcional (None = mantém a escolha do plano; padrão: incluir).
+    incluir_conferencia: bool | None = None
     fadiga_pct_hora: float = Field(0.0, ge=0, le=10, deprecated=True, description="OBSOLETO: ignorado (a fadiga por turno só entra quando aprendida dos dados).")
 
 

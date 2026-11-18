@@ -294,6 +294,8 @@ def _variante(ctx: Ctx, produto: Produto, dados, plano: PlanoTrabalho | None = N
 def _cfg(ctx: Ctx, dados: PlanoGerarIn, produto: Produto, plano: PlanoTrabalho | None = None) -> dict:
     return {"nome": dados.nome, "inicio": dados.inicio, "blocos": dados.blocos, "so_dias_uteis": dados.so_dias_uteis,
             "pessoas": dados.pessoas, "perfil_id": dados.perfil_id, "fadiga_ignorada": bool(dados.fadiga_pct_hora),
+            "incluir_conferencia": (dados.incluir_conferencia if dados.incluir_conferencia is not None
+                                    else bool((plano.config or {}).get("incluir_conferencia", True)) if plano is not None else True),
             **_variante(ctx, produto, dados, plano)}
 
 

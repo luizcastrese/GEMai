@@ -36,7 +36,7 @@ def _motivos_confianca_baixa(base, linhas: list[dict]) -> list[str]:
     genericos = sorted({c["chave"] for l in linhas for c in l["r"].coeficientes if c["status"] == "referencia_generica"})
     if genericos:
         motivos.append("Confiança baixa: o tempo usa coeficientes de referência genéricos do catálogo, ainda não calibrados com o histórico da "
-                       f"sua oficina ({', '.join(genericos[:4])}{'…' if len(genericos) > 4 else ''}).")
+                       f"seu local de produção ({', '.join(genericos[:4])}{'…' if len(genericos) > 4 else ''}).")
     ia_cap = sorted({l["rec"].nome for l in linhas if l["rec"] is not None and l["rec"].capacidade_origem == "ia"})
     if ia_cap:
         motivos.append("Confiança baixa: a capacidade de " + ", ".join(ia_cap) + " foi estimada pela IA, não medida.")
@@ -249,8 +249,12 @@ def propor(base: Base, quantidade: float):
                       "espaco": base.esp_id[r.espaco_id].nome if r.espaco_id in base.esp_id else None} for r in base.recursos],
         "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in base.espacos],
         "distancias": base.distancias, "pessoas": base.pessoas_cfg, "modulos": [m.resumo() for m in base.catalogo.values()],
+        "incluir_conferencia": base.cfg.get("incluir_conferencia", True),
     }
-    return ia.planejar(ctx.empresa, contexto)
+    proposta, prov, aviso = ia.planejar(ctx.empresa, contexto)
+    if not contexto["incluir_conferencia"]:  # a conferência é opcional: quem decide é o pedido, não a IA
+        proposta.passos = [p for p in proposta.passos if p.modulo != "conferencia"]
+    return proposta, prov, aviso
 
 
 def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cfg: int | None = None, fixar_recurso: bool = False) -> dict:

@@ -15,6 +15,10 @@ def _empresa_out(ctx: Ctx) -> EmpresaOut:
     o = EmpresaOut.model_validate(ctx.empresa)
     o.ia_disponivel = claude.disponivel()
     o.ia_provedor_ativo = ia.provedor_ativo(ctx.empresa)
+    from ..services.modulos.catalogo import PACOTES_INFO
+    o.pacotes = list(ctx.empresa.pacotes or [])
+    o.pacotes_disponiveis = [{"chave": k, "titulo": v["titulo"], "atributos_peca": v["atributos_peca"]} for k, v in PACOTES_INFO.items()]
+    o.atributos_peca = [a for k in o.pacotes if k in PACOTES_INFO for a in PACOTES_INFO[k]["atributos_peca"]]
     return o
 
 
@@ -34,7 +38,7 @@ def atualizar_empresa(dados: EmpresaUpdate, ctx: Ctx = Depends(get_ctx)):
     antes = audit.snap(ctx.empresa)
     for k, v in dados.model_dump(exclude_unset=True).items():
         if v is not None:
-            setattr(ctx.empresa, k, v)
+            setattr(ctx.empresa, k, list(dict.fromkeys(v)) if k == "pacotes" else v)
     ctx.auditar("empresa.atualizar", "empresa", ctx.empresa_id, antes, audit.snap(ctx.empresa))
     ctx.db.commit()
     return _empresa_out(ctx)

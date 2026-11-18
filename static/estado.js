@@ -23,4 +23,6 @@ export function escolherUnidade(id) {
   estado.unidadeId = Number(id);
   try { sessionStorage.setItem(KU, String(id)); } catch { /* ignore */ }
 }
+// Atributos de item que os PACOTES de segmento ativos acrescentam (ex.: marcenaria → furos, borda). Sem pacote, a tela não mostra.
+export const atributoDoPacote = (campo) => (estado.empresa?.atributos_peca || []).some((a) => a.campo === campo);
 export const unidadeAtual = () => estado.unidades.find((u) => u.id === estado.unidadeId);

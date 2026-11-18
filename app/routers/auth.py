@@ -46,7 +46,9 @@ def registrar(dados: RegistrarEmpresaIn, request: Request, db: Session = Depends
     email = dados.email.lower()
     if db.scalar(select(Usuario.id).where(Usuario.email == email)):
         raise HTTPException(409, "Este e-mail já está cadastrado.")
-    emp = Empresa(nome=dados.empresa_nome, segmento=dados.segmento)
+    from ..services.modulos.catalogo import pacotes_para_segmento
+    emp = Empresa(nome=dados.empresa_nome, segmento=dados.segmento,
+                  pacotes=list(dados.pacotes) if dados.pacotes is not None else pacotes_para_segmento(dados.segmento))
     db.add(emp)
     db.flush()
     uni = Unidade(empresa_id=emp.id, nome=dados.unidade_nome)

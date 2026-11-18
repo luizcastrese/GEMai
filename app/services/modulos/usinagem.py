@@ -99,19 +99,19 @@ def _furacao(e: EntradaModulo) -> Montagem:
 _P_PECAS = ParametroModulo("pecas", "un", "Nº de peças do passo", "produto")
 
 CORTE = Modulo(
-    chave="corte", titulo="Corte", tipo_passo="corte", unidade_contagem="peca", precisa_recurso=True, versao=1,
+    chave="corte", titulo="Corte", tipo_passo="corte", unidade_contagem="peca", precisa_recurso=True, versao=1, ordem=10,
     descricao="Corte de painéis em equipamento cadastrado (tempo de máquina = metros de corte ÷ avanço).",
     parametros=(_P_PECAS, ParametroModulo("comp", "m", "Comprimento das peças", "produto"),
                 ParametroModulo("larg", "m", "Largura das peças", "produto"),
                 ParametroModulo("esp", "m", "Espessura (confere o limite do equipamento)", "produto", obrigatorio=False, efeito_no_tempo=False),
                 ParametroModulo("avanco_corte_m_min", "m/min", "Avanço de corte (ficha técnica)", "meio")), montar=_corte)
 BORDO = Modulo(
-    chave="bordo", titulo="Colagem de borda", tipo_passo="bordo", unidade_contagem="peca", precisa_recurso=True, versao=1,
+    chave="bordo", titulo="Colagem de borda", tipo_passo="bordo", unidade_contagem="peca", precisa_recurso=True, versao=1, ordem=20,
     descricao="Colagem de borda em coladeira cadastrada (tempo de máquina = metros de borda ÷ velocidade).",
     parametros=(_P_PECAS, ParametroModulo("bordas_m", "m", "Metros de borda por peça", "produto"),
                 ParametroModulo("velocidade_bordo_m_min", "m/min", "Velocidade de alimentação (ficha técnica)", "meio")), montar=_bordo)
 FURACAO = Modulo(
-    chave="furacao", titulo="Furação", tipo_passo="furacao", unidade_contagem="peca", precisa_recurso=True, versao=1,
+    chave="furacao", titulo="Furação", tipo_passo="furacao", unidade_contagem="peca", precisa_recurso=True, versao=1, ordem=30,
     descricao="Furação em furadeira cadastrada (ciclos = furos ÷ cabeçotes; tempo do ciclo = curso ÷ avanço).",
     parametros=(_P_PECAS, ParametroModulo("furos", "un", "Furos por peça", "produto"),
                 ParametroModulo("cabecotes_furacao", "un", "Cabeçotes (ficha técnica)", "meio"),

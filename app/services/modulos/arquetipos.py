@@ -108,6 +108,8 @@ class EspecModulo(BaseModel):
     preparacao: Literal["maquina", "posto", "nenhuma"] = "nenhuma"
     acoes: list[AcaoManual] = Field(default_factory=list, max_length=12)  # manual: por unidade do driver; processamento: manuseio por peça
     premissas: list[str] = Field(default_factory=list, max_length=10)
+    # posição padrão no roteiro: 1–59 antes da montagem (10 corte, 20 borda, 30 furação), 61–89 depois dela, antes da conferência (90)
+    ordem: int = Field(40, ge=2, le=89)
 
     @field_validator("chave")
     @classmethod
@@ -264,7 +266,7 @@ def construir(espec: EspecModulo, versao: int = 1) -> Modulo:
     return Modulo(chave=espec.chave, titulo=espec.titulo, tipo_passo=espec.tipo_passo, unidade_contagem=espec.unidade_contagem,
                   parametros=tuple(params), montar=lambda e: montar_por_espec(espec, e), versao=versao, precisa_recurso=precisa,
                   descricao=espec.descricao or espec.titulo, arquetipo=espec.arquetipo, funcao_meio=espec.funcao_meio,
-                  pacote="empresa", driver=espec.driver)
+                  pacote="empresa", driver=espec.driver, ordem=espec.ordem)
 
 
 def vocabulario() -> dict:

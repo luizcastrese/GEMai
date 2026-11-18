@@ -18,11 +18,19 @@ from .base import Modulo
 
 log = logging.getLogger("erp.modulos")
 
-# Pacote "marcenaria" (v1): o primeiro pacote, usado na validação de campo. Os números ficam congelados por testes de regressão.
+# Pacote "base": vale para qualquer segmento (levar itens entre locais, montar, conferir). Pacote "marcenaria" (v1): o primeiro
+# pacote de segmento, usado na validação de campo; os números ficam congelados por testes de regressão.
 PACOTES: dict[str, dict[str, Modulo]] = {
-    "marcenaria": {m.chave: m for m in (movimentacao.MODULO, usinagem.CORTE, usinagem.BORDO, usinagem.FURACAO, montagem.MODULO,
-                                        conferencia.MODULO)},
+    "base": {m.chave: m for m in (movimentacao.MODULO, montagem.MODULO, conferencia.MODULO)},
+    "marcenaria": {m.chave: m for m in (usinagem.CORTE, usinagem.BORDO, usinagem.FURACAO)},
 }
+# O que cada pacote de SEGMENTO acrescenta além das atividades: atributos da peça que ele usa e palavras que o reconhecem no segmento.
+PACOTES_INFO: dict[str, dict] = {
+    "marcenaria": {"titulo": "Marcenaria e móveis", "atributos_peca": [{"campo": "furos", "rotulo": "Furos", "unidade": "un"},
+                                                                       {"campo": "bordas_m", "rotulo": "Borda", "unidade": "m"}],
+                   "palavras": ("marcen", "movel", "moveis", "madeira", "carpint", "planejado")},
+}
+PACOTES_SEGMENTO = tuple(PACOTES_INFO)
 CATALOGO: dict[str, Modulo] = {k: m for p in PACOTES.values() for k, m in p.items()}  # embutidos
 CHAVES = tuple(CATALOGO)
 CHAVE_PATTERN = r"^[a-z][a-z0-9_]{1,29}$"
@@ -52,23 +60,47 @@ def modulo_de_linha(row) -> Modulo | None:
         return None
 
 
+def pacotes_para_segmento(segmento: str) -> list[str]:
+    """Pacotes de segmento sugeridos pelo texto do segmento (o usuário pode mudar em Configurações)."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", segmento or "").encode("ascii", "ignore").decode().lower()
+    return [k for k, info in PACOTES_INFO.items() if any(p in s for p in info["palavras"])]
+
+
+def pacotes_da_empresa(db: Session | None, empresa_id: int | None) -> list[str]:
+    if db is None or empresa_id is None:
+        return list(PACOTES_SEGMENTO)
+    from ...models import Empresa
+    emp = db.get(Empresa, empresa_id)
+    return [p for p in (emp.pacotes if emp is not None and emp.pacotes is not None else []) if p in PACOTES_INFO]
+
+
+def embutidos(pacotes: list[str]) -> dict[str, Modulo]:
+    out = dict(PACOTES["base"])
+    for p in pacotes:
+        out.update(PACOTES.get(p, {}))
+    return out
+
+
 def da_empresa(db: Session | None, empresa_id: int | None) -> dict[str, Modulo]:
-    """Catálogo efetivo da empresa: embutidos + módulos validados (um módulo da empresa NÃO substitui um embutido)."""
-    out = dict(CATALOGO)
+    """Catálogo efetivo da empresa: pacote base + pacotes de segmento ATIVOS + módulos validados (um módulo da empresa NÃO
+    substitui um embutido). Ordenado pela posição padrão no roteiro."""
+    out = embutidos(pacotes_da_empresa(db, empresa_id))
     for r in modulos_da_empresa(db, empresa_id):
-        if r.chave in out:
+        if r.chave in out or r.chave in CATALOGO:
             continue
         m = modulo_de_linha(r)
         if m is not None:
             out[r.chave] = m
-    return out
+    return dict(sorted(out.items(), key=lambda kv: (kv[1].ordem, kv[0])))
 
 
 def obter(chave: str, db: Session | None = None, empresa_id: int | None = None) -> Modulo | None:
-    if chave in CATALOGO:
-        return CATALOGO[chave]
-    if not chave or db is None:
+    """Com `db`, só o que está no catálogo DA EMPRESA; sem `db`, qualquer módulo embutido (uso interno/histórico)."""
+    if not chave:
         return None
+    if db is None:
+        return CATALOGO.get(chave)
     return da_empresa(db, empresa_id).get(chave)
 
 

@@ -56,7 +56,16 @@ export async function empresa(el) {
       ajuda: e.ia_disponivel ? 'Se desmarcado, a IA usa apenas regras locais e nenhum dado sai do sistema. Dados enviados: descrição da operação, respostas do diagnóstico e indicadores agregados (nunca senhas, e-mails ou documentos).' : 'Este servidor não tem chave de IA externa configurada; a IA usa regras locais.' }], e);
   const uni = await get('/unidades');
   const fu = formulario([{ k: 'nome', rotulo: 'Nome da nova unidade' }]);
-  montar(el, h('h2', null, 'Empresa e unidades'),
+  // Pacotes de segmento: atividades prontas e dados de item de um segmento (ex.: marcenaria → corte, borda, furação; furos e borda).
+  const marcados = new Set(e.pacotes || []);
+  const pacotes = h('div', { class: 'card' }, h('h2', null, 'Pacotes de atividades prontas'),
+    h('p', { class: 'muted small' }, 'Levar itens, montar e conferir valem para qualquer produção. Um pacote acrescenta as atividades e os dados de item de um segmento. O que faltar, você cria em Atividades.'),
+    (e.pacotes_disponiveis || []).map((p) => h('label', { class: 'inline' }, h('input', { type: 'checkbox', checked: marcados.has(p.chave),
+      onchange: async (ev) => {
+        if (ev.target.checked) marcados.add(p.chave); else marcados.delete(p.chave);
+        if (await tentar(() => patch('/empresa', { pacotes: [...marcados] }), 'Pacotes atualizados.')) { await carregarBase(); empresa(el); }
+      } }), ` ${p.titulo}`, p.atributos_peca.length ? h('span', { class: 'muted small' }, ` (dados do item: ${p.atributos_peca.map((a) => a.rotulo.toLowerCase()).join(', ')})`) : null)));
+  montar(el, h('h2', null, 'Empresa e unidades'), pacotes,
     h('div', { class: 'card' }, f.el, h('p', { class: 'small muted' }, `Provedor de IA ativo: ${e.ia_provedor_ativo}`), h('p', null, h('button', { class: 'pri', onclick: async () => {
       if (await tentar(() => patch('/empresa', f.valores()), 'Empresa atualizada.')) { await carregarBase(); empresa(el); }
     } }, 'Salvar'))),
