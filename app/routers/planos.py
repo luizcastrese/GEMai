@@ -400,6 +400,17 @@ def confirmar(pid: int, abrir_pedido: bool = Query(False), ctx: Ctx = Depends(ge
     return _plano_out(ctx, p)
 
 
+@router.get("/planos/{pid}/ciclo")
+def ciclo_do_plano(pid: int, alternativas: bool = Query(False), ctx: Ctx = Depends(get_ctx)):
+    """O que o real mostrou: diagnóstico do pedido por etapa, leitura de cada atividade (corrigir o PADRÃO ou o FLUXO) e, se for o
+    fluxo, ajustes de método (ECRS). Com `alternativas`, recalcula equipe, lotes e meio pelo motor. Não grava nada."""
+    from ..services import ciclo
+    p = _plano(ctx, pid)
+    if alternativas:
+        limite_ia.checar(f"{ctx.empresa_id}")
+    return ciclo.ciclo_do_plano(ctx, p, ctx.obter(Produto, p.produto_id), alternativas=alternativas)
+
+
 @router.post("/planos/{pid}/prazo", response_model=PrazoOut)
 def responder_prazo(pid: int, dados: PrazoIn, ctx: Ctx = Depends(get_ctx)):
     """"Cabe até esta data?" Só calcula (não grava): usa os tempos e a jornada do plano."""

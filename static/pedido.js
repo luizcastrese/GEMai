@@ -1,6 +1,6 @@
 // Pedido em dois toques e o valor do trabalho, na língua do dono do negócio.
 // "Comecei" / "Terminei" (ou "Levei X horas") mede o pedido inteiro; o sistema distribui pelos passos e aprende com isso.
-import { post } from './api.js';
+import { get, post } from './api.js';
 import { estado } from './estado.js';
 import { fmtData, fmtMin, fmtNum, h, modal, montar, tentar, toast } from './ui.js';
 
@@ -71,3 +71,43 @@ export function cartaoValor(p) {
 }
 
 export const temValorHora = () => !!estado.empresa?.valor_hora;
+
+// "O que o real mostrou": corrigir o PADRÃO (calibrar) ou o FLUXO (ajustar o jeito de fazer), e as alternativas recalculadas.
+const ACAO = { corrigir_fluxo: 'Ajustar o fluxo', corrigir_padrao: 'Ajustar o tempo', manter: 'Seguindo o padrão', medir_mais: 'Medir mais', medir_passo_a_passo: 'Medir passo a passo' };
+
+export function cartaoCiclo(p, c) {
+  const alt = h('div');
+  const d = c.decisao;
+  const ped = c.pedido;
+  const gerarAjustado = async (escolha) => {
+    const cfg = p.config || {};
+    const corpo = { produto_id: p.produto_id, unidade_id: p.unidade_id, quantidade: p.quantidade, especificacoes: p.especificacoes || {},
+      blocos: cfg.blocos || undefined, so_dias_uteis: cfg.so_dias_uteis ?? true, perfil_id: cfg.perfil_id ?? null, escolha };
+    const r = await tentar(() => post('/planos/de-arranjo', corpo), 'Plano ajustado gerado. Confirme e meça o próximo pedido.');
+    if (r) location.hash = `#/planos/${r.id}`;
+  };
+  const verAlternativas = async (ev) => {
+    ev.target.disabled = true;
+    const r = await tentar(() => get(`/planos/${p.id}/ciclo?alternativas=true`));
+    ev.target.disabled = false;
+    if (!r) return;
+    montar(alt, r.alternativas.length ? h('div', null, h('p', { class: 'small muted' }, 'Calculadas pelo mesmo motor do plano (equipe, lotes, meio de movimentação):'),
+      r.alternativas.map((x) => h('div', { class: 'lig' }, h('span', null, h('strong', null, x.principio), ` · ${x.rotulo}: termina em ${fmtMin(x.prazo_min)}, ${fmtNum(x.pessoas_hora, 1)} h de trabalho`),
+        x.principio === 'Atual' ? null : h('button', { class: 'sm', onclick: () => gerarAjustado(x.escolha) }, 'Gerar plano assim'))))
+      : h('p', { class: 'muted small' }, 'Sem alternativa de equipe, lotes ou meio que o motor consiga calcular com os dados atuais.'));
+  };
+  return h('div', { class: 'card ciclo noprint' },
+    h('h2', null, 'O que o real mostrou'),
+    ped && ped.medido ? h('p', null, `Previsto ${fmtMin(ped.previsto_min)} · levou ${fmtMin(ped.realizado_min)}`,
+      ped.desvio_pct !== null ? ` (${ped.desvio_pct > 0 ? '+' : ''}${fmtNum(ped.desvio_pct, 0)}%)` : '', ped.forma === 'total' ? ' · medido no total' : ' · medido passo a passo') : null,
+    h('p', { class: 'big-txt' }, h('strong', null, `${ACAO[d.acao] || d.acao}: `), d.texto),
+    d.acao === 'corrigir_padrao' ? h('a', { class: 'btn pri', href: '#/calibracao' }, 'Ajustar meus tempos') : null,
+    c.sugestoes.length ? h('div', null, h('h3', null, 'Como ajustar o jeito de fazer'),
+      h('ul', null, c.sugestoes.map((s) => h('li', null, h('strong', null, `${s.principio}: `), s.texto, h('span', { class: 'muted small' }, ` (${s.etapa})`)))),
+      h('p', { class: 'muted small' }, 'Depois de ajustar, meça o próximo pedido: o ciclo mostra se voltou ao padrão.'),
+      h('button', { onclick: verAlternativas }, 'Ver alternativas recalculadas'), alt) : null,
+    c.atividades.length ? h('details', { class: 'det' }, h('summary', null, 'Leitura de cada atividade'),
+      h('ul', null, c.atividades.map((a) => h('li', { class: 'small' }, h('strong', null, `${a.etapa}: `), a.texto,
+        a.pedidos ? h('span', { class: 'muted' }, ` · ${a.pedidos} pedido(s)${a.desvio_tipico_pct !== null ? `, desvio típico ${a.desvio_tipico_pct > 0 ? '+' : ''}${fmtNum(a.desvio_tipico_pct, 1)}%` : ''}`) : null))),
+      h('p', { class: 'muted small' }, c.metodo)) : null);
+}

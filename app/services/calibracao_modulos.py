@@ -269,6 +269,12 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
                          f"a mediana observada é × {mediana:.2f}).")
         if descartadas:
             notas.append(f"{descartadas} registro(s) muito fora do padrão foram desconsiderados (identificador de Hampel).")
+        if not (n_total and n_total * 2 >= len(xs)) and len(xs) >= 3:
+            from . import ciclo  # leitura padrão × fluxo (import local: ciclo usa este módulo)
+            leitura = ciclo.classificar(xs, n_total)
+            if leitura["leitura"] == "corrigir_fluxo":
+                notas.append("Atenção: o desvio varia muito de pedido a pedido; parece ser o FLUXO, não o padrão. Antes de aplicar, veja "
+                             "«O que o real mostrou» no plano: calibrar agora esconderia o problema.")
         if n_total and n_total * 2 >= len(xs):
             notas.append("A maior parte dos registros foi apontada no total do pedido: o fator mostra o nível geral, não esta atividade isolada.")
         sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta,

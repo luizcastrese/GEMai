@@ -75,7 +75,7 @@ sequência de movimentos das ações manuais; **não escreve tempo**. Uma pessoa
 clássica do estudo de tempos (tempo normal, tolerâncias, tempo padrão), com tempos de máquina derivados de parâmetros técnicos,
 elementos manuais por sequências de movimento e tolerâncias por fontes plugáveis (OIT, NIOSH, Murrell). Os tempos reais apontados na
 execução são contrastados com os planejados e alimentam uma **calibração por atividade e por produto**, validada por uma pessoa e
-testada com dados reservados. O sistema conta com 346 testes automatizados; a validação de campo está planejada em uma marcenaria,
+testada com dados reservados. O sistema conta com 357 testes automatizados; a validação de campo está planejada em uma marcenaria,
 primeiro pacote de atividades. Discutem-se a generalidade do método, a convergência entre o sistema proposto e o implementado e as
 limitações do piloto.
 
@@ -211,6 +211,13 @@ ferramentas adicionais: o **identificador de Hampel** (Hampel, 1974), que descar
 Longley-Cook, 1962), em que a estimativa com n observações recebe peso Z = √(n ÷ n_completo) contra o valor de partida, chegando a 1
 no tamanho de amostra considerado suficiente `[VERIFICAR as duas fontes]`.
 
+### 5.8.0 Padrão ou processo: causas comuns e especiais
+No controle estatístico de processo (Shewhart, 1931; Montgomery, 2009) `[VERIFICAR]`, a variação de **causa comum** é estável e
+previsível; a de **causa especial** é irregular e aponta um problema no processo. O Tempora usa essa distinção para fechar o ciclo
+entre **medida do trabalho** e **estudo de métodos**: se o real se afasta do tempo padrão de forma **estável**, o padrão é que está
+errado (corrige-se o padrão, calibrando); se se afasta de forma **irregular** ou concentrada em uma etapa, o processo saiu do método
+(corrige-se o **fluxo** pelo ECRS: eliminar, combinar, reorganizar, simplificar; Barnes, 1980) e o padrão continua sendo a meta.
+
 ### 5.8.1 Custeio padrão da mão de obra
 O tempo padrão é a base do **custo padrão** da mão de obra: horas-homem padrão × taxa horária (Martins, 2003) `[VERIFICAR]`. O Tempora
 usa a taxa que o próprio dono informa ("quanto quer ganhar por hora") e mostra o resultado como **valor mínimo da mão de obra**, sem
@@ -240,6 +247,7 @@ Princípio: todo componente tem **fonte na literatura ou medição da empresa**.
 | 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmo pré-requisito de dados do item 15 |
 | 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos (3, 5, 10, 8); abaixo do mínimo, proposta **preliminar** com credibilidade Z = √(n/10) em vez de nada |
 | 26 | Robustez a registros absurdos | Identificador de Hampel sobre ln(razão) antes da mediana | Hampel (1974) | `[IMPLEMENTADO]` | — |
+| 28 | Corrigir o padrão ou o fluxo | Desvio estável → padrão (calibração); irregular ou concentrado → fluxo (ECRS), com alternativas recalculadas | Shewhart; Barnes (ECRS) | `[IMPLEMENTADO]` | Limiares (±10 %, s = 0,15, 60 % do excesso) são escolhas do projeto |
 | 27 | Medição do pedido no total | Tempo corrido total distribuído pelo previsto de cada passo; rotulado; informa só o nível geral | Premissa do projeto (declarada) | `[IMPLEMENTADO]` | Não separa o erro de cada atividade: a calibração avisa |
 | 18 | Fadiga ao longo do turno | Aprendida de dados reais | — | `[NÃO IMPLEMENTADO]` | Fora do cálculo, declarado |
 | 19 | Jornada e agenda | Blocos, intervalos, dias úteis e **feriados** | CLT arts. 58, 59, 71 | `[PARCIAL]` | Sem feriados |
@@ -280,7 +288,7 @@ relatório previsto × realizado por variante; auditoria.
 - **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
 - **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
 - **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
-- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 30 entidades, 133 *endpoints*, 346 testes.
+- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 30 entidades, 134 *endpoints*, 357 testes.
 
 ```
  navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
@@ -296,7 +304,7 @@ app/            API (routers/), regras (services/), IA (services/ia/), modelos e
   services/arranjo/      recomendação de arranjo
 static/         interface web
 migrations/     Alembic
-tests/          pytest (346 testes)
+tests/          pytest (357 testes)
 ```
 
 ### 6.4 Modelo de dados (principais entidades, `app/models.py`)
@@ -349,6 +357,9 @@ Entrar → Início
   distribuído pelos passos na proporção do previsto e rotulado como medido "no total". Em equipe de até 2 pessoas o registro já vale;
   acima disso, outra pessoa confere (dois olhos). Quem quer detalhe usa a fila passo a passo (detalhes técnicos). **Ajustar meus
   tempos** (calibração) mostra propostas, inclusive **preliminares** com poucos pedidos; a pessoa aplica ou ignora.
+- **O que o real mostrou.** Depois que o pedido é medido, o plano diz se o ajuste é no **tempo** (padrão) ou no **jeito de fazer**
+  (fluxo), aponta a etapa crítica, sugere ajustes de método e mostra alternativas recalculadas pelo motor (equipe, lotes, meio), com
+  um toque para **gerar o plano ajustado**. O ciclo recomeça no próximo pedido.
 - **Prazo e valor.** Cada plano mostra "fica pronto em…", o **valor mínimo da mão de obra** (horas-homem × valor da hora informado em
   Configurações) e um botão que copia a **mensagem para o cliente** (WhatsApp).
 - **6. Relatório.** Previsto × realizado por produto e variante, com desvio e planilha.
@@ -519,6 +530,22 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
   Se um fator geral não melhora o erro, a proposta avisa.
 - **Governança:** a prévia não grava; registrar cria **proposta pendente**; só uma pessoa a **valida** (validado + vigente, versionado). Precedência no cálculo: família validada > fator geral validado > coeficientes genéricos.
 
+### 7.8.1 Ciclo padrão ↔ fluxo (`services/ciclo.py`, `GET /planos/{id}/ciclo`)  `[IMPLEMENTADO]`
+É o elo que fecha o "Lego": **compor → calcular o padrão → executar → medir → corrigir o padrão OU o fluxo → medir de novo**.
+- **Diagnóstico do pedido:** previsto (tempo padrão da ordem) × realizado (tempo corrido aprovado), por etapa. No pedido medido passo a
+  passo, a etapa que responde por **≥ 60 % do excesso** é a **etapa crítica**. Medido no total, o diagnóstico só dá o nível geral.
+- **Leitura de cada atividade** (pedidos medidos na unidade, após o filtro de Hampel): desvio típico `d = mediana(ln r)` e
+  variabilidade `s = 1,4826 · MAD(ln r)`, com `r = realizado ÷ previsto`. `|d| ≤ ln 1,10` → no padrão; `s ≤ 0,15` e fora de ±10 % →
+  **corrigir o padrão**; `s > 0,15` e `d > ln 1,10` → **corrigir o fluxo**; poucos pedidos ou abaixo do padrão e instável → medir mais;
+  maioria medida no total → nível geral. **Os limiares (±10 % e 0,15) são escolhas do projeto**, declaradas.
+- **Decisão:** etapa crítica no pedido ou atividade irregular → **ajustar o fluxo**; desvio estável → **ajustar o tempo** (calibração);
+  tudo dentro de ±10 % → manter. Quando a leitura é "fluxo", a proposta de calibração **avisa** que calibrar esconderia o problema.
+- **Ajustes de método (ECRS) por tipo de etapa:** deslocamento (levar direto, aproximar locais, mais itens por viagem), equipamento
+  (juntar pedidos para preparar uma vez, separar o preparo, conferir a velocidade real), manual (balancear entre pessoas, itens ao
+  alcance, gabarito), espera (adiantar outra etapa), inspeção (conferir durante, não só no fim). São para verificar no local.
+- **Alternativas recalculadas:** equipe, lotes e meio de movimentação avaliados pelo **mesmo motor** (arranjo com recursos limitados);
+  o dono escolhe e **gera o plano ajustado**, que vira o novo padrão do próximo pedido.
+
 ### 7.9 Agenda e prazo (`plano.py`)
 - **Roteiro:** os passos seguem a posição padrão das atividades (7.4); a **conferência final é opcional** por pedido (o recálculo mantém a escolha).
 - **Agendamento sequencial:** cada passo começa no primeiro instante de trabalho após o anterior (13:00 depois do almoço; 08:00 do dia útil seguinte), respeitando blocos de horário (padrão 08–12 e 13–17) e só dias úteis; não há feriados.
@@ -593,7 +620,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 ## 10. Verificação e validação
 
 ### 10.1 Testes automatizados `[IMPLEMENTADO]`
-**346 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+**357 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
 
 | Arquivo(s) | O que verifica |
 |---|---|
@@ -605,6 +632,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 | `test_capacidade_ia`, `test_simples`, `test_variantes_relatorio` | IA com resposta simulada, fluxo simples, relatório |
 | `test_infra_deploy` | configuração de produção e migrações |
 | `test_modulos_empresa` | módulos da empresa por necessidade (IA delimita, pessoa valida), arquétipos, atributos livres, regressão da marcenaria |
+| `test_ciclo` | leitura padrão × fluxo, etapa crítica, ECRS, alternativas recalculadas, aviso na calibração |
 | `test_piloto` | pedido em dois toques, preço pela hora, Hampel, credibilidade parcial, indicadores do piloto |
 | `test_fluxo_geral` | pacotes por empresa, roteiro pela posição padrão, conferência opcional, checagem do local pelas atividades |
 
@@ -635,7 +663,9 @@ de 2 segmentos (marcenaria como caso principal; um segundo segmento sem pacote p
    (a) QP3: tempo do cadastro ao primeiro plano; planos completos; fração dos pedidos abertos que foram medidos;
    (b) QP2: erro típico previsto × realizado nos pedidos **sem** e **com** ajuste validado (e a evolução pedido a pedido);
    (c) QP4: atividades propostas pela IA validadas sem edição, com edição ou rejeitadas; atividades que couberam em um arquétipo;
-   (d) uso do resultado: "você usaria o prazo e o valor sugeridos?" (sim / não / ajustado), perguntado ao fim de cada pedido.
+   (d) uso do resultado: "você usaria o prazo e o valor sugeridos?" (sim / não / ajustado), perguntado ao fim de cada pedido;
+   (e) ciclo padrão ↔ fluxo: quantas leituras deram padrão, fluxo ou manter; quando o dono ajustou o fluxo, se o pedido seguinte
+   voltou para dentro de ±10 % do padrão (efeito do ajuste de método).
 4. **Barreiras como resultado:** onde o dono travou, o que não entendeu, o que se recusou a informar, quantos pedidos esqueceu de
    medir. Registrar em diário de campo.
 5. **Ameaças à validade:** poucos pedidos por negócio (mitigado pela credibilidade parcial, mas declarado); medição no total só informa
@@ -684,7 +714,7 @@ estatísticos do capítulo de resultados.
 | 10 | ~~Catálogo acoplado à marcenaria~~ **corrigido**: pacotes por empresa (base + segmento), atividades da empresa sobre arquétipos, atributos livres, IA delimitando atividades, roteiro pela posição padrão, checagem pelas atividades em uso (6.6, 7.4) | `arquetipos.py`, `catalogo.py`, `routers/modulos.py`, `contorno.py` | Os seis módulos embutidos ainda são código (congelados por teste) | Seção 12.2 |
 
 ### 11.3 Outras limitações
-README anterior citava 306 testes (hoje 346). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+README anterior citava 306 testes (hoje 357). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
 
 ---
 
@@ -813,7 +843,7 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 - **Convenções de tempo:** realizado = preparação + execução + retrabalho (soma bruta dos apontamentos); total = realizado + espera; desvio = realizado − estimado (positivo = demorou mais); eficiência = estimado ÷ realizado.
   **Atenção:** o previsto do plano é **tempo padrão** (com tolerâncias), e o realizado é tempo bruto: trabalhar exatamente no tempo normal aparece como desvio negativo. A calibração compara tempo **normal** observado com o previsto.
 
-### Apêndice D — Mapa de endpoints (133 rotas)
+### Apêndice D — Mapa de endpoints (134 rotas)
 | Área | Rotas principais |
 |---|---|
 | Autenticação e equipe | `/auth/registrar`, `/auth/login`, `/auth/renovar`, `/auth/eu`, `/usuarios` |
@@ -825,6 +855,7 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 | Módulos e modelo | `/modulos`, `/operacoes/{id}/estimativa`, `/modulo/sugerir`, `/modelo-tempo`, `/ergonomia`, `/processos/{id}/prontidao` |
 | Pedido em dois toques | `POST /ordens/{id}/comecar`, `POST /ordens/{id}/terminar` (`horas` opcional), `POST /planos/{id}/confirmar?abrir_pedido=true` |
 | Indicadores do piloto | `GET /pesquisa/indicadores`, `GET /pesquisa/pedidos.csv` |
+| Ciclo padrão ↔ fluxo | `GET /planos/{id}/ciclo` (`alternativas=true` recalcula equipe, lotes e meio) |
 | Execução | `/ordens`, `/operador/fila`, `/apontamentos` (iniciar, finalizar, aprovar, rejeitar, anular), `/ocorrencias` |
 | Calibração | `/calibracao/modulos` (prévia, aplicar, validar, rejeitar), `/pessoas/calibrar-ritmo` |
 | Análise | `/relatorios/desempenho(.csv)`, `/dashboard`, `/analise/comparacao`, `/auditoria` |
@@ -857,6 +888,8 @@ LONGLEY-COOK, L. H. An introduction to credibility theory. **Proceedings of the 
 
 MARTINS, E. **Contabilidade de custos**. 9. ed. São Paulo: Atlas, 2003. `[VERIFICAR]`
 
+MONTGOMERY, D. C. **Introduction to statistical quality control**. 6. ed. Hoboken: Wiley, 2009. `[VERIFICAR]`
+
 MOWBRAY, A. H. How extensive a payroll exposure is necessary to give a dependable pure premium? **Proceedings of the Casualty Actuarial Society**, v. 1, p. 24–30, 1914. `[VERIFICAR]`
 
 BRASIL. **Decreto-Lei nº 5.452, de 1º de maio de 1943** (Consolidação das Leis do Trabalho), arts. 58, 59, 71, 198, 390 e 405.
@@ -886,6 +919,8 @@ McATAMNEY, L.; CORLETT, E. N. RULA: a survey method for the investigation of wor
 MURRELL, K. F. H. **Ergonomics: man in his working environment**. London: Chapman and Hall, 1965.
 
 NIEBEL, B. W.; FREIVALDS, A. **Methods, standards, and work design**. 11. ed. New York: McGraw-Hill, 2003.
+
+SHEWHART, W. A. **Economic control of quality of manufactured product**. New York: Van Nostrand, 1931. `[VERIFICAR]`
 
 SEN, P. K. Estimates of the regression coefficient based on Kendall's tau. **Journal of the American Statistical Association**, v. 63, n. 324, p. 1379–1389, 1968.
 
