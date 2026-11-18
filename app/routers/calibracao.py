@@ -44,7 +44,7 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
     for sg in sugestoes:
         vig = svc.vigente_exato(ctx.db, ctx.empresa_id, sg.unidade_id, sg.modulo, sg.produto_id)
         proposta_id = None
-        if dados.aplicar and sg.status == "sugerido":
+        if dados.aplicar and sg.status in ("sugerido", "preliminar"):
             chave = _mesma_chave(sg.unidade_id, sg.modulo, sg.produto_id)
             for ant in ctx.db.scalars(select(CalibracaoModulo).where(
                     CalibracaoModulo.empresa_id == ctx.empresa_id, CalibracaoModulo.status == "pendente", *chave)):
@@ -71,6 +71,7 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
             porte_min=sg.porte_min, porte_max=sg.porte_max, erro_sem_pct=sg.erro_sem_pct, erro_constante_pct=sg.erro_constante_pct,
             erro_com_pct=sg.erro_com_pct, nota=sg.nota, amostras=sg.amostras, minimo=sg.minimo,
             mediana_bruta=sg.mediana_bruta, fator_sugerido=sg.fator, limitado=sg.limitado, status=sg.status,
+            descartadas=sg.descartadas, credibilidade=sg.credibilidade, total_do_pedido=sg.total_do_pedido,
             vigente=svc.como_dict(vig, vig.porte_ref if vig else None), proposta_id=proposta_id))
     ctx.db.commit()
     return CalibrarModulosOut(aplicado=dados.aplicar, aviso=AVISO, propostas=criadas, modulos=linhas,

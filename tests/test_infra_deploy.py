@@ -38,7 +38,7 @@ def test_fluxo_simplificado_e_o_padrao_do_front(client):
     assert "['Do produto ao plano', '3. Local de produção'" in appjs
     assert "['Do produto ao plano', '4. Planos de trabalho'" in appjs
     assert "['Medir e melhorar', 'Minha fila', '#/fila']" in appjs  # sem a marca de "detalhes técnicos"
-    assert "['Medir e melhorar', 'Calibração', '#/calibracao']" in appjs
+    assert "['Medir e melhorar', 'Ajustar meus tempos', '#/calibracao']" in appjs
     assert "Dia a dia" not in appjs and "Oficina'" not in appjs
     assert "Contorno físico" not in appjs
     inicio = client.get("/static/telas_inicio.js").text

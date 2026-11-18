@@ -10,7 +10,10 @@ from ..constants import ORDEM_ABERTA, ORDEM_FINAL
 from ..deps import Ctx, get_ctx
 from ..models import Apontamento, Empresa, Ocorrencia, Operacao, Ordem, OrdemOperacao, Processo, Produto, Recurso
 from ..schemas import CancelarIn, OrdemIn, OrdemOperacaoOut, OrdemOut, OrdemUpdate
+from pydantic import BaseModel, ConfigDict, Field
+
 from ..services import estimativa, metricas
+from ..services import pedido as pedido_svc
 from ..services.dashboard import tz_empresa
 
 router = APIRouter(tags=["ordens"])
@@ -297,3 +300,30 @@ def fila_operador(ctx: Ctx = Depends(get_ctx), unidade_id: int | None = None):
         saida.append(x)
     _preencher_definicoes(ctx.db, saida)
     return saida
+
+
+# ------------------------------------------------------------------ pedido em dois toques (pequeno negócio)
+class TerminarPedidoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    horas: float | None = Field(None, gt=0, le=2000)  # "levei X horas" (sem ter tocado em "Comecei")
+    pessoa_id: int | None = None
+
+
+@router.post("/ordens/{oid}/comecar", response_model=OrdemOut)
+def comecar_pedido(oid: int, ctx: Ctx = Depends(get_ctx)):
+    """"Comecei": marca o início do pedido inteiro (sem apontar passo a passo)."""
+    o = pedido_svc.comecar(ctx, ctx.obter(Ordem, oid))
+    ctx.db.commit()
+    return ordem_out(ctx, o, True)
+
+
+@router.post("/ordens/{oid}/terminar")
+def terminar_pedido(oid: int, dados: TerminarPedidoIn, ctx: Ctx = Depends(get_ctx)):
+    """"Terminei" / "Levei X horas": fecha o pedido com o tempo corrido, distribuído pelos passos na proporção do previsto."""
+    o = ctx.obter(Ordem, oid)
+    if dados.pessoa_id is not None:
+        from ..models import Pessoa
+        ctx.obter(Pessoa, dados.pessoa_id)
+    r = pedido_svc.terminar(ctx, o, dados.horas, dados.pessoa_id)
+    ctx.db.commit()
+    return {**r, "ordem": ordem_out(ctx, o, True)}

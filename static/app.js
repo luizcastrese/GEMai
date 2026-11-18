@@ -12,6 +12,7 @@ import * as plano from './telas_plano.js';
 import * as relatorio from './telas_relatorio.js';
 import * as calibracao from './telas_calibracao.js';
 import * as modulos from './telas_modulos.js';
+import * as pesquisa from './telas_pesquisa.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -28,11 +29,11 @@ const ROTAS = [
   [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
   [/^#\/planos$/, plano.planos, ['Do produto ao plano', '4. Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
-  [/^#\/ordens$/, prod.ordens, ['Medir e melhorar', '5. Ordens', '#/ordens']],
+  [/^#\/ordens$/, prod.ordens, ['Medir e melhorar', '5. Pedidos', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
   [/^#\/fila$/, prod.fila, ['Medir e melhorar', 'Minha fila', '#/fila']],
   [/^#\/aprovacoes$/, prod.aprovacoes, ['Medir e melhorar', 'Conferir registros', '#/aprovacoes']],
-  [/^#\/calibracao$/, calibracao.calibracao, ['Medir e melhorar', 'Calibração', '#/calibracao']],
+  [/^#\/calibracao$/, calibracao.calibracao, ['Medir e melhorar', 'Ajustar meus tempos', '#/calibracao']],
   [/^#\/relatorio$/, relatorio.relatorio, ['Medir e melhorar', '6. Relatório', '#/relatorio']],
   [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/implantacao$/, gestao.implantacao, ['Detalhes técnicos', 'Configurar com a IA', '#/implantacao', true]],
@@ -42,6 +43,7 @@ const ROTAS = [
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
   [/^#\/painel$/, gestao.painel],
   [/^#\/ia$/, admin.recomendacoes, ['Detalhes técnicos', 'Sugestões da IA', '#/ia', true]],
+  [/^#\/pesquisa$/, pesquisa.pesquisa, ['Detalhes técnicos', 'Indicadores do piloto', '#/pesquisa', true]],
 ];
 
 const inicial = () => '#/inicio';

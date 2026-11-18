@@ -1,6 +1,7 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { atributoDoPacote, estado } from './estado.js';
 import { cartaoCampos, editorEstrutura, formEspecificacoes } from './variante.js';
+import { cartaoPedido, cartaoValor } from './pedido.js';
 import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tempoPorUnidade, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
@@ -329,6 +330,7 @@ function pecasDoPedido(est) {
 
 export async function planoDetalhe(el, id) {
   const p = await get(`/planos/${id}`);
+  const ordem = p.ordem_id ? await get(`/ordens/${p.ordem_id}`).catch(() => null) : null;
   const t = p.totais;
   const ops = p.passos;
   const recarregar = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -362,11 +364,11 @@ export async function planoDetalhe(el, id) {
   const principais = [
     p.status === 'rascunho' ? h('button', { class: 'pri big', onclick: () => confirmar(t.completo
       ? 'Confirmar este plano? Os tempos passam a valer como plano de referência.'
-      : 'Este plano tem pendências (passos sem tempo). Confirmar mesmo assim? Esses passos ficarão "sem base" na ordem.', async () => {
-      if (await tentar(() => post(`/planos/${id}/confirmar`), 'Plano confirmado.')) recarregar();
-    }, 'Confirmar plano') }, 'Confirmar plano') : null,
-    p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Gerar ordem e medir o real') : null,
-    p.ordem_id ? h('a', { class: 'btn big', href: `#/ordens/${p.ordem_id}` }, 'Abrir a ordem') : null,
+      : 'Este plano tem pendências (passos sem tempo). Confirmar mesmo assim? Esses passos ficarão "sem base" no pedido.', async () => {
+      if (await tentar(() => post(`/planos/${id}/confirmar?abrir_pedido=true`), 'Plano confirmado. Pedido aberto: toque em "Comecei" quando começar.')) recarregar();
+    }, 'Confirmar e abrir o pedido') }, 'Confirmar plano') : null,
+    p.status === 'confirmado' && !p.ordem_id ? h('button', { class: 'pri big', onclick: () => gerarOrdem(p) }, 'Abrir o pedido para medir') : null,
+    p.ordem_id && estado.avancado ? h('a', { class: 'btn big', href: `#/ordens/${p.ordem_id}` }, 'Ver o pedido passo a passo') : null,
     p.status === 'rascunho' ? h('button', { class: 'big', onclick: () => abrirGerar({ produtoId: p.produto_id, produtoNome: p.produto_nome, plano: p }) }, 'Recalcular') : null];
   const secundarias = [
     h('button', { onclick: () => window.print() }, 'Imprimir'),
@@ -384,6 +386,8 @@ export async function planoDetalhe(el, id) {
       t.tempo_preparo_min ? h('div', { class: 'sub' }, `+ ${fmtMin(t.tempo_preparo_min)} de preparo do lote (uma vez, não cresce com a quantidade)`) : null,
       h('div', { class: 'sub' }, `${fmtNum(p.quantidade, 2)} unidade(s) = ${fmtMin(t.tempo_padrao_min)} · termina ${t.fim ? fmtData(t.fim) : '—'}`),
       t.completo ? null : h('div', { class: 'small warn-l' }, 'Passos sem tempo não entram na conta: o prazo real será maior. Complete o que falta abaixo e recalcule.')),
+    ordem ? cartaoPedido(ordem, recarregar, { titulo: 'Medir este pedido' }) : null,
+    t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoValor(p) : null,
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
     p.estrutura?.componentes?.length ? detalhes('Peças deste pedido (como as medidas entraram)', pecasDoPedido(p.estrutura)) : null,
     p.faltantes.length ? h('div', { class: 'aviso' }, h('strong', null, 'Para o plano ficar completo, faltam: '), h('ul', null, p.faltantes.map((f) => h('li', null, f))),
@@ -447,9 +451,9 @@ function cartaoPrazo(p) {
 
 function gerarOrdem(p) {
   const cliente = h('input', { placeholder: 'opcional' }); const prazo = h('input', { type: 'date' });
-  modal('Gerar ordem de produção', h('div', null, h('p', { class: 'muted' }, 'A ordem usa os passos e tempos deste plano. Depois é só liberar e acompanhar na fila.'), h('label', null, 'Cliente'), cliente, h('label', null, 'Prazo'), prazo),
+  modal('Abrir o pedido', h('div', null, h('p', { class: 'muted' }, 'O pedido usa os passos e tempos deste plano. Depois é só marcar quando começar e quando terminar.'), h('label', null, 'Cliente'), cliente, h('label', null, 'Prazo'), prazo),
     { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'), h('button', { class: 'pri', onclick: async () => {
-      const r = await tentar(() => post(`/planos/${p.id}/gerar-ordem`, { cliente: cliente.value.trim() || null, prazo: prazo.value || null }), 'Ordem criada.');
-      if (r) { fechar(); location.hash = `#/ordens/${r.id}`; }
-    } }, 'Gerar ordem')] });
+      const r = await tentar(() => post(`/planos/${p.id}/gerar-ordem`, { cliente: cliente.value.trim() || null, prazo: prazo.value || null }), 'Pedido aberto.');
+      if (r) { fechar(); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+    } }, 'Abrir pedido')] });
 }

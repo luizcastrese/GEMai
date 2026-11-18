@@ -54,7 +54,9 @@ def test_previa_nao_grava_e_exige_o_minimo_de_amostras(admin, gestor, unidade_id
     d = _calibrar(gestor, unidade_id=unidade_id)
     assert d["aplicado"] is False and d["propostas"] == 0 and "POR MÓDULO" in d["aviso"] and d["criterios"] == {"min_amostras": 10, "limites": [0.5, 2.0]}
     m = d["modulos"][0]
-    assert (m["modulo"], m["amostras"], m["minimo"], m["status"], m["fator_sugerido"]) == ("conferencia", 18 if False else 9, 10, "insuficiente", None)
+    # 9 de 10: proposta PRELIMINAR com credibilidade parcial Z = √(9/10) sobre o desvio da mediana (1,2 → 1 + Z × 0,2)
+    assert (m["modulo"], m["amostras"], m["minimo"], m["status"]) == ("conferencia", 9, 10, "preliminar")
+    assert m["credibilidade"] == pytest.approx((9 / 10) ** 0.5, abs=1e-4) and m["fator_sugerido"] == pytest.approx(1 + (0.9 ** 0.5) * 0.2, abs=1e-4)
     _executar(gestor, admin, pid, 60)
     m = _calibrar(gestor, unidade_id=unidade_id)["modulos"][0]
     assert m["status"] == "sugerido" and m["amostras"] == 10 and m["fator_sugerido"] == pytest.approx(1.2) and not m["limitado"]

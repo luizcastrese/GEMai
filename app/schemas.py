@@ -100,6 +100,7 @@ class EmpresaOut(Out):
     documento: str | None
     fuso: str
     permite_ia_externa: bool
+    valor_hora: float | None = None
     pacotes: list[str] = []
     pacotes_disponiveis: list[dict] = []  # pacotes de segmento: chave, título, atributos da peça que acrescentam
     atributos_peca: list[dict] = []  # atributos da peça dos pacotes ATIVOS (a tela de produto mostra essas colunas)
@@ -114,6 +115,7 @@ class EmpresaUpdate(In):
     fuso: Annotated[str, Field(max_length=64)] | None = None
     permite_ia_externa: bool | None = None
     pacotes: list[PacoteSegmento] | None = Field(None, max_length=10)
+    valor_hora: float | None = Field(None, gt=0, le=100000)
 
 
 class UnidadeIn(In):
@@ -1281,6 +1283,8 @@ class PlanoOut(Out):
     confirmado_em: datetime | None
     passos: list[PlanoPassoOut] | None = None
     hierarquia: dict | None = None  # produto → grupo → módulo → elementos (normal, tolerâncias, padrão, preparação)
+    # Custeio padrão da mão de obra: horas-homem do tempo padrão × valor da hora da empresa (sem material). None = sem valor da hora.
+    custo_mao_de_obra: dict | None = None
 
 
 class PrazoIn(In):
@@ -1412,7 +1416,10 @@ class SugestaoModuloCalibOut(BaseModel):
     mediana_bruta: float | None
     fator_sugerido: float | None
     limitado: bool
-    status: str  # sugerido | insuficiente
+    status: str  # sugerido | preliminar | insuficiente
+    descartadas: int = 0  # registros discrepantes retirados (identificador de Hampel)
+    credibilidade: float = 1.0  # Z da credibilidade de flutuação limitada (1 = pleno)
+    total_do_pedido: int = 0  # registros vindos do apontamento no total do pedido
     vigente: dict | None = None  # {fator, amostras, versao} da calibração validada em uso
     proposta_id: int | None = None  # id da proposta pendente criada (aplicar=true)
 

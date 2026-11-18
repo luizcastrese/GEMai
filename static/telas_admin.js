@@ -51,7 +51,8 @@ export async function usuarios(el) {
 // ---------------------------------------------------------------- empresa e unidades
 export async function empresa(el) {
   const e = estado.empresa;
-  const f = formulario([{ k: 'nome', rotulo: 'Nome da empresa' }, { k: 'segmento', rotulo: 'Segmento' }, { k: 'fuso', rotulo: 'Fuso horário (ex.: America/Sao_Paulo)' },
+  const f = formulario([{ k: 'nome', rotulo: 'Nome da empresa' }, { k: 'segmento', rotulo: 'Segmento' },
+    { k: 'valor_hora', rotulo: 'Quanto você quer ganhar por hora de trabalho (R$)', tipo: 'number', min: '0', ajuda: 'Com isso, cada plano mostra o valor mínimo da mão de obra (sem material).' }, { k: 'fuso', rotulo: 'Fuso horário (ex.: America/Sao_Paulo)' },
     { k: 'permite_ia_externa', rotulo: 'Permitir envio de dados desta empresa a um provedor externo de IA (Claude/Anthropic)', tipo: 'bool',
       ajuda: e.ia_disponivel ? 'Se desmarcado, a IA usa apenas regras locais e nenhum dado sai do sistema. Dados enviados: descrição da operação, respostas do diagnóstico e indicadores agregados (nunca senhas, e-mails ou documentos).' : 'Este servidor não tem chave de IA externa configurada; a IA usa regras locais.' }], e);
   const uni = await get('/unidades');

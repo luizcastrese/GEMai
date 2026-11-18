@@ -47,7 +47,7 @@ const titulo = (c) => `${c.titulo || c.modulo} · ${c.produto_nome || 'todos os 
 
 function cartaoProposta(c, depois) {
   const escala = !!c.expoente;
-  const aviso = /NÃO melhora|descartada/.test(c.justificativa || '') ? c.justificativa.split(/(?<=\.)\s+/).filter((t) => /NÃO melhora|descartada/.test(t)).join(' ') : '';
+  const aviso = /NÃO melhora|descartada|PRELIMINAR|Hampel|nível geral/.test(c.justificativa || '') ? c.justificativa.split(/(?<=\.)\s+/).filter((t) => /NÃO melhora|descartada|PRELIMINAR|Hampel|nível geral/.test(t)).join(' ') : '';
   return h('div', { class: 'card calib' },
     h('h3', null, titulo(c)),
     h('p', { class: 'big-txt' }, frase(c.fator), escala ? ' (muda com o tamanho do pedido)' : '', '.'),
@@ -72,8 +72,8 @@ export async function calibracao(el) {
     const vigentes = lista.filter((c) => c.vigente);
     const faltam = previa.modulos.filter((m) => m.status === 'insuficiente');
     montar(el,
-      h('h1', null, 'Calibração'),
-      h('p', { class: 'muted' }, 'Compara o previsto com o que levou de verdade e propõe correções. Nada muda até você aplicar.'),
+      h('h1', null, 'Ajustar meus tempos'),
+      h('p', { class: 'muted' }, 'Compara o previsto com o que levou de verdade e propõe correções. Com poucos pedidos, o ajuste é parcial e cresce a cada pedido medido. Nada muda até você aplicar.'),
       h('div', { class: 'inline noprint' }, h('button', { class: 'pri', onclick: async () => {
         const r = await tentar(() => post('/calibracao/modulos', { unidade_id: u, aplicar: true }));
         if (r) { toast(r.propostas ? `${r.propostas} proposta(s) nova(s).` : 'Ainda não há dados suficientes.'); carregar(); }

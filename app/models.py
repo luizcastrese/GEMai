@@ -57,6 +57,8 @@ class Empresa(Base):
     permite_ia_externa: Mapped[bool] = mapped_column(Boolean, default=False)
     # Pacotes de SEGMENTO ativos (services/modulos/catalogo.PACOTES_INFO), além do pacote base que vale para todos.
     pacotes: Mapped[list] = mapped_column(JSON, default=list)
+    # Quanto o dono quer ganhar por hora de trabalho (R$/h): transforma o tempo padrão em preço mínimo de mão de obra.
+    valor_hora: Mapped[float | None] = mapped_column(Float)
     ativa: Mapped[bool] = mapped_column(Boolean, default=True)
     seq_ordem: Mapped[int] = mapped_column(Integer, default=0)
     criada_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)

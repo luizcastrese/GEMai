@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     min_amostras_calibracao: int = 10
     # Calibração por FAMÍLIA (produto × módulo): amostras mínimas daquele produto para aprender como o tempo escala com o porte.
     min_amostras_familia: int = 8
+    # Com menos pedidos que o mínimo, a partir deste nº a calibração já propõe um ajuste PRELIMINAR (credibilidade parcial).
+    min_amostras_preliminar: int = 3
     # Se verdadeiro, o modelo de tempo proposto pela IA e ainda não validado já serve de tempo planejado
     # (rotulado como tal). Se falso, só modelos validados por um gestor entram nas estimativas.
     usar_modelo_ia_nao_validado: bool = True
