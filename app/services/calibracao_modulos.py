@@ -22,6 +22,13 @@ ganha um fator que ESCALA com o porte do pedido, aprendido dos pedidos já feito
   da família; senão fica o fator constante (e a proposta diz isso);
 - fora do intervalo observado (±50 %) o porte é travado na borda e o resultado é rotulado "extrapolado";
 - precedência no cálculo: família validada do produto > fator geral validado do módulo > nada (coeficientes genéricos).
+
+Robustez e pequenas amostras (pensado para pequenos negócios, que demoram a juntar pedidos):
+- **identificador de Hampel**: antes da mediana, sai a razão cujo ln se afasta da mediana dos ln por mais de 3 × 1,4826 × MAD
+  (desvio absoluto mediano). Pega ordem esquecida aberta ou apontamento trocado sem limite arbitrário; o nº descartado é declarado;
+- **credibilidade de flutuação limitada**: com n entre `min_amostras_preliminar` e o mínimo, a proposta é PRELIMINAR e o fator é
+  1 + Z·(mediana − 1), com Z = √(n ÷ n_completo) e n_completo = `min_amostras_calibracao`. Em n = n_completo, Z = 1 e o resultado
+  é o fator pleno de antes. A proposta preliminar também só vale depois de validada por uma pessoa.
 """
 from __future__ import annotations
 
@@ -41,6 +48,7 @@ EXPOENTE_MIN, EXPOENTE_MAX = -0.5, 1.0
 MIN_TAMANHOS = 3        # tamanhos distintos (portes que diferem > 5 %) para enxergar uma escala
 MIN_DISPERSAO = 1.25    # maior porte ÷ menor porte
 FOLGA_EXTRAPOLACAO = 1.5  # além do intervalo observado ×1,5 o porte é travado na borda
+HAMPEL_K = 3.0  # nº de desvios robustos (1,4826 × MAD ≈ desvio-padrão sob normalidade) para considerar uma razão discrepante
 
 
 @dataclass
@@ -63,6 +71,9 @@ class Sugestao:
     erro_constante_pct: float | None = None
     erro_com_pct: float | None = None
     nota: str = ""
+    descartadas: int = 0  # razões discrepantes retiradas pelo identificador de Hampel
+    credibilidade: float = 1.0  # Z aplicado ao desvio do fator (1 = pleno)
+    total_do_pedido: int = 0  # amostras vindas de apontamento no total do pedido (distribuído pelo previsto)
 
 
 @dataclass
@@ -72,6 +83,27 @@ class Amostra:
     produto_id: int | None
     porte: float | None  # tempo normal previsto por unidade do pedido
     razao: float  # tempo normal observado ÷ previsto
+    total: bool = False  # veio do apontamento no total do pedido: informa o nível geral, não o módulo isolado
+
+
+def hampel(razoes: list[float], k: float = HAMPEL_K) -> tuple[list[int], int]:
+    """(índices mantidos, nº descartado). Sobre ln(razão); com menos de 4 amostras ou MAD = 0 não descarta nada."""
+    idx = [i for i, r in enumerate(razoes) if r and r > 0]
+    if len(idx) < 4:
+        return idx, len(razoes) - len(idx)
+    ls = {i: math.log(razoes[i]) for i in idx}
+    med = timecalc.mediana(list(ls.values()))
+    mad = timecalc.mediana([abs(v - med) for v in ls.values()])
+    if mad <= 0:
+        return idx, len(razoes) - len(idx)
+    lim = k * 1.4826 * mad
+    mantidos = [i for i in idx if abs(ls[i] - med) <= lim]
+    return mantidos, len(razoes) - len(mantidos)
+
+
+def credibilidade(n: int, n_completo: int) -> float:
+    """Credibilidade de flutuação limitada: Z = √(n ÷ n_completo), limitada a 1."""
+    return 1.0 if n_completo <= 0 else min(1.0, math.sqrt(max(n, 0) / n_completo))
 
 
 def amostras(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Amostra]:
@@ -106,13 +138,14 @@ def amostras(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Amost
             continue
         rit = sum(d * (r.valor / 100.0 if r is not None and r.conhecido else 1.0) for d, r in pesos) / total
         observado[oo_id] = corrido * (f * rit + (1.0 - f))
+    totais = {oo_id for oo_id, lista in grupos.items() if any((a.dados_extras or {}).get("origem") == "total_do_pedido" for a in lista)}
     out: list[Amostra] = []
     for oo_id, obs in observado.items():
         if obs <= 0:
             continue
         oo, uid, pid, qtd = por_oo[oo_id]
         porte = oo.previsto_normal_min / qtd if qtd and qtd > 0 else None
-        out.append(Amostra(uid, oo.modulo, pid, porte, obs / oo.previsto_normal_min))
+        out.append(Amostra(uid, oo.modulo, pid, porte, obs / oo.previsto_normal_min, total=oo_id in totais))
     return out
 
 
@@ -204,27 +237,46 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
     """Sugestões gerais (por módulo) e por família (produto × módulo). Não grava."""
     cfg = get_settings()
     minimo, min_fam = max(cfg.min_amostras_calibracao, 1), max(cfg.min_amostras_familia, 2)
+    min_prel = min(max(cfg.min_amostras_preliminar, 1), minimo)
     validos = catalogo.da_empresa(db, empresa_id)
     todas = [a for a in amostras(db, empresa_id, unidade_ids) if a.modulo in validos]
-    gerais: dict[tuple[int, str], list[float]] = {}
+    gerais: dict[tuple[int, str], list[Amostra]] = {}
     familias: dict[tuple[int, str, int], list[Amostra]] = {}
     for a in todas:
-        gerais.setdefault((a.unidade_id, a.modulo), []).append(a.razao)
+        gerais.setdefault((a.unidade_id, a.modulo), []).append(a)
         if a.produto_id is not None:
             familias.setdefault((a.unidade_id, a.modulo, a.produto_id), []).append(a)
     sugestoes = []
-    for (uid, modulo), xs in sorted(gerais.items()):
-        if len(xs) < minimo:
-            sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, None, None, False, "insuficiente"))
+    for (uid, modulo), am in sorted(gerais.items()):
+        brutas = [a.razao for a in am]
+        mantidos, descartadas = hampel(brutas)
+        xs = [brutas[i] for i in mantidos]
+        n_total = sum(1 for i in mantidos if am[i].total)
+        if len(xs) < min_prel:
+            sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, None, None, False, "insuficiente", descartadas=descartadas))
             continue
-        bruta = timecalc.mediana(xs)
+        z = credibilidade(len(xs), minimo)
+        mediana = timecalc.mediana(xs)
+        bruta = 1.0 + z * (mediana - 1.0)
         fator = min(max(bruta, FATOR_MIN), FATOR_MAX)
         sem, com = erro_sem_calibracao(xs), erro_constante_loo(xs)
-        aviso = ("Nos dados reservados este fator NÃO melhora o erro típico: o desvio parece depender do tamanho do pedido, não de um "
-                 "nível geral. Prefira a calibração por produto (que escala com o porte), se houver." if sem is not None and com is not None and com > sem else "")
-        sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta, "sugerido",
-                                  erro_sem_pct=sem, erro_com_pct=com, nota=aviso))
+        notas = []
+        if sem is not None and com is not None and com > sem:
+            notas.append("Nos dados reservados este fator NÃO melhora o erro típico: o desvio parece depender do tamanho do pedido, não de um "
+                         "nível geral. Prefira a calibração por produto (que escala com o porte), se houver.")
+        if z < 1.0:
+            notas.append(f"Proposta PRELIMINAR com {len(xs)} de {minimo} pedidos: ajuste parcial (credibilidade Z = {z:.2f}; "
+                         f"a mediana observada é × {mediana:.2f}).")
+        if descartadas:
+            notas.append(f"{descartadas} registro(s) muito fora do padrão foram desconsiderados (identificador de Hampel).")
+        if n_total and n_total * 2 >= len(xs):
+            notas.append("A maior parte dos registros foi apontada no total do pedido: o fator mostra o nível geral, não esta atividade isolada.")
+        sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta,
+                                  "sugerido" if z >= 1.0 else "preliminar", erro_sem_pct=sem, erro_com_pct=com, nota=" ".join(notas),
+                                  descartadas=descartadas, credibilidade=round(z, 4), total_do_pedido=n_total))
     for (uid, modulo, pid), am in sorted(familias.items()):
+        mantidos, _desc = hampel([a.razao for a in am])
+        am = [am[i] for i in mantidos]
         pares = [(a.porte, a.razao) for a in am if a.porte]
         fam = ajustar_familia(pares) if len(am) >= min_fam else None
         if fam is None:

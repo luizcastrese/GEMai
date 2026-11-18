@@ -3,7 +3,7 @@ import csv
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -244,6 +244,13 @@ def _plano_out(ctx: Ctx, p: PlanoTrabalho, detalhado: bool = True) -> PlanoOut:
     prod = ctx.db.get(Produto, p.produto_id)
     o.produto_nome = prod.nome if prod else None
     o.variante = especificacao.resumo(prod, p.especificacoes)
+    vh, hh = ctx.empresa.valor_hora, (p.totais or {}).get("horas_homem")
+    if vh and hh is not None:
+        total = round(hh * vh, 2)
+        o.custo_mao_de_obra = {"valor_hora": vh, "horas_homem": hh, "total": total,
+                               "por_unidade": round(total / p.quantidade, 2) if p.quantidade else None,
+                               "completo": bool((p.totais or {}).get("completo")),
+                               "nota": "Mão de obra pelo tempo padrão (custeio padrão), sem material nem despesas fixas."}
     if not detalhado:
         o.estrutura = None
     if detalhado:
@@ -379,13 +386,16 @@ def recalcular(pid: int, dados: PlanoGerarIn, ctx: Ctx = Depends(get_ctx)):
 
 
 @router.post("/planos/{pid}/confirmar", response_model=PlanoOut)
-def confirmar(pid: int, ctx: Ctx = Depends(get_ctx)):
-    """Confirmação MANUAL. Não acontece sozinha: a IA só sugere."""
+def confirmar(pid: int, abrir_pedido: bool = Query(False), ctx: Ctx = Depends(get_ctx)):
+    """Confirmação MANUAL. Não acontece sozinha: a IA só sugere. Com `abrir_pedido`, já abre o pedido (ordem) para medir o real."""
     p = _plano(ctx, pid)
     if p.status != "rascunho":
         raise HTTPException(409, "O plano já foi decidido.")
     p.status, p.confirmado_por, p.confirmado_em = "confirmado", ctx.usuario.id, datetime.now(timezone.utc)
     ctx.auditar("plano.confirmar", "plano_trabalho", p.id, {"status": "rascunho"}, {"status": "confirmado", "completo": p.totais.get("completo")})
+    if abrir_pedido:
+        o = svc.gerar_ordem(ctx, p, "", None, _numero)
+        ctx.auditar("plano.gerar_ordem", "plano_trabalho", p.id, None, {"ordem_id": o.id, "automatico": True})
     ctx.db.commit()
     return _plano_out(ctx, p)
 

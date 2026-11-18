@@ -1,6 +1,7 @@
 import { get, qs } from './api.js';
 import { estado } from './estado.js';
 import { fmtMin, h, montar, statusBadge, tabela, tempoPorUnidade } from './ui.js';
+import { cartaoPedido } from './pedido.js';
 
 // Tela inicial: o caminho até o tempo padrão e o ciclo que o melhora, para qualquer tipo de produção.
 // 1. O que se produz → 2. O que se faz (atividades) → 3. Onde e com o quê → 4. Plano → 5. Medir o real → 6. Comparar.
@@ -9,6 +10,8 @@ export async function inicio(el) {
   const [produtos, c, planos, atividades, calibracoes] = await Promise.all([
     get('/produtos?ativo=true'), get(`/contorno${qs({ unidade_id: u })}`), get(`/planos${qs({ unidade_id: u })}`), get('/modulos'),
     get(`/calibracao/modulos${qs({ unidade_id: u })}`).catch(() => [])]);
+  const andamento = (await get(`/ordens${qs({ unidade_id: u, status: 'planejada,liberada,em_producao,parada' })}`).catch(() => [])).filter((o) => o.plano_id);
+  const recarregar = () => inicio(el);
   const prods = produtos.filter((p) => p.tipo === 'produto');
   const localOk = c.locais.length > 0 && c.pendentes === 0;
   const daEmpresa = atividades.filter((m) => m.pacote === 'empresa').length;
@@ -20,6 +23,7 @@ export async function inicio(el) {
 
   montar(el, h('h1', null, `Olá, ${estado.usuario.nome.split(' ')[0]}`),
     h('p', { class: 'muted' }, 'Do que você produz ao tempo de cada unidade, e o real melhorando o previsto.'),
+    andamento.length ? h('div', null, h('h2', null, `Pedidos em andamento (${andamento.length})`), andamento.slice(0, 5).map((o) => cartaoPedido(o, recarregar))) : null,
     passo(1, 'O que você produz', 'Os produtos e seus itens (medidas, peso e outros dados).', prods.length > 0, '#/produtos',
       prods.length ? 'Ver produtos' : 'Cadastrar produto', prods.length ? `${prods.length} produto(s) cadastrado(s).` : null),
     passo(2, 'O que você faz', 'As atividades da sua produção. Falta alguma? A IA monta e você valida.', atividades.length > 0, '#/atividades',
@@ -29,10 +33,10 @@ export async function inicio(el) {
       c.pendentes ? `Faltam ${c.pendentes} informação(ões): ${c.faltando.slice(0, 2).join('; ')}${c.faltando.length > 2 ? '…' : ''}` : null),
     passo(4, 'O plano de trabalho', 'O tempo por unidade e o prazo.',
       planos.length > 0, '#/planos', planos.length ? 'Ver planos' : 'Gerar o primeiro plano', null),
-    passo(5, 'Medir o real', 'Gere a ordem do plano confirmado e marque ▶ início e ■ fim na fila. É isso que melhora o tempo.',
-      comOrdem > 0, '#/fila', 'Abrir a fila', comOrdem ? `${comOrdem} plano(s) com ordem.` : null),
-    passo(6, 'Comparar e calibrar', 'Previsto contra realizado; o sistema propõe correções e você decide.',
-      calibracoes.some((x) => x.vigente), '#/calibracao', 'Ver calibração', null),
+    passo(5, 'Medir o real', 'Ao confirmar o plano, o pedido abre. Toque em ▶ Comecei e ■ Terminei: é isso que melhora o tempo.',
+      comOrdem > 0, '#/planos', 'Ver pedidos', comOrdem ? `${comOrdem} pedido(s) aberto(s) a partir de planos.` : null),
+    passo(6, 'Ajustar meus tempos', 'O sistema compara o previsto com o que levou e propõe correções; você decide.',
+      calibracoes.some((x) => x.vigente), '#/calibracao', 'Ver ajustes', null),
     planos.length ? h('div', null, h('h2', null, 'Planos recentes'), h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Tempo por unidade', f: (p) => (tempoPorUnidade(p) !== null ? fmtMin(tempoPorUnidade(p)) : '—') },

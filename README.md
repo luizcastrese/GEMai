@@ -6,7 +6,7 @@
 > é em uma marcenaria, que é o primeiro pacote de atividades.
 > O TCC deve ser escrito a partir desta especificação. Para cada componente, a **matriz de conformidade (seção 5.9)** e o **estado
 > de implementação (seção 11)** dizem o que o código já faz e o que falta para convergir ao alvo.
-> Estado medido em **2026-11-18** (branch `main`). Escrito para ser lido por quem (pessoa ou IA) vai redigir o Trabalho de
+> Estado medido em **2026-11-19** (branch `main`). Escrito para ser lido por quem (pessoa ou IA) vai redigir o Trabalho de
 > Conclusão de Curso (Engenharia de Produção, PUC-Campinas).
 
 ---
@@ -75,7 +75,7 @@ sequência de movimentos das ações manuais; **não escreve tempo**. Uma pessoa
 clássica do estudo de tempos (tempo normal, tolerâncias, tempo padrão), com tempos de máquina derivados de parâmetros técnicos,
 elementos manuais por sequências de movimento e tolerâncias por fontes plugáveis (OIT, NIOSH, Murrell). Os tempos reais apontados na
 execução são contrastados com os planejados e alimentam uma **calibração por atividade e por produto**, validada por uma pessoa e
-testada com dados reservados. O sistema conta com 340 testes automatizados; a validação de campo está planejada em uma marcenaria,
+testada com dados reservados. O sistema conta com 346 testes automatizados; a validação de campo está planejada em uma marcenaria,
 primeiro pacote de atividades. Discutem-se a generalidade do método, a convergência entre o sistema proposto e o implementado e as
 limitações do piloto.
 
@@ -205,7 +205,16 @@ catálogo fechado, esquemas validados, dado faltante vira pendência, sugestão 
 
 ### 5.8 Estatística da calibração
 Mediana (robusta a *outliers*); regressão robusta de **Theil–Sen** (Theil, 1950; Sen, 1968) para aprender como o erro escala com o porte do pedido;
-**validação cruzada *leave-one-out*** (Stone, 1974) como prova com dados reservados.
+**validação cruzada *leave-one-out*** (Stone, 1974) como prova com dados reservados. Para os poucos pedidos de um pequeno negócio, duas
+ferramentas adicionais: o **identificador de Hampel** (Hampel, 1974), que descarta observações cujo ln se afasta da mediana por mais de
+3 × 1,4826 × MAD (desvio absoluto mediano), e a **credibilidade de flutuação limitada** da teoria atuarial (Mowbray, 1914;
+Longley-Cook, 1962), em que a estimativa com n observações recebe peso Z = √(n ÷ n_completo) contra o valor de partida, chegando a 1
+no tamanho de amostra considerado suficiente `[VERIFICAR as duas fontes]`.
+
+### 5.8.1 Custeio padrão da mão de obra
+O tempo padrão é a base do **custo padrão** da mão de obra: horas-homem padrão × taxa horária (Martins, 2003) `[VERIFICAR]`. O GEMai
+usa a taxa que o próprio dono informa ("quanto quer ganhar por hora") e mostra o resultado como **valor mínimo da mão de obra**, sem
+material nem despesas fixas. É apoio ao preço, não apuração contábil.
 
 ### 5.9 Matriz de conformidade com a literatura: cada componente do tempo padrão  *(núcleo do TCC)*
 
@@ -229,7 +238,9 @@ Princípio: todo componente tem **fonte na literatura ou medição da empresa**.
 | 14 | Divisão do trabalho entre pessoas | Balanceamento com perdas de coordenação e curva de aprendizagem | Niebel e Freivalds | `[PARCIAL]` | Hoje caso ideal `÷ n`, declarado |
 | 15 | Calibração por atividade (módulo) | `fator = mediana(TN observado ÷ TN previsto)` em **tempo corrido**, 0,5–2,0, validado por pessoa; vale também para atividades criadas pela empresa | Estatística robusta | `[IMPLEMENTADO]` | Falta o mesmo tratamento no histórico por operação (11.2, item 5) |
 | 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmo pré-requisito de dados do item 15 |
-| 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos heurísticos (3, 5, 10, 8) |
+| 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos (3, 5, 10, 8); abaixo do mínimo, proposta **preliminar** com credibilidade Z = √(n/10) em vez de nada |
+| 26 | Robustez a registros absurdos | Identificador de Hampel sobre ln(razão) antes da mediana | Hampel (1974) | `[IMPLEMENTADO]` | — |
+| 27 | Medição do pedido no total | Tempo corrido total distribuído pelo previsto de cada passo; rotulado; informa só o nível geral | Premissa do projeto (declarada) | `[IMPLEMENTADO]` | Não separa o erro de cada atividade: a calibração avisa |
 | 18 | Fadiga ao longo do turno | Aprendida de dados reais | — | `[NÃO IMPLEMENTADO]` | Fora do cálculo, declarado |
 | 19 | Jornada e agenda | Blocos, intervalos, dias úteis e **feriados** | CLT arts. 58, 59, 71 | `[PARCIAL]` | Sem feriados |
 | 20 | Hierarquia de fontes do tempo-base | **medido pela empresa > predeterminado certificado > referência genérica rotulada** (7.11) | Barnes; Zandin | `[PARCIAL]` | Hoje só o nível 3 (genérico) |
@@ -265,11 +276,11 @@ relatório previsto × realizado por variante; auditoria.
 **Não funcionais:** multiempresa com isolamento rígido; reprodutibilidade (todo coeficiente com valor, unidade, fonte, status e versão); rastreabilidade; LGPD; execução em Docker e Render; PostgreSQL em produção.
 
 ### 6.3 Arquitetura e tecnologias
-- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (16 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
+- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (17 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
 - **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
 - **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
 - **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
-- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 30 entidades, 129 *endpoints*, 340 testes.
+- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 30 entidades, 133 *endpoints*, 346 testes.
 
 ```
  navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
@@ -285,7 +296,7 @@ app/            API (routers/), regras (services/), IA (services/ia/), modelos e
   services/arranjo/      recomendação de arranjo
 static/         interface web
 migrations/     Alembic
-tests/          pytest (340 testes)
+tests/          pytest (346 testes)
 ```
 
 ### 6.4 Modelo de dados (principais entidades, `app/models.py`)
@@ -333,8 +344,13 @@ Entrar → Início
   unidade**, o preparo do lote, o término, as pendências (inclusive "atividade sem módulo" e cobertura do plano), os passos com
   horário e as premissas. **"Posso prometer esta data?"** responde cabe / não cabe / não dá para garantir. Ações: confirmar,
   recalcular, imprimir, CSV, recomendar arranjo e **gerar a ordem para medir o real**.
-- **5. Medir e melhorar (no caminho principal).** Ordem → liberar → **fila** (▶ iniciar, ■ concluir, quem executa) → **conferir
-  registros** (uma segunda pessoa aprova, salvo equipe de uma pessoa) → **calibração** (o sistema propõe, a pessoa valida).
+- **5. Medir e melhorar (no caminho principal, em dois toques).** Ao **confirmar o plano, o pedido abre**. O dono toca **▶ Comecei** e
+  **■ Terminei**, ou, se esqueceu, **"levei X horas"**, no plano ou no Início ("Pedidos em andamento"). O tempo corrido do pedido é
+  distribuído pelos passos na proporção do previsto e rotulado como medido "no total". Em equipe de até 2 pessoas o registro já vale;
+  acima disso, outra pessoa confere (dois olhos). Quem quer detalhe usa a fila passo a passo (detalhes técnicos). **Ajustar meus
+  tempos** (calibração) mostra propostas, inclusive **preliminares** com poucos pedidos; a pessoa aplica ou ignora.
+- **Prazo e valor.** Cada plano mostra "fica pronto em…", o **valor mínimo da mão de obra** (horas-homem × valor da hora informado em
+  Configurações) e um botão que copia a **mensagem para o cliente** (WhatsApp).
 - **6. Relatório.** Previsto × realizado por produto e variante, com desvio e planilha.
 - **Detalhes técnicos** (interruptor em Configurações): composição do tempo, coeficientes, processos avançados, análises completas.
 
@@ -493,6 +509,10 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
   **Especificação:** o observado é o **tempo corrido** da operação (união dos intervalos dos apontamentos, ponderada pelo ritmo médio), coerente com o previsto, que também é tempo corrido;
   assim o fator não depende de quantas pessoas registram o apontamento. **Estado:** `[IMPLEMENTADO]` — observado = união dos intervalos × ritmo médio ponderado pela duração; duas pessoas no mesmo intervalo contam uma vez (testes de regressão; 11.2, item 4).
 - **Fator geral do módulo:** mediana das razões, ≥ 10 amostras por (unidade, módulo), limitado a 0,5–2,0.
+- **Robustez e poucos pedidos:** antes da mediana, o **identificador de Hampel** retira razões discrepantes (|ln r − mediana| > 3 ×
+  1,4826 × MAD; com menos de 4 amostras ou MAD nulo, nada sai), e o nº retirado é declarado. Entre 3 e 9 amostras a proposta é
+  **preliminar**: `fator = 1 + Z · (mediana − 1)`, `Z = √(n ÷ 10)` (credibilidade de flutuação limitada); com 10 ou mais, Z = 1 e vale
+  o fator pleno. Quando a maioria das amostras vem de pedido medido no total, a proposta avisa que o fator mostra o **nível geral**.
 - **Família (produto × módulo):** `fator(porte) = fator_ref · (porte ÷ porte_ref)^b`, com **porte** = tempo normal previsto por unidade do pedido; `b` por Theil–Sen sobre ln(razão) × ln(porte), limitado a −0,5…1,0.
   Exige ≥ 8 amostras do produto, ≥ 3 tamanhos distintos e dispersão de porte ≥ 1,25×. Fora do intervalo observado (±50 %) o porte é travado na borda e o passo é rotulado **extrapolado**.
 - **Prova com dados reservados (*leave-one-out*):** cada pedido é previsto pelos **outros**; a escala só é proposta se reduzir o erro típico em ≥ 10 % frente a um fator constante; senão fica o constante, e a proposta diz isso.
@@ -573,7 +593,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 ## 10. Verificação e validação
 
 ### 10.1 Testes automatizados `[IMPLEMENTADO]`
-**340 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+**346 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
 
 | Arquivo(s) | O que verifica |
 |---|---|
@@ -585,6 +605,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 | `test_capacidade_ia`, `test_simples`, `test_variantes_relatorio` | IA com resposta simulada, fluxo simples, relatório |
 | `test_infra_deploy` | configuração de produção e migrações |
 | `test_modulos_empresa` | módulos da empresa por necessidade (IA delimita, pessoa valida), arquétipos, atributos livres, regressão da marcenaria |
+| `test_piloto` | pedido em dois toques, preço pela hora, Hampel, credibilidade parcial, indicadores do piloto |
 | `test_fluxo_geral` | pacotes por empresa, roteiro pela posição padrão, conferência opcional, checagem do local pelas atividades |
 
 Invariantes com teste: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; confiança nunca é "alta"; sexo, estatura e peso não alteram o tempo; 60 peças a 60 peças/h voltam a ser 60 min (tolerância não multiplica tempo de máquina).
@@ -596,22 +617,41 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 - Execução contra **PostgreSQL real** (testes em SQLite); os últimos *commits* corrigiram implantação no Render.
 - Chamadas reais à API da Anthropic (o provedor foi testado com resposta simulada), inclusive a **delimitação de atividades pela IA
   externa**; a regra local de delimitação foi testada.
+- **Pedido em dois toques** com usuários reais (testado de ponta a ponta em navegador de celular simulado e em testes automatizados).
 - **Generalidade em campo:** a cobertura de outro segmento foi verificada só por testes automatizados (empresa "gráfica" sem pacote
   de marcenaria; atividades criadas por especificação), não com uma empresa real.
 - **Qualquer validação de campo**: não há dados de uso real.
 - Usabilidade com o público-alvo.
 
-### 10.4 Protocolo de validação de campo (marcenaria e prova de generalidade) `[PROPOSTA]`
-1. **Preparação:** cadastrar locais, máquinas e **fichas técnicas validadas**; produtos reais (3 a 5) com peças, ligações e pesos. Cadastro público de empresa desligado.
-2. **Execução:** gerar planos, abrir ordens, apontar pela fila (com pessoa executora) e aprovar por segunda pessoa. Definir de antemão a duração e o volume mínimo (a calibração pede ≥ 10 amostras por módulo e ≥ 8 por produto; uma ordem gera uma amostra por passo).
-3. **Medidas de sucesso:** (a) desvio previsto × realizado por variante (antes e depois da calibração); (b) erro típico na prova com dados reservados; (c) fração de planos completos sem pendência; (d) usuário vai de Produto a Plano **sem ajuda** (teste de uso, separado do cálculo).
-4. **Ameaças:** equipe de 1 ou 2 pessoas (aprovação por segunda pessoa); viés da calibração com equipe (11.2, item 4); coeficientes genéricos dominando o erro; amostras insuficientes.
-5. **Congelar** o motor durante o piloto: mudar o cálculo no meio impede atribuir melhorias ao uso real.
-6. **Prova de generalidade (QP4):** em um segundo segmento (ex.: confecção, gráfica, serralheria, alimentação), sem pacote pronto,
-   descrever 5 a 10 atividades e registrar: (a) fração de propostas da IA **validadas sem edição**, com edição ou rejeitadas; (b) fração
-   de atividades que **couberam em um arquétipo** sem código novo; (c) dados que faltaram (parâmetros técnicos, atributos de item);
-   (d) se houver execução, o desvio previsto × realizado nas atividades criadas. Repetir com a regra local e com a IA externa,
-   se disponível, para separar o efeito do provedor.
+### 10.4 Protocolo de validação de campo (pequenos negócios, marcenaria e prova de generalidade) `[PROPOSTA]`
+**Público.** Negócios pequenos ou informais que produzem sob encomenda e estimam prazo "de cabeça": 3 a 5 negócios, de preferência
+de 2 segmentos (marcenaria como caso principal; um segundo segmento sem pacote pronto para a QP4).
+1. **Preparação (com o pesquisador ao lado, uma vez):** cadastro por convite (cadastro público desligado); segmento e valor da hora;
+   1 a 3 produtos reais; locais e equipamentos que existem. Termo de consentimento simples; ver com o orientador se é preciso comitê
+   de ética (envolve pessoas).
+2. **Execução (pelo próprio dono, sem ajuda):** para cada encomenda, gerar o plano, confirmar (o pedido abre) e tocar **Comecei /
+   Terminei** ou informar as horas. Duração definida de antemão (ex.: 6 a 8 semanas) e volume mínimo de 10 pedidos medidos por negócio.
+3. **Medidas de sucesso (extraídas em "Indicadores do piloto", seção 10.5):**
+   (a) QP3: tempo do cadastro ao primeiro plano; planos completos; fração dos pedidos abertos que foram medidos;
+   (b) QP2: erro típico previsto × realizado nos pedidos **sem** e **com** ajuste validado (e a evolução pedido a pedido);
+   (c) QP4: atividades propostas pela IA validadas sem edição, com edição ou rejeitadas; atividades que couberam em um arquétipo;
+   (d) uso do resultado: "você usaria o prazo e o valor sugeridos?" (sim / não / ajustado), perguntado ao fim de cada pedido.
+4. **Barreiras como resultado:** onde o dono travou, o que não entendeu, o que se recusou a informar, quantos pedidos esqueceu de
+   medir. Registrar em diário de campo.
+5. **Ameaças à validade:** poucos pedidos por negócio (mitigado pela credibilidade parcial, mas declarado); medição no total só informa
+   o nível geral; autoaprovação em equipe pequena (sem segunda conferência); efeito do pesquisador na fase de preparação; sazonalidade.
+6. **Congelar** o sistema durante o piloto: mudar o cálculo no meio impede atribuir melhorias ao uso real.
+7. **Prova de generalidade (QP4):** no segundo segmento, descrever 5 a 10 atividades e registrar (a) propostas validadas sem edição,
+   com edição ou rejeitadas; (b) atividades que couberam em um arquétipo sem código novo; (c) dados que faltaram; (d) se houver execução,
+   o desvio previsto × realizado nessas atividades. Repetir com a regra local e com a IA externa, se disponível.
+
+### 10.5 Indicadores do piloto (`GET /pesquisa/indicadores`, `GET /pesquisa/pedidos.csv`) `[IMPLEMENTADO]`
+Calculados **só com os registros que o sistema já guarda** (sem rastrear cliques, sem dado pessoal), por empresa, na tela "Indicadores do
+piloto" (detalhes técnicos): uso (tempo do cadastro ao primeiro plano, planos completos, confirmados e que viraram pedido), medição
+(pedidos abertos e medidos, no total ou passo a passo), previsto × realizado (erro típico = mediana de |ln(realizado ÷ previsto)|,
+separado em pedidos sem e com ajuste validado, e uma linha por pedido em CSV para análise externa), atividades delimitadas pela IA
+(validadas sem edição, com edição, rejeitadas) e calibrações (propostas, validadas). O CSV é a base para os gráficos e testes
+estatísticos do capítulo de resultados.
 
 ---
 
@@ -626,6 +666,8 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 5. Sem feriados; sem fadiga de turno; piso, altura de trabalho e precisão não alteram o tempo.
 6. Arquétipo `espera`: um ciclo por pedido (o lote inteiro cabe no equipamento). Atividades da empresa entram no plano local quando o
    item tem os dados do *driver* e ele dá maior que zero (regra simples; a IA externa decide com mais contexto).
+7. Pedido medido **no total**: o tempo é distribuído pelo previsto de cada passo (premissa declarada); serve para o nível geral, não para
+   o erro de cada atividade. Em equipe de até 2 pessoas o registro vale sem segunda conferência.
 
 ### 11.2 Lacunas e defeitos identificados na verificação (2026-11-17, atualizado em 2026-11-18)
 | # | Problema | Evidência | Impacto | Correção proposta |
@@ -642,7 +684,7 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 | 10 | ~~Catálogo acoplado à marcenaria~~ **corrigido**: pacotes por empresa (base + segmento), atividades da empresa sobre arquétipos, atributos livres, IA delimitando atividades, roteiro pela posição padrão, checagem pelas atividades em uso (6.6, 7.4) | `arquetipos.py`, `catalogo.py`, `routers/modulos.py`, `contorno.py` | Os seis módulos embutidos ainda são código (congelados por teste) | Seção 12.2 |
 
 ### 11.3 Outras limitações
-README anterior citava 306 testes (hoje 340). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+README anterior citava 306 testes (hoje 346). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
 
 ---
 
@@ -770,7 +812,7 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 - **Convenções de tempo:** realizado = preparação + execução + retrabalho (soma bruta dos apontamentos); total = realizado + espera; desvio = realizado − estimado (positivo = demorou mais); eficiência = estimado ÷ realizado.
   **Atenção:** o previsto do plano é **tempo padrão** (com tolerâncias), e o realizado é tempo bruto: trabalhar exatamente no tempo normal aparece como desvio negativo. A calibração compara tempo **normal** observado com o previsto.
 
-### Apêndice D — Mapa de endpoints (129 rotas)
+### Apêndice D — Mapa de endpoints (133 rotas)
 | Área | Rotas principais |
 |---|---|
 | Autenticação e equipe | `/auth/registrar`, `/auth/login`, `/auth/renovar`, `/auth/eu`, `/usuarios` |
@@ -780,6 +822,8 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 | Módulos da empresa | `/modulos/propor`, `/modulos/empresa` (criar, `validar`, `rejeitar`), `/modulos/vocabulario` |
 | Pacotes da empresa | `PATCH /empresa` (`pacotes`), `GET /empresa` (`pacotes_disponiveis`, `atributos_peca`) |
 | Módulos e modelo | `/modulos`, `/operacoes/{id}/estimativa`, `/modulo/sugerir`, `/modelo-tempo`, `/ergonomia`, `/processos/{id}/prontidao` |
+| Pedido em dois toques | `POST /ordens/{id}/comecar`, `POST /ordens/{id}/terminar` (`horas` opcional), `POST /planos/{id}/confirmar?abrir_pedido=true` |
+| Indicadores do piloto | `GET /pesquisa/indicadores`, `GET /pesquisa/pedidos.csv` |
 | Execução | `/ordens`, `/operador/fila`, `/apontamentos` (iniciar, finalizar, aprovar, rejeitar, anular), `/ocorrencias` |
 | Calibração | `/calibracao/modulos` (prévia, aplicar, validar, rejeitar), `/pessoas/calibrar-ritmo` |
 | Análise | `/relatorios/desempenho(.csv)`, `/dashboard`, `/analise/comparacao`, `/auditoria` |
@@ -805,6 +849,14 @@ definido pela empresa (ex.: demãos), usado pelos *drivers*. **Local de produç�
 AMERICAN SOCIETY OF MECHANICAL ENGINEERS (ASME). **ASME Standard 101: Operation and flow process charts**. New York: ASME, 1947. `[VERIFICAR]`
 
 BARNES, R. M. **Motion and time study: design and measurement of work**. 7. ed. New York: Wiley, 1980.
+
+HAMPEL, F. R. The influence curve and its role in robust estimation. **Journal of the American Statistical Association**, v. 69, n. 346, p. 383–393, 1974. `[VERIFICAR]`
+
+LONGLEY-COOK, L. H. An introduction to credibility theory. **Proceedings of the Casualty Actuarial Society**, v. 49, p. 194–221, 1962. `[VERIFICAR]`
+
+MARTINS, E. **Contabilidade de custos**. 9. ed. São Paulo: Atlas, 2003. `[VERIFICAR]`
+
+MOWBRAY, A. H. How extensive a payroll exposure is necessary to give a dependable pure premium? **Proceedings of the Casualty Actuarial Society**, v. 1, p. 24–30, 1914. `[VERIFICAR]`
 
 BRASIL. **Decreto-Lei nº 5.452, de 1º de maio de 1943** (Consolidação das Leis do Trabalho), arts. 58, 59, 71, 198, 390 e 405.
 
