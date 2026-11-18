@@ -65,7 +65,7 @@ compostos por vocabulário fechado e tolerâncias por fontes plugáveis (constan
 artificial generativa apenas sugere** (escolhe módulos de um catálogo fechado e interpreta descrições); **o sistema valida e calcula**,
 e o dado medido e aprovado por pessoa sempre prevalece. Os tempos reais apontados na execução são contrastados com os planejados e
 alimentam uma **calibração por módulo e por produto**, validada por uma pessoa e testada com dados reservados. O sistema conta com
-322 testes automatizados e é validado em uma marcenaria. Discutem-se a convergência entre o sistema proposto e o implementado e as
+325 testes automatizados e é validado em uma marcenaria. Discutem-se a convergência entre o sistema proposto e o implementado e as
 limitações do piloto.
 
 **Palavras-chave:** tempo padrão; estudo de tempos; ERP; gêmeo digital; inteligência artificial; ergonomia; calibração.
@@ -193,13 +193,13 @@ Princípio: todo componente tem **fonte na literatura ou medição da empresa**.
 | 12 | Preparação | Medida (cronoanálise) | Barnes | `[NÃO IMPLEMENTADO]` | 5 min (máquina) e 2 min (posto) genéricos |
 | 13 | Conferência final | Medida (cronoanálise) | Barnes | `[NÃO IMPLEMENTADO]` | 5 min genérico |
 | 14 | Divisão do trabalho entre pessoas | Balanceamento com perdas de coordenação e curva de aprendizagem | Niebel e Freivalds | `[PARCIAL]` | Hoje caso ideal `÷ n`, declarado |
-| 15 | Calibração por módulo | `fator = mediana(TN observado ÷ TN previsto)` em **tempo corrido**, 0,5–2,0, validado por pessoa | Estatística robusta | `[PARCIAL]` | **Viés com equipe de 2+ pessoas (11.2, item 4)** |
+| 15 | Calibração por módulo | `fator = mediana(TN observado ÷ TN previsto)` em **tempo corrido**, 0,5–2,0, validado por pessoa | Estatística robusta | `[IMPLEMENTADO]` | Viés com equipe corrigido (11.2, item 4); falta o mesmo no histórico por operação (item 5) |
 | 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmo pré-requisito de dados do item 15 |
 | 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos heurísticos (3, 5, 10, 8) |
 | 18 | Fadiga ao longo do turno | Aprendida de dados reais | — | `[NÃO IMPLEMENTADO]` | Fora do cálculo, declarado |
 | 19 | Jornada e agenda | Blocos, intervalos, dias úteis e **feriados** | CLT arts. 58, 59, 71 | `[PARCIAL]` | Sem feriados |
 | 20 | Hierarquia de fontes do tempo-base | **medido pela empresa > predeterminado certificado > referência genérica rotulada** (7.11) | Barnes; Zandin | `[PARCIAL]` | Hoje só o nível 3 (genérico) |
-| 21 | Cobertura do plano | Toda peça em algum passo; deve existir montagem (7.14) | — | `[NÃO IMPLEMENTADO]` | `completo` só olha dado faltante |
+| 21 | Cobertura do plano | Toda peça em algum passo; deve existir montagem (7.14) | — | `[PARCIAL]` | Peça fora dos passos e ausência de montagem viram pendência; falta conferir as ligações por subconjunto |
 
 **Consequência para a redação:** a **estrutura** do tempo padrão (itens 1, 3, 8, 16) segue a literatura e está implementada. Os componentes marcados
 `[PARCIAL]` e `[NÃO IMPLEMENTADO]` são o **trabalho de convergência** (seção 12.1) e devem constar no TCC como tal. Na prática, hoje o fator de
@@ -227,7 +227,7 @@ relatório previsto × realizado por variante; auditoria.
 - **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
 - **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
 - **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
-- **Dimensão (2026-11-17):** ~12 mil linhas de Python na aplicação, ~4,6 mil de testes, ~2,5 mil de JavaScript, 29 entidades, 123 *endpoints*, 322 testes.
+- **Dimensão (2026-11-17):** ~12 mil linhas de Python na aplicação, ~4,6 mil de testes, ~2,5 mil de JavaScript, 29 entidades, 123 *endpoints*, 325 testes.
 
 ```
  navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
@@ -243,7 +243,7 @@ app/            API (routers/), regras (services/), IA (services/ia/), modelos e
   services/arranjo/      recomendação de arranjo
 static/         interface web
 migrations/     Alembic
-tests/          pytest (322 testes)
+tests/          pytest (325 testes)
 ```
 
 ### 6.4 Modelo de dados (principais entidades, `app/models.py`)
@@ -379,7 +379,7 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
 - **Amostra:** uma operação concluída (ordem não cancelada) com módulo e previsão. Observado = apontamentos **aprovados** e não anulados (preparação + execução), normalizados **por apontamento** pelo ritmo de quem executou (só na fração `f`).
   Previsto = tempo normal em ritmo 100 **sem** fator de calibração (para não calibrar sobre a calibração).
   **Especificação:** o observado é o **tempo corrido** da operação (união dos intervalos dos apontamentos, ponderada pelo ritmo médio), coerente com o previsto, que também é tempo corrido;
-  assim o fator não depende de quantas pessoas registram o apontamento. **Estado:** `[PARCIAL]` — hoje soma as durações, o que infla a razão com equipe de 2+ pessoas (reproduzido em teste; 11.2, item 4).
+  assim o fator não depende de quantas pessoas registram o apontamento. **Estado:** `[IMPLEMENTADO]` — observado = união dos intervalos × ritmo médio ponderado pela duração; duas pessoas no mesmo intervalo contam uma vez (testes de regressão; 11.2, item 4).
 - **Fator geral do módulo:** mediana das razões, ≥ 10 amostras por (unidade, módulo), limitado a 0,5–2,0.
 - **Família (produto × módulo):** `fator(porte) = fator_ref · (porte ÷ porte_ref)^b`, com **porte** = tempo normal previsto por unidade do pedido; `b` por Theil–Sen sobre ln(razão) × ln(porte), limitado a −0,5…1,0.
   Exige ≥ 8 amostras do produto, ≥ 3 tamanhos distintos e dispersão de porte ≥ 1,25×. Fora do intervalo observado (±50 %) o porte é travado na borda e o passo é rotulado **extrapolado**.
@@ -419,9 +419,10 @@ Cada passo do plano ganha condições opcionais de trabalho: frequência e dura�
 postura e ambiente do local. Com elas, as fontes `niosh`, `murrell` e `ambiente` passam a **entrar no fator de tolerância do plano** (hoje só entram no fluxo legado de processos). O que faltar vira pendência, nunca valor.
 A avaliação postural (RULA) entra como alerta; qualquer conversão em percentual é premissa rotulada.
 
-### 7.14 Validação de cobertura do plano  `[NÃO IMPLEMENTADO]`
+### 7.14 Validação de cobertura do plano  `[PARCIAL]`
 Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do pedido aparece em ao menos um passo de processamento ou montagem pertinente à sua função, (ii) existe passo de montagem se há ligações e
 (iii) as ligações de cada subconjunto e as finais estão cobertas. Cobertura incompleta vira **pendência**, e o plano não recebe "cabe". Isso protege contra a omissão de passos por uma sugestão da IA ou por uma regra local.
+**Estado:** os itens (i) e (ii) estão implementados (`plano.cobertura_do_plano`): peça fora de qualquer passo ou ausência de montagem vira pendência, o plano deixa de ser `completo` e a confiança é "baixa". O item (iii) segue pendente.
 
 ---
 
@@ -458,7 +459,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 ## 10. Verificação e validação
 
 ### 10.1 Testes automatizados `[IMPLEMENTADO]`
-**322 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+**325 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
 
 | Arquivo(s) | O que verifica |
 |---|---|
@@ -504,8 +505,8 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 |---|---|---|---|---|
 | 1 | **Tempos de máquina não incluem alimentação e retirada manual** das peças | `modulos/usinagem.py` (premissa `_NAO_MANUSEIO`) | Subestima corte, furação e borda | Elementos manuais com coeficiente de fonte; ou medição |
 | 2 | **NIOSH e Murrell não recebem dados no fluxo do plano** | `plano.py`: o contexto de tolerâncias só tem local e perfil | Só 9 % (FT ≈ 1,099) entra; o README anterior dizia o contrário | Atributos de condição de trabalho por passo (frequência, altura, gasto energético) |
-| 3 | **Nenhuma checagem de cobertura do plano** | `plano.persistir`: `completo` só olha dado faltante | Se a IA omitir um passo, o plano sai "completo" e mais curto | Validar que toda peça está em algum passo e que existe montagem |
-| 4 | **Viés da calibração com equipe de 2+ pessoas** | **Reproduzido em teste**: montagem de 2 pessoas, previsto 10 min corridos, real 10 min; razão = 1,0 se uma pessoa aponta e **2,0** se as duas apontam | Fator inflado até o teto de 2,0; pune quem aponta melhor | `observado = união dos intervalos × média ponderada do ritmo` (`timecalc.uniao_minutos` já existe); 3 testes de regressão |
+| 3 | ~~Nenhuma checagem de cobertura do plano~~ **corrigido parcialmente** (peça fora dos passos e falta de montagem; teste de regressão) | `plano.persistir`: `completo` só olha dado faltante | Se a IA omitir um passo, o plano sai "completo" e mais curto | Validar que toda peça está em algum passo e que existe montagem |
+| 4 | ~~Viés da calibração com equipe de 2+ pessoas~~ **corrigido** (união dos intervalos; 2 testes de regressão) | **Reproduzido em teste**: montagem de 2 pessoas, previsto 10 min corridos, real 10 min; razão = 1,0 se uma pessoa aponta e **2,0** se as duas apontam | Fator inflado até o teto de 2,0; pune quem aponta melhor | `observado = união dos intervalos × média ponderada do ritmo` (`timecalc.uniao_minutos` já existe); 3 testes de regressão |
 | 5 | Caminho do histórico por operação (`estimativa._pelo_historico`) pode ter o mesmo viés | não verificado | idem | Verificar ao corrigir o item 4 |
 | 6 | Calibrar o ritmo e o módulo juntos pode absorver o nível da equipe | documentado no código | O fator "não é verdade OIT" | Declarar no texto; modo cronoanálise |
 | 7 | Limite de 50 % para tolerâncias e mínimos de amostra são escolhas heurísticas | `LIMITE_TOLERANCIA`, `min_amostras_*` | — | Calcular tamanho de amostra por confiança e erro |
@@ -514,7 +515,7 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 | 10 | Catálogo acoplado à marcenaria (seção 6.6) | `catalogo.py`, `entradas.py` | Não é genérico na prática | Seção 12.2 |
 
 ### 11.3 Outras limitações
-README anterior citava 306 testes (hoje 322). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+README anterior citava 306 testes (hoje 325). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
 
 ---
 
@@ -523,7 +524,7 @@ README anterior citava 306 testes (hoje 322). O sistema é triagem de apoio à d
 ### 12.1 Convergir o tempo padrão ao embasamento na literatura  `[PLANEJADO]`
 Ordem sugerida (do que mais reduz a distância entre o que se afirma e o que se calcula):
 1. **Integrar a ergonomia ao fluxo principal** (7.13): cada passo ganha condições de trabalho (frequência de levantamento, alturas, gasto energético) para NIOSH e Murrell entrarem no FT.
-2. **Corrigir os itens 3 e 4 da seção 11.2** (cobertura do plano, 7.14; viés da calibração com equipe, 7.8).
+2. ~~Corrigir os itens 3 e 4 da seção 11.2~~ feito (cobertura do plano parcial, 7.14; viés da calibração com equipe, 7.8).
 3. **Modo cronoanálise** (7.12; Barnes; Niebel e Freivalds): registro de ciclos por elemento, avaliação de ritmo por observação, **tamanho de amostra** pela fórmula clássica, tempo padrão por elemento. Substitui os coeficientes genéricos (itens 11 a 13 da 5.9) por dados com fonte e rastreabilidade.
 4. **Sistema de tempos predeterminados** (MOST ou MTM) com índices conferidos no cartão certificado — ou declarar explicitamente que não é usado e remover o "ilustrativo".
 5. **RULA** (McAtamney e Corlett, 1993) a partir das **tabelas originais**; conversão score → tolerância sempre rotulada como premissa.

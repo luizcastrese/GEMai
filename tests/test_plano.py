@@ -491,3 +491,19 @@ def test_a_ia_nao_encurta_a_montagem_pedindo_mais_pessoas(admin, unidade_id, mon
         "nome": "Montar Corpo", "modulo": "montagem", "grupo": "Corpo", "pessoas": 40}], "confianca": "media"}))
     p = next(s for s in _gerar(admin, pid, unidade_id)["passos"] if s["modulo"] == "montagem")
     assert p["pessoas"] == 1 and p["tempo_padrao_min"] == pytest.approx(base, abs=0.01)  # quem divide o trabalho é a equipe informada
+
+
+def test_plano_sem_montagem_ou_com_peca_fora_dos_passos_nao_e_completo(admin, unidade_id, monkeypatch):
+    """Regressão (11.2, item 3): se a IA omite um passo, o plano diz o que falta em vez de sair "completo" e mais curto."""
+    from app.services import ia
+    from app.services.ia import esquemas as es
+    _cadastrar_contorno(admin, unidade_id)
+    pid, _, _ = _mesa(admin)
+    assert _gerar(admin, pid, unidade_id)["totais"]["completo"] is True  # o plano local cobre tudo
+    monkeypatch.setattr(ia, "provedor_ativo", lambda empresa: "claude")
+    monkeypatch.setattr(ia.claude, "planejar", lambda ctx: es.PlanoProposta.model_validate({"passos": [{
+        "nome": "Cortar", "modulo": "corte", "componentes": ["Tampo"], "recurso": "Seccionadora"}], "confianca": "media"}))
+    p = _gerar(admin, pid, unidade_id)
+    assert p["totais"]["completo"] is False and p["confianca"] == "baixa"
+    texto = " | ".join(p["faltantes"])
+    assert "Lateral" in texto and "montagem" in texto

@@ -276,3 +276,41 @@ def test_migracao_0009_sobe_e_desce_no_sqlite(tmp_path):
     alembic("downgrade", "-1")
     assert "plano_passo_id" not in colunas("ordem_operacoes") and not colunas("calibracoes_modulo")
     alembic("upgrade", "head")
+
+
+def test_equipe_apontando_o_mesmo_trabalho_nao_dobra_o_fator(admin, gestor, unidade_id, db_factory):
+    """Regressão (11.2, item 4): duas pessoas que apontam o MESMO intervalo contam uma vez (tempo corrido), como o previsto."""
+    pid, _ = montar_processo(gestor, unidade_id)
+    a = _pessoa(gestor, unidade_id, "Ana", ritmo_pct=100)["id"]
+    b = _pessoa(gestor, unidade_id, "Beto", ritmo_pct=100)["id"]
+    ordens = []
+    for _ in range(10):  # previsto 50 min; feito em 50 min corridos por duas pessoas lado a lado
+        o, _oo = _executar(gestor, admin, pid, 50, pessoa_id=a)
+        ordens.append(o["id"])
+    db = db_factory()
+    for ordem_id in ordens:
+        ap = db.query(Apontamento).filter(Apontamento.ordem_id == ordem_id).one()
+        db.add(Apontamento(empresa_id=ap.empresa_id, unidade_id=ap.unidade_id, ordem_id=ap.ordem_id, ordem_operacao_id=ap.ordem_operacao_id,
+                           tipo=ap.tipo, pessoa_id=b, inicio=ap.inicio, fim=ap.fim, quantidade_boa=0, status="aprovado", anulado=False,
+                           registrado_por=ap.registrado_por))
+    db.commit()
+    db.close()
+    m = _calibrar(gestor, unidade_id=unidade_id)["modulos"][0]
+    assert m["fator_sugerido"] == pytest.approx(1.0) and m["limitado"] is False  # antes: 2,0 (100 min ÷ 50)
+
+
+def test_ritmo_da_equipe_e_a_media_ponderada_pela_duracao(admin, gestor, unidade_id, db_factory):
+    pid, _ = montar_processo(gestor, unidade_id)
+    rapido = _pessoa(gestor, unidade_id, "Rápido", ritmo_pct=125)["id"]
+    lento = _pessoa(gestor, unidade_id, "Lento", ritmo_pct=75)["id"]
+    ordens = [_executar(gestor, admin, pid, 40, pessoa_id=rapido)[0]["id"] for _ in range(10)]
+    db = db_factory()
+    for ordem_id in ordens:
+        ap = db.query(Apontamento).filter(Apontamento.ordem_id == ordem_id).one()
+        db.add(Apontamento(empresa_id=ap.empresa_id, unidade_id=ap.unidade_id, ordem_id=ap.ordem_id, ordem_operacao_id=ap.ordem_operacao_id,
+                           tipo=ap.tipo, pessoa_id=lento, inicio=ap.inicio, fim=ap.fim, quantidade_boa=0, status="aprovado", anulado=False,
+                           registrado_por=ap.registrado_por))
+    db.commit()
+    db.close()
+    m = _calibrar(gestor, unidade_id=unidade_id)["modulos"][0]
+    assert m["fator_sugerido"] == pytest.approx(40 * 1.0 / 50)  # 40 min corridos × ritmo médio (125 + 75)/2 = 100 ÷ 50 previstos

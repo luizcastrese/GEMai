@@ -43,6 +43,28 @@ def _motivos_confianca_baixa(base, linhas: list[dict]) -> list[str]:
     return motivos
 
 
+# ------------------------------------------------------------------ cobertura
+def cobertura_do_plano(base, linhas: list[dict]) -> list[str]:
+    """Pendências de COBERTURA: toda peça do produto deve estar em algum passo e deve existir montagem (quando há mais de uma peça
+    ou ligações). Sem isto, se a IA omitisse um passo o plano sairia "completo" e mais curto."""
+    comps = [c for c in base.comps_d if c.get("nome")]
+    if not comps:
+        return []
+    passos = [l["p"] for l in linhas]
+    montagens = [p for p in passos if p.modulo == "montagem"]
+    nomes = {n.lower() for p in passos for n in p.componentes}
+    final = any(getattr(p, "final", False) for p in montagens)
+    grupos_montados = {p.grupo for p in montagens if p.grupo and not p.componentes}
+    fora = [c["nome"] for c in comps if c["nome"].lower() not in nomes and not final and c.get("grupo") not in grupos_montados]
+    faltam = []
+    if fora:
+        faltam.append("Peças que não entram em nenhum passo do plano: " + ", ".join(fora[:6]) + ("…" if len(fora) > 6 else "")
+                      + " (o tempo está subestimado; inclua-as ou ajuste o plano)")
+    if not montagens and (len(comps) > 1 or base.ligs_d):
+        faltam.append("O plano não tem passo de montagem: o produto tem mais de uma peça/ligação (o tempo está subestimado)")
+    return faltam
+
+
 # ------------------------------------------------------------------ entradas
 def estimar_peso(c: Componente) -> tuple[float | None, str | None]:
     if c.peso_kg is not None:
@@ -339,13 +361,14 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     fim_geral = max((f for (_, f, e) in ag if e is not None), default=None)
     inicio_geral = min((i for (i, _, e) in ag if e is not None), default=None)
     dias = len({f.date() for (_, f, e) in ag if e is not None} | {i.date() for (i, _, e) in ag if e is not None})
-    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]]))
+    lacunas = cobertura_do_plano(base, linhas)
+    faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]] + lacunas))
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita
     # Confiança: só vale "média" quando o plano é completo, a IA não declarou "baixa" e NADA no cálculo é genérico ou estimado.
     # Sem histórico medido do plano nunca é "alta". A confiança que a IA declara é só um rótulo: o sistema a limita.
     motivos = _motivos_confianca_baixa(base, linhas)
-    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or proposta.confianca == "baixa" or motivos) else "media")
+    plano.provedor, plano.confianca = provedor, ("baixa" if (incompletos or lacunas or proposta.confianca == "baixa" or motivos) else "media")
     obsoleto = ["O campo 'fadiga % por hora' é obsoleto e foi ignorado: a fadiga por turno só entra no cálculo quando for aprendida dos dados."] \
         if cfg.get("fadiga_ignorada") else []
     estimadas = sorted({r.nome for r in base.recursos if r.capacidade_origem == "ia" and r.capacidade})
@@ -361,7 +384,7 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
                     "tempo_agendado_min": round(totais_a, 2), "horas_homem": round(hh, 2), "dias": dias,
                     "inicio": (inicio_geral.replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if inicio_geral else None),
                     "fim": (fim_geral.replace(tzinfo=tz).astimezone(timezone.utc).isoformat() if fim_geral else None),
-                    "completo": incompletos == 0 and not proposta.dados_faltantes, **(extras_totais or {})}
+                    "completo": incompletos == 0 and not lacunas and not proposta.dados_faltantes, **(extras_totais or {})}
     plano.status = "rascunho"
     plano.confirmado_por = plano.confirmado_em = None
     db.flush()

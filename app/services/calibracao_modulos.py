@@ -1,8 +1,9 @@
 """Calibração por MÓDULO: fator multiplicativo = mediana(tempo normal observado ÷ tempo normal previsto).
 
 - amostra = uma operação concluída (ordem não cancelada) que tem módulo e previsão; o tempo observado é o dos apontamentos
-  APROVADOS e não anulados de preparação + execução, normalizado POR APONTAMENTO pelo ritmo de quem executou (só na fração
-  do tempo que depende do operador, como no histórico normalizado); a previsão é a do módulo em ritmo 100 e SEM fator
+  APROVADOS e não anulados de preparação + execução em TEMPO CORRIDO (a união dos intervalos: duas pessoas apontando o mesmo trabalho
+  simultâneo contam uma vez), normalizado pelo ritmo médio de quem executou, ponderado pela duração (só na fração do tempo que
+  depende do operador); a previsão é a do módulo em ritmo 100 e SEM fator
   de calibração (para não calibrar sobre a própria calibração);
 - por (unidade, módulo): fator = mediana das razões, com ≥ `min_amostras_calibracao` amostras, limitado a 0,5–2,0;
 - a prévia não grava; registrar cria uma proposta PENDENTE; só uma pessoa a valida (validado + vigente) e só a validada
@@ -88,14 +89,23 @@ def amostras(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Amost
         Apontamento.empresa_id == empresa_id, Apontamento.ordem_operacao_id.in_(por_oo), Apontamento.status == "aprovado",
         Apontamento.anulado.is_(False), Apontamento.fim.is_not(None), Apontamento.tipo.in_(("execucao", "preparacao")))))
     ritmos = ritmo.ritmos_das_pessoas(db, empresa_id, {a.pessoa_id for a in apts if a.pessoa_id})
-    observado: dict[int, float] = {}
+    # Tempo CORRIDO: pessoas trabalhando juntas contam uma vez (união dos intervalos), não uma por pessoa. O ritmo entra como a média
+    # ponderada pela duração de cada apontamento, aplicada só na fração que depende do operador. Com uma pessoa só, dá o mesmo
+    # resultado de antes (duração · (f·ritmo + 1 − f)); com equipe, o previsto (corrido) e o observado passam a ser comparáveis.
+    grupos: dict[int, list[Apontamento]] = {}
     for a in apts:
-        oo = por_oo[a.ordem_operacao_id][0]
+        grupos.setdefault(a.ordem_operacao_id, []).append(a)
+    observado: dict[int, float] = {}
+    for oo_id, lista in grupos.items():
+        oo = por_oo[oo_id][0]
         f = oo.fracao_operador if oo.fracao_operador is not None else 1.0
-        r = ritmos.get(a.pessoa_id)
-        rit = r.valor / 100.0 if r is not None and r.conhecido else 1.0
-        d = timecalc.duracao_min(a.inicio, a.fim) or 0.0
-        observado[oo.id] = observado.get(oo.id, 0.0) + d * (f * rit + (1.0 - f))
+        corrido = timecalc.uniao_minutos((a.inicio, a.fim) for a in lista)
+        pesos = [(timecalc.duracao_min(a.inicio, a.fim) or 0.0, ritmos.get(a.pessoa_id)) for a in lista]
+        total = sum(d for d, _ in pesos)
+        if total <= 0:
+            continue
+        rit = sum(d * (r.valor / 100.0 if r is not None and r.conhecido else 1.0) for d, r in pesos) / total
+        observado[oo_id] = corrido * (f * rit + (1.0 - f))
     out: list[Amostra] = []
     for oo_id, obs in observado.items():
         if obs <= 0:
