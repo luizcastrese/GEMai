@@ -1,7 +1,7 @@
 import { api, baixar, del, get, patch, post, qs } from './api.js';
 import { atributoDoPacote, estado } from './estado.js';
 import { cartaoCampos, editorEstrutura, formEspecificacoes } from './variante.js';
-import { cartaoPedido, cartaoValor } from './pedido.js';
+import { cartaoCiclo, cartaoPedido, cartaoValor } from './pedido.js';
 import { avisoIA, badge, confirmar, detalhes, fmtData, fmtDia, fmtMin, fmtNum, h, kpi, modal, montar, statusBadge, tabela, tempoPorUnidade, tentar, toast } from './ui.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
@@ -331,6 +331,8 @@ function pecasDoPedido(est) {
 export async function planoDetalhe(el, id) {
   const p = await get(`/planos/${id}`);
   const ordem = p.ordem_id ? await get(`/ordens/${p.ordem_id}`).catch(() => null) : null;
+  // depois de medido, o ciclo: o real mostrou que é o padrão ou o fluxo que precisa de ajuste
+  const ciclo = ordem && ordem.status === 'concluida' ? await get(`/planos/${id}/ciclo`).catch(() => null) : null;
   const t = p.totais;
   const ops = p.passos;
   const recarregar = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -386,7 +388,8 @@ export async function planoDetalhe(el, id) {
       t.tempo_preparo_min ? h('div', { class: 'sub' }, `+ ${fmtMin(t.tempo_preparo_min)} de preparo do lote (uma vez, não cresce com a quantidade)`) : null,
       h('div', { class: 'sub' }, `${fmtNum(p.quantidade, 2)} unidade(s) = ${fmtMin(t.tempo_padrao_min)} · termina ${t.fim ? fmtData(t.fim) : '—'}`),
       t.completo ? null : h('div', { class: 'small warn-l' }, 'Passos sem tempo não entram na conta: o prazo real será maior. Complete o que falta abaixo e recalcule.')),
-    ordem ? cartaoPedido(ordem, recarregar, { titulo: 'Medir este pedido' }) : null,
+    ciclo ? cartaoCiclo(p, ciclo) : null,
+    ordem && ordem.status !== 'concluida' ? cartaoPedido(ordem, recarregar, { titulo: 'Medir este pedido' }) : null,
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoValor(p) : null,
     t.tempo_padrao_min && p.status !== 'cancelado' ? cartaoPrazo(p) : null,
     p.estrutura?.componentes?.length ? detalhes('Peças deste pedido (como as medidas entraram)', pecasDoPedido(p.estrutura)) : null,
