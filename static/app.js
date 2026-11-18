@@ -71,7 +71,7 @@ function casca(conteudo, hash) {
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
   });
-  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'GEM', h('span', null, 'ai')),
+  const nav = h('nav', { class: 'side' }, h('div', { class: 'brand' }, 'Tempo', h('span', null, 'ra')),
     Object.entries(grupos).map(([g, links]) => [h('div', { class: 'grp' }, g), ...links]));
   const sel = h('select', { 'aria-label': 'Unidade', onchange: (e) => { escolherUnidade(e.target.value); rotear(); } },
     estado.unidades.map((u) => h('option', { value: u.id, selected: u.id === estado.unidadeId }, u.nome)));
@@ -103,13 +103,13 @@ function telaAuth() {
     campo('senha', modo === 'login' ? 'Senha' : 'Senha (mín. 10 caracteres, com maiúsculas, minúsculas e número)', 'password', modo === 'login' ? 'current-password' : 'new-password'),
     h('p', null, h('button', { class: 'pri', type: 'submit' }, modo === 'login' ? 'Entrar' : 'Criar empresa e entrar')));
     f.segmento && (f.segmento.required = false);
-    const painel = h('aside', { class: 'auth-brand' }, h('div', { class: 'brand' }, 'GEM', h('span', null, 'ai')),
+    const painel = h('aside', { class: 'auth-brand' }, h('div', { class: 'brand' }, 'Tempo', h('span', null, 'ra')),
       h('p', { class: 'lede' }, 'Prazo ', h('em', null, 'realista'), ', calculado da sua produção.'),
       h('ul', null,
         h('li', null, 'Do produto ao roteiro: o sistema monta as etapas e o tempo padrão por unidade.'),
         h('li', null, 'Tempos vêm da ficha técnica e do histórico, nunca de um número digitado no escuro.'),
         h('li', null, 'A IA sugere; o sistema valida.')));
-    const entrada = h('div', { class: 'auth' }, h('h1', null, 'Entrar no GEMai'),
+    const entrada = h('div', { class: 'auth' }, h('h1', null, 'Entrar no Tempora'),
       h('p', { class: 'muted' }, 'A IA sugere; o sistema valida.'),
       h('div', { class: 'card' }, form,
         h('p', { class: 'small' }, modo === 'login' ? 'Primeiro acesso? ' : 'Já tem conta? ',

@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 def criar_app() -> FastAPI:
     s = get_settings()
     app = FastAPI(
-        title="ERP de Produção com IA", version="1.0.0", lifespan=lifespan,
+        title="Tempora — ERP de Produção com IA", version="1.0.0", lifespan=lifespan,
         description="ERP genérico orientado à produção. A IA sugere; o sistema valida.",
         docs_url=None if s.producao else "/docs", redoc_url=None, openapi_url=None if s.producao else "/openapi.json")
 
