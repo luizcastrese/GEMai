@@ -11,6 +11,7 @@ import * as config from './telas_config.js';
 import * as plano from './telas_plano.js';
 import * as relatorio from './telas_relatorio.js';
 import * as calibracao from './telas_calibracao.js';
+import * as modulos from './telas_modulos.js';
 
 const raiz = document.getElementById('app');
 let limparTela = null; // permite telas encerrarem timers
@@ -24,6 +25,7 @@ const ROTAS = [
   [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
   [/^#\/contorno$/, contorno.contorno, ['Plano de trabalho', '2. Oficina', '#/contorno']],
   [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
+  [/^#\/atividades$/, modulos.modulos, ['Plano de trabalho', 'Atividades', '#/atividades']],
   [/^#\/planos$/, plano.planos, ['Plano de trabalho', '3. Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
   [/^#\/relatorio$/, relatorio.relatorio, ['Plano de trabalho', '4. Relatório', '#/relatorio']],

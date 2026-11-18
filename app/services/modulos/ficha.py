@@ -50,9 +50,10 @@ def converter(valor: float, unidade_origem: str, unidade_destino: str) -> float 
     return None if f is None else valor * f
 
 
-def validar_valor(nome: str, valor: float, unidade: str | None = None) -> tuple[float | None, str | None]:
-    """(valor na unidade do catálogo, motivo da rejeição). Valida o nome, a unidade e a faixa plausível."""
-    p = PARAMETROS_FICHA.get(nome)
+def validar_valor(nome: str, valor: float, unidade: str | None = None, extras: dict | None = None) -> tuple[float | None, str | None]:
+    """(valor na unidade do catálogo, motivo da rejeição). Valida o nome, a unidade e a faixa plausível.
+    `extras`: parâmetros declarados pelos módulos validados da empresa (`catalogo.parametros_ficha_extras`)."""
+    p = PARAMETROS_FICHA.get(nome) or (extras or {}).get(nome)
     if p is None:
         return None, "parâmetro fora do catálogo da ficha técnica"
     if isinstance(valor, bool) or valor != valor or valor in (float("inf"), float("-inf")):
@@ -67,9 +68,15 @@ def validar_valor(nome: str, valor: float, unidade: str | None = None) -> tuple[
     return (float(round(v)) if p.inteiro else float(v)), None
 
 
-def aplicaveis(funcao: str) -> list[ParametroFicha]:
+def aplicaveis(funcao: str, extras: dict | None = None) -> list[ParametroFicha]:
     """Parâmetros da ficha de um meio com a função dada (vazio = todos, para meios ainda sem função)."""
-    return [p for p in PARAMETROS_FICHA.values() if not funcao or funcao in p.funcoes]
+    todos = {**PARAMETROS_FICHA, **(extras or {})}
+    return [p for p in todos.values() if not funcao or funcao in p.funcoes]
+
+
+def unidade_de(nome: str, extras: dict | None = None) -> str | None:
+    p = PARAMETROS_FICHA.get(nome) or (extras or {}).get(nome)
+    return p.unidade if p else None
 
 
 def url_de_fonte(url: str | None) -> str | None:

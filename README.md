@@ -65,7 +65,7 @@ compostos por vocabulário fechado e tolerâncias por fontes plugáveis (constan
 artificial generativa apenas sugere** (escolhe módulos de um catálogo fechado e interpreta descrições); **o sistema valida e calcula**,
 e o dado medido e aprovado por pessoa sempre prevalece. Os tempos reais apontados na execução são contrastados com os planejados e
 alimentam uma **calibração por módulo e por produto**, validada por uma pessoa e testada com dados reservados. O sistema conta com
-325 testes automatizados e é validado em uma marcenaria. Discutem-se a convergência entre o sistema proposto e o implementado e as
+334 testes automatizados; a validação de campo está planejada em uma marcenaria. Discutem-se a convergência entre o sistema proposto e o implementado e as
 limitações do piloto.
 
 **Palavras-chave:** tempo padrão; estudo de tempos; ERP; gêmeo digital; inteligência artificial; ergonomia; calibração.
@@ -223,11 +223,11 @@ relatório previsto × realizado por variante; auditoria.
 **Não funcionais:** multiempresa com isolamento rígido; reprodutibilidade (todo coeficiente com valor, unidade, fonte, status e versão); rastreabilidade; LGPD; execução em Docker e Render; PostgreSQL em produção.
 
 ### 6.3 Arquitetura e tecnologias
-- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (14 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
+- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (15 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
 - **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
 - **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
 - **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
-- **Dimensão (2026-11-17):** ~12 mil linhas de Python na aplicação, ~4,6 mil de testes, ~2,5 mil de JavaScript, 29 entidades, 123 *endpoints*, 325 testes.
+- **Dimensão (2026-11-17):** ~12 mil linhas de Python na aplicação, ~4,6 mil de testes, ~2,5 mil de JavaScript, 30 entidades, 128 *endpoints*, 334 testes.
 
 ```
  navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
@@ -243,7 +243,7 @@ app/            API (routers/), regras (services/), IA (services/ia/), modelos e
   services/arranjo/      recomendação de arranjo
 static/         interface web
 migrations/     Alembic
-tests/          pytest (325 testes)
+tests/          pytest (334 testes)
 ```
 
 ### 6.4 Modelo de dados (principais entidades, `app/models.py`)
@@ -298,8 +298,24 @@ tolerâncias plugáveis, calibração, agenda, multiempresa, auditoria) é indep
 Um pacote declara: módulos (arquétipo, fórmula do *driver* sobre os atributos do item, parâmetros da ficha técnica, coeficientes e preparo), atributos do item, métodos de ligação,
 sequência padrão de passos (para o planejador funcionar sem IA externa) e vocabulário da interface. O mesmo motor atende outros segmentos (ex.: alimentação, gráfica) com outro pacote.
 
-**Estado.** `[PARCIAL]`: só existe o **pacote de marcenaria**, embutido no código. O catálogo é fixo (`Literal` com seis chaves) e igual para toda empresa; a montagem das condições de cada passo é um `if` por
-chave; o produto é lista de peças com colunas fixas; o planejador local fixa corte → borda → furação → montagem; o campo `segmento` só serve de contexto para a IA. Convergência na seção 12.2.
+**Módulo por necessidade (a IA delimita, uma pessoa valida).** Além dos pacotes, a empresa cria módulos para as atividades que o
+catálogo não tem: descreve a atividade ("Lixar peças com lixadeira orbital") e a IA a **delimita** escolhendo, só por categorias, o
+**arquétipo**, a **fórmula do driver** sobre os atributos da peça (`{area_m2}`, `{perimetro_m}`, `{qtd}` ou atributos livres como
+`{area_pintura_m2} * {demaos}`), o **parâmetro técnico** que deve vir da ficha do equipamento (nome, unidade e faixa plausível) e as
+**ações manuais** como Sequência de Movimento Geral (alcance, corpo, pegar, posicionar → TMU). A IA não escreve minutos. A proposta
+nasce **pendente**, mostra um exemplo de cálculo e só entra no catálogo da empresa depois de **validada por uma pessoa**; daí em
+diante vale para planos, operações e calibração como qualquer módulo. Se o planejador encontra uma atividade sem módulo, ela vira
+**pendência** ("atividade sem módulo de tempo"), nunca um tempo inventado.
+
+**Estado.** `[IMPLEMENTADO]` para o motor: arquétipos genéricos (`services/modulos/arquetipos.py`: `processamento_meio`, `manual`,
+`deslocamento`, `espera`), registro de módulos por empresa (`ModuloEmpresa`, versionado, pendente → validado), catálogo efetivo por
+empresa (`catalogo.da_empresa`: pacote embutido + módulos validados; um módulo da empresa não sobrescreve um embutido), atributos livres
+nas peças (`Componente.atributos`), parâmetros de ficha declarados pelos módulos validados, IA propondo módulo (`POST /modulos/propor`,
+provedor externo ou regra local) e a tela **Atividades** no caminho principal. O **pacote de marcenaria** continua embutido em código
+(seis módulos) e tem seus minutos **congelados por teste de regressão** (`test_pacote_marcenaria_congelado`). `[PARCIAL]`: o pacote
+embutido ainda não foi convertido em dados; o planejador local insere módulos da empresa por regra simples (a peça entra quando tem os
+dados do driver e ele dá > 0); a interface ainda fala "Oficina" e "peças".
+
 
 ---
 
@@ -459,7 +475,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 ## 10. Verificação e validação
 
 ### 10.1 Testes automatizados `[IMPLEMENTADO]`
-**325 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+**334 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
 
 | Arquivo(s) | O que verifica |
 |---|---|
@@ -470,6 +486,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 | `test_auth`, `test_tenancy`, `test_equipe` | segurança, isolamento, equipe |
 | `test_capacidade_ia`, `test_simples`, `test_variantes_relatorio` | IA com resposta simulada, fluxo simples, relatório |
 | `test_infra_deploy` | configuração de produção e migrações |
+| `test_modulos_empresa` | módulos da empresa por necessidade (IA delimita, pessoa valida), arquétipos, atributos livres, regressão da marcenaria |
 
 Invariantes com teste: dado faltante não vira zero; plano incompleto nunca recebe "cabe"; confiança nunca é "alta"; sexo, estatura e peso não alteram o tempo; 60 peças a 60 peças/h voltam a ser 60 min (tolerância não multiplica tempo de máquina).
 
@@ -512,10 +529,10 @@ Tabelas FM/CM do NIOSH, fórmula de Murrell, estrutura do MOST, limites da CLT e
 | 7 | Limite de 50 % para tolerâncias e mínimos de amostra são escolhas heurísticas | `LIMITE_TOLERANCIA`, `min_amostras_*` | — | Calcular tamanho de amostra por confiança e erro |
 | 8 | O assistente da Oficina pergunta "peças por hora", dado que o cálculo ignora; a ficha técnica só é editada na tela avançada | `telas_contorno.js` | Confunde o usuário | Reordenar o assistente; destacar a ficha técnica |
 | 9 | O ciclo "medir e melhorar" fica atrás do interruptor de detalhes técnicos | `app.js` (rotas com flag) | Quem seguir só o menu principal nunca mede o real | Modo piloto com o ciclo visível |
-| 10 | Catálogo acoplado à marcenaria (seção 6.6) | `catalogo.py`, `entradas.py` | Não é genérico na prática | Seção 12.2 |
+| 10 | ~~Catálogo acoplado à marcenaria~~ **corrigido em grande parte**: módulos da empresa sobre arquétipos, atributos livres, IA delimitando atividades (6.6) | `arquetipos.py`, `catalogo.py`, `routers/modulos.py` | Pacote de marcenaria segue embutido (congelado por teste) | Seção 12.2 |
 
 ### 11.3 Outras limitações
-README anterior citava 306 testes (hoje 325). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+README anterior citava 306 testes (hoje 334). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
 
 ---
 
@@ -531,7 +548,8 @@ Ordem sugerida (do que mais reduz a distância entre o que se afirma e o que se 
 6. **Tempos manuais de alimentação e retirada** nos módulos de máquina; fadiga de turno aprendida de dados; feriados na agenda; curva de aprendizagem.
 7. **Conferir as fontes originais** das constantes da OIT (valor único × por sexo), NIOSH e Murrell.
 
-### 12.2 Pacotes de módulos (generalização)  `[PLANEJADO]`
+### 12.2 Pacotes de módulos (generalização)  `[PARCIAL]`
+**Feito:** arquétipos genéricos, módulo como dado por empresa (com validação por pessoa), IA delimitando atividades, atributos livres, catálogo por empresa e regressão da marcenaria. **Falta:** o restante abaixo.
 Os seis módulos são instâncias de poucas formas (seção 6.6). Desenho-alvo:
 - **Módulo como dado:** forma de cálculo + fórmula do *driver* (reaproveita o interpretador de `formulas.py`) + parâmetros da ficha + coeficientes + preparo.
 - **Registro de pacotes** no lugar do `Literal` fixo; o esquema da IA e a validação saem do registro. **Marcenaria = primeiro pacote** (congelado como v1); outro segmento = novo conjunto de dados.
@@ -635,6 +653,7 @@ Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produç�
 | Empresa e unidades | `/empresa`, `/unidades` |
 | Produto e plano | `/produtos/{id}/estrutura`, `/componentes`, `/ligacoes`, `/interpretar`, `/montar`; `/planos` (criar, recalcular, confirmar, `/prazo`, `/gerar-ordem`, `/exportar.csv`, `/arranjos`, `/de-arranjo`) |
 | Oficina | `/contorno`, `/espacos`, `/distancias`, `/recursos`, `/recursos/{id}/ficha-tecnica`, `/meios/identificar`, `/recursos/{id}/estimar-capacidade` |
+| Módulos da empresa | `/modulos/propor`, `/modulos/empresa` (criar, `validar`, `rejeitar`), `/modulos/vocabulario` |
 | Módulos e modelo | `/modulos`, `/operacoes/{id}/estimativa`, `/modulo/sugerir`, `/modelo-tempo`, `/ergonomia`, `/processos/{id}/prontidao` |
 | Execução | `/ordens`, `/operador/fila`, `/apontamentos` (iniciar, finalizar, aprovar, rejeitar, anular), `/ocorrencias` |
 | Calibração | `/calibracao/modulos` (prévia, aplicar, validar, rejeitar), `/pessoas/calibrar-ritmo` |

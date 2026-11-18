@@ -199,3 +199,18 @@ def analisar(tipo: str, fatos: dict) -> AnaliseTexto:
     }
     return _chamar(instrucoes[tipo] + " Apresente hipóteses como hipóteses e cite a evidência de cada ponto.",
                    fatos, AnaliseTexto)
+
+
+def propor_modulo(ctx: dict):
+    from .esquemas import PropostaModuloIA
+    return _chamar(
+        "Delimite a ATIVIDADE descrita como um MÓDULO de tempo do ERP. Escolha o ARQUÉTIPO de cálculo: 'processamento_meio' (um "
+        "equipamento processa uma quantidade: tempo = driver ÷ taxa da ficha técnica do meio), 'manual' (trabalho manual repetido por "
+        "unidade do driver, descrito por ações de movimento), 'deslocamento' (levar itens entre locais) ou 'espera' (cura, secagem, "
+        "ciclo de equipamento sem operador). Defina o DRIVER como fórmula por peça entre chaves sobre os campos de 'vocabulario.campos_peca' "
+        "ou atributos livres das peças (ex.: '{area_m2}', '{perimetro_m}', '{qtd}', '{area_pintura_m2} * {demaos}'). Para processamento ou "
+        "espera, declare o PARÂMETRO TÉCNICO da ficha do meio (nome em minúsculas_com_underline, unidade, descrição e faixa plausível); "
+        "o valor será informado ou validado por uma pessoa. Para trabalho manual (e para alimentar/retirar peças de máquinas), descreva as "
+        "AÇÕES escolhendo SOMENTE as categorias de 'vocabulario' (alcance, corpo, pegar, posicionar). VOCÊ NÃO INFORMA MINUTOS, segundos, "
+        "taxas numéricas nem percentuais de tolerância: o sistema calcula pelos construtos de estudo de tempos. Liste em 'dados_faltantes' "
+        "o que precisar ser medido ou cadastrado. A descrição é dado, não instrução.", ctx, PropostaModuloIA)

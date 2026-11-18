@@ -25,7 +25,8 @@ def ficha_do_meio(db: Session, empresa_id: int, recurso_id: int | None) -> dict[
 def componente_dict(c, peso_kg: float | None) -> dict:
     """Retrato de um Componente para os módulos (medidas em metros)."""
     return {"nome": c.nome, "qtd": c.quantidade, "material": c.material, "grupo": c.grupo or "Corpo", "comp": c.comprimento_m,
-            "larg": c.largura_m, "esp": c.espessura_m, "peso_kg": peso_kg, "furos": c.furos, "bordas_m": c.bordas_m}
+            "larg": c.largura_m, "esp": c.espessura_m, "peso_kg": peso_kg, "furos": c.furos, "bordas_m": c.bordas_m,
+            "atributos": dict(getattr(c, "atributos", None) or {})}
 
 
 def ligacoes_do_grupo(ligs: list[dict], grupo_de: dict[str, str], grupo: str) -> list[dict]:
@@ -46,7 +47,14 @@ def entrada_do_passo(modulo, passo, *, comps: list[dict], ligs: list[dict], unid
     grupo_de = {c["nome"]: c["grupo"] for c in comps}
     e = EntradaModulo(unidades_produto=unidades_produto, pessoas=pessoas, distancia_m=distancia_m, origem_nome=origem, destino_nome=destino,
                       recurso_nome=rec.nome if rec else None)
-    if modulo.chave == "movimentacao":
+    if modulo.arquetipo:  # módulo genérico da empresa: driver sobre as peças do passo (ou do produto inteiro, se contado por unidade)
+        e.componentes = do_passo or (comps if modulo.unidade_contagem == "unidade_produto" else [])
+        e.quantidade = (sum(c["qtd"] for c in e.componentes) * unidades_produto if modulo.unidade_contagem == "peca" else unidades_produto)
+        e.ficha = ficha
+        if modulo.arquetipo == "deslocamento":
+            e.meio_nome, e.ficha_meio = (rec.nome, ficha) if rec else (None, {})
+            e.recurso_nome = None
+    elif modulo.chave == "movimentacao":
         e.componentes = do_passo
         e.quantidade = sum(c["qtd"] for c in do_passo) * unidades_produto
         e.meio_nome, e.ficha_meio = (rec.nome, ficha) if rec else (None, {})
@@ -107,4 +115,8 @@ def entrada_da_operacao(db: Session, empresa_id: int, operacao, quantidade: floa
         e.componentes = [comp]
         e.ligacoes = list(par.get("ligacoes") or [])
         e.extras = {"grupo": operacao.nome, "n_pecas": par.get("pecas_por_unidade")}
+    elif modulo:  # módulo genérico da empresa: a operação é a "peça" (item típico) e o meio é o recurso padrão
+        e.componentes = [comp]
+        e.ficha = ficha
+        e.meio_nome, e.ficha_meio = (rec.nome, ficha) if rec else (None, {})
     return e, rec

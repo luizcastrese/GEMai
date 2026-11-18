@@ -160,8 +160,9 @@ def rejeitar_modelo(mid: int, dados: DecisaoIn, ctx: Ctx = Depends(get_ctx)):
 
 @router.get("/modulos")
 def listar_modulos(ctx: Ctx = Depends(get_ctx)):
-    """Catálogo FECHADO de módulos de tempo: chave, título, condições de entrada. Não expõe tempos nem coeficientes."""
-    return catalogo.resumo_para_ia()
+    """Catálogo FECHADO de módulos de tempo DA EMPRESA (pacote embutido + módulos validados): chave, título, condições de
+    entrada. Não expõe tempos nem coeficientes."""
+    return catalogo.resumo_para_ia(ctx.db, ctx.empresa_id)
 
 
 @router.post("/operacoes/{oid}/modulo/sugerir", response_model=SugestaoModuloOut)
@@ -171,8 +172,8 @@ def sugerir_modulo(oid: int, ctx: Ctx = Depends(get_ctx)):
     op, _, _ = _operacao(ctx, oid)
     limite_ia.checar(f"{ctx.empresa_id}")
     r, prov, aviso = ia.sugerir_modulo(ctx.empresa, {"nome": op.nome, "descricao": op.descricao, "unidade_medida": op.unidade_medida,
-                                                    "modulos": catalogo.resumo_para_ia()})
-    mod = catalogo.obter(r.modulo) if r.modulo else None
+                                                    "modulos": catalogo.resumo_para_ia(ctx.db, ctx.empresa_id)})
+    mod = catalogo.obter(r.modulo, ctx.db, ctx.empresa_id) if r.modulo else None
     faltantes = []
     if mod is not None:
         ent, _ = entradas_modulo.entrada_da_operacao(ctx.db, ctx.empresa_id, op, 1.0, None, None, modulo=mod.chave)

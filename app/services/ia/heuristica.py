@@ -453,6 +453,16 @@ def estimar_capacidade(ctx: dict, imagem=None) -> CapacidadeIA:
 
 
 # ---------------------------------------------------------------- plano de trabalho (heurística local)
+def _driver_positivo(driver: str, c: dict) -> bool:
+    """A peça tem os dados que a fórmula do driver usa e o resultado é > 0?"""
+    from ..formulas import FormulaErro, avaliar, compilar
+    from ..modulos.arquetipos import _campos
+    try:
+        return avaliar(compilar(driver), _campos({**c, "comp": c.get("comp"), "larg": c.get("larg"), "esp": c.get("esp")})) > 0
+    except FormulaErro:
+        return False
+
+
 def planejar(ctx: dict) -> PlanoProposta:
     """Plano a partir dos componentes, das ligações e do contorno físico: ESCOLHE MÓDULOS do catálogo e mapeia
     componentes, equipamentos e locais. Não produz tempo algum (nem a_min, nem taxas): o sistema calcula. O que faltar
@@ -512,6 +522,30 @@ def planejar(ctx: dict) -> PlanoProposta:
         local_atual = eq.get("espaco") or local_atual
         passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", modulo=modulo, componentes=nomes, recurso=eq["nome"],
                               espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq))
+    # --- módulos da EMPRESA (criados por necessidade): a peça entra no passo quando tem os dados do driver e ele dá > 0
+    genericos = [m for m in ctx.get("modulos", []) if m.get("pacote") == "empresa" and m.get("arquetipo") != "deslocamento"]
+
+    def alvo_de(m):
+        return [c for c in comps if _driver_positivo(m.get("driver") or "{qtd}", c)]
+
+    for m in [g for g in genericos if g.get("arquetipo") in ("processamento_meio", "espera")]:
+        alvo = alvo_de(m)
+        if not alvo:
+            continue
+        nomes = [c["nome"] for c in alvo]
+        eq = equip(m.get("funcao_meio")) if m.get("funcao_meio") else None
+        if eq is None:
+            faltam.append(f"Equipamento para '{m['titulo']}' (cadastre um meio com a função '{m.get('funcao_meio') or '?'}')")
+            passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=nomes))
+            continue
+        mover(local_atual, eq.get("espaco"), nomes, f"Levar peças até {eq.get('espaco')} ({m['titulo'].lower()})")
+        local_atual = eq.get("espaco") or local_atual
+        passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=nomes, recurso=eq["nome"],
+                              espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq))
+    for m in [g for g in genericos if g.get("arquetipo") == "manual" and g.get("unidade_contagem") == "peca"]:
+        alvo = alvo_de(m)
+        if alvo:
+            passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=[c["nome"] for c in alvo], pessoas=pessoas_eq))
     mover(local_atual, montagem, [c["nome"] for c in paineis], "Levar peças até a montagem")
 
     # --- montagem por subconjunto e final (a derivação das ligações e quantidades é do sistema)
@@ -528,9 +562,63 @@ def planejar(ctx: dict) -> PlanoProposta:
     if l_final or len(grupos) > 1:
         passos.append(PassoIA(nome="Montagem final", modulo="montagem", grupo="Final", final=True, componentes=[c["nome"] for c in comps],
                               espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
+    for m in [g for g in genericos if g.get("arquetipo") == "manual" and g.get("unidade_contagem") == "unidade_produto"]:
+        passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=[c["nome"] for c in alvo_de(m)],
+                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
     passos.append(PassoIA(nome="Conferência final", modulo="conferencia", espaco_origem=montagem, espaco_destino=montagem, pessoas=1))
     prem.append("Pressupõe uma equipe executando os passos em sequência (sem trabalho em paralelo entre passos).")
     prem.append("Cada passo é um módulo do catálogo: os tempos saem das condições do produto e da ficha técnica validada dos meios, "
                 "com coeficientes de referência genéricos do catálogo (rotulados) até a calibração com o seu histórico.")
     return PlanoProposta(passos=passos, premissas=prem, dados_faltantes=list(dict.fromkeys(faltam)), confianca="baixa",
                          justificativa="Plano montado por regras locais: escolha de módulos e mapeamento de componentes, equipamentos e locais.")
+
+
+# ---------------------------------------------------------------- proposta de módulo novo (regra local)
+_ESPERA = ("secar", "secagem", "curar", "cura", "esperar", "descansar", "estufa", "assentar", "fermentar", "resfriar")
+_DESLOC = ("levar", "transportar", "carregar ate", "mover", "deslocar")
+_MAQUINA = ("maquina", "lixadeira", "pistola", "cabine", "prensa", "serra", "torno", "furadeira", "router", "cnc", "plaina",
+            "tupia", "compressor", "forno", "estufa", "impressora", "costura", "injetora", "dobradeira", "equipamento")
+_AREA = ("lixar", "lixa", "pintar", "pintura", "envernizar", "verniz", "polir", "laquear", "selar", "aplicar", "limpar", "revestir")
+_COMPR = ("cortar", "corte", "costurar", "costura", "soldar", "solda", "dobrar", "fresar", "perfilar")
+
+
+def propor_modulo(ctx: dict):
+    """Sem IA externa: palavras-chave escolhem arquétipo e driver; nada de minutos. Confiança baixa, a pessoa revisa."""
+    from .esquemas import PropostaModuloIA
+    nome = (ctx.get("nome") or "").strip() or "Nova atividade"
+    texto = _norm(f"{nome} {ctx.get('descricao', '')}")
+    falta = []
+    if any(p in texto for p in _DESLOC):
+        return PropostaModuloIA(titulo=nome, descricao=ctx.get("descricao", ""), arquetipo="deslocamento", tipo_passo="movimentacao",
+                                driver="{qtd}", unidade_driver="peça", premissas=["Deslocamento entre locais cadastrados (distância e peso)."],
+                                justificativa="Regra local: o texto fala em levar/transportar.")
+    driver, un = ("{area_m2}", "m²") if any(p in texto for p in _AREA) else ("{perimetro_m}", "m") if any(p in texto for p in _COMPR) else ("{qtd}", "peça")
+    base = re.sub(r"[^a-z0-9]+", "_", _norm(nome)).strip("_")[:24] or "atividade"
+    funcao = base[:40]
+    if any(p in texto for p in _ESPERA):
+        return PropostaModuloIA(
+            titulo=nome, descricao=ctx.get("descricao", ""), arquetipo="espera", tipo_passo="espera", unidade_contagem="unidade_produto",
+            driver="{unidade}", unidade_driver="ciclo", funcao_meio=funcao,
+            taxa={"nome": f"tempo_ciclo_{base}_min"[:60], "unidade": "min", "descricao": f"Tempo de ciclo de {nome.lower()}", "minimo": 1, "maximo": 10080},
+            dados_faltantes=["Tempo de ciclo informado na ficha técnica do equipamento (ou medido)"],
+            justificativa="Regra local: o texto fala em secar/curar/esperar.")
+    if any(p in texto for p in _MAQUINA):
+        taxa_un = {"m²": "m²/min", "m": "m/min", "peça": "un/min"}[un]
+        return PropostaModuloIA(
+            titulo=nome, descricao=ctx.get("descricao", ""), arquetipo="processamento_meio", tipo_passo=base[:30], driver=driver,
+            unidade_driver=un, funcao_meio=funcao, preparacao="maquina",
+            taxa={"nome": f"taxa_{base}_{taxa_un.replace('²', '2').replace('/', '_')}"[:60], "unidade": taxa_un,
+                  "descricao": f"Taxa de {nome.lower()} do equipamento", "minimo": 0.001, "maximo": 10000},
+            acoes=[{"nome": "Alimentar a peça", "alcance": "1_2_passos", "corpo": "curvar_parcial", "pegar": "leve", "levar": "1_2_passos",
+                    "posicionar": "ajuste_leve"},
+                   {"nome": "Retirar a peça", "alcance": "ao_alcance", "pegar": "leve", "levar": "1_2_passos", "posicionar": "aproximado"}],
+            dados_faltantes=[f"Taxa do equipamento em {taxa_un} (ficha técnica ou medição)"],
+            justificativa="Regra local: o texto cita equipamento; driver escolhido pela natureza da atividade.")
+    if driver == "{qtd}":
+        falta.append("Quantas vezes a ação se repete por peça (crie um atributo na peça e use-o no driver, se não for 1)")
+    return PropostaModuloIA(
+        titulo=nome, descricao=ctx.get("descricao", ""), arquetipo="manual", tipo_passo=base[:30], driver=driver, unidade_driver=un,
+        preparacao="posto",
+        acoes=[{"nome": nome, "alcance": "ao_alcance", "pegar": "leve", "levar": "ao_alcance", "posicionar": "ajuste_leve", "retorno": "ao_alcance"}],
+        premissas=["Ação manual descrita por uma sequência de movimentos genérica (índices ilustrativos): calibre com o tempo real."],
+        dados_faltantes=falta, justificativa="Regra local: atividade manual por unidade do driver.")

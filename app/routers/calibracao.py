@@ -66,7 +66,7 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
             ctx.auditar("calibracao_modulo.propor", "calibracao_modulo", c.id, None, audit.snap(c))
             proposta_id, criadas = c.id, criadas + 1
         linhas.append(SugestaoModuloCalibOut(
-            unidade_id=sg.unidade_id, modulo=sg.modulo, titulo=catalogo.obter(sg.modulo).titulo, produto_id=sg.produto_id,
+            unidade_id=sg.unidade_id, modulo=sg.modulo, titulo=_titulo(ctx, sg.modulo), produto_id=sg.produto_id,
             produto_nome=nomes.get(sg.produto_id) if sg.produto_id else None, expoente=sg.expoente, porte_ref=sg.porte_ref,
             porte_min=sg.porte_min, porte_max=sg.porte_max, erro_sem_pct=sg.erro_sem_pct, erro_constante_pct=sg.erro_constante_pct,
             erro_com_pct=sg.erro_com_pct, nota=sg.nota, amostras=sg.amostras, minimo=sg.minimo,
@@ -75,6 +75,12 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
     ctx.db.commit()
     return CalibrarModulosOut(aplicado=dados.aplicar, aviso=AVISO, propostas=criadas, modulos=linhas,
                               criterios={"min_amostras": s.min_amostras_calibracao, "limites": [svc.FATOR_MIN, svc.FATOR_MAX]})
+
+
+
+def _titulo(ctx: Ctx, chave: str) -> str:
+    mod = catalogo.obter(chave, ctx.db, ctx.empresa_id)
+    return mod.titulo if mod else chave
 
 
 @router.get("/calibracao/modulos", response_model=list[CalibracaoModuloOut])
@@ -86,7 +92,7 @@ def listar(unidade_id: int | None = None, ctx: Ctx = Depends(get_ctx)):
     nomes = {p.id: p.nome for p in ctx.db.scalars(select(Produto).where(Produto.empresa_id == ctx.empresa_id))}
     out = []
     for c in ctx.db.scalars(q.order_by(CalibracaoModulo.modulo, CalibracaoModulo.unidade_id, CalibracaoModulo.versao.desc())):
-        mod = catalogo.CATALOGO.get(c.modulo)
+        mod = catalogo.obter(c.modulo, ctx.db, ctx.empresa_id)
         out.append(CalibracaoModuloOut.model_validate(c).model_copy(update={
             "titulo": mod.titulo if mod else c.modulo, "produto_nome": nomes.get(c.produto_id) if c.produto_id else None}))
     return out

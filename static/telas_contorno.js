@@ -13,6 +13,13 @@ const seletor = (lista, valor, vazio, aoMudar) => {
 
 const TIPOS_LOCAL = [['area', 'Outro / área de trabalho'], ['estoque', 'Estoque (início)'], ['montagem', 'Montagem'], ['posto', 'Posto'], ['expedicao', 'Expedição']];
 const FUNCOES = [['', 'Não informado'], ['corte', 'Cortar'], ['bordo', 'Colar borda'], ['furacao', 'Furar'], ['movimentacao', 'Movimentar peças'], ['acabamento', 'Acabamento'], ['montagem', 'Montagem'], ['outro', 'Outro']];
+// Funções vindas das ATIVIDADES validadas da empresa (ex.: "lixar_pecas"): o equipamento com essa função executa a atividade.
+async function carregarFuncoes() {
+  const mods = await get('/modulos').catch(() => []);
+  for (const m of mods) {
+    if (m.pacote === 'empresa' && m.funcao_meio && !FUNCOES.some(([v]) => v === m.funcao_meio)) FUNCOES.splice(FUNCOES.length - 1, 0, [m.funcao_meio, m.titulo]);
+  }
+}
 
 // Capacidade da máquina: o usuário mede e informa, OU a IA estima a partir de descrição/foto (ele confere antes de valer).
 function celulaCapacidade(r, recarregar, salvar) {
@@ -72,6 +79,7 @@ function estimarComIA(r, recarregar) {
 
 // Contorno físico MÍNIMO: onde as coisas ficam, a que distância, quanto cada máquina produz e quanto pesa a peça.
 export async function contornoAvancado(el) {
+  await carregarFuncoes();
   const uid = estado.unidadeId;
   const topo = h('div'); const secoes = h('div');
   montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/contorno' }, '← Voltar ao passo a passo')), h('h1', null, 'Oficina: ajustes avançados'),
@@ -180,9 +188,10 @@ const SUG_MAQ = [['Seccionadora', 'corte'], ['Coladeira de borda', 'bordo'], ['F
 const DIST_RAPIDAS = [['Lado a lado', 2], ['Mesma sala', 8], ['Outra sala', 20]];
 const PASSOS = ['Locais', 'Máquinas', 'Ritmo', 'Distâncias', 'Pronto'];
 const PASSO_DA_SECAO = { locais: 0, equipamentos: 2, distancias: 3 };
-const FUNCOES_PILULA = FUNCOES.filter(([v]) => v);
+const pilulas = () => FUNCOES.filter(([v]) => v);
 
 export async function contorno(el) {
+  await carregarFuncoes();
   const uid = estado.unidadeId;
   if (estado.foco === 'tarefas' || estado.foco === 'equipamentos') { location.hash = '#/contorno/avancado'; return undefined; }
   let passo = null; // null: abre no primeiro passo que ainda falta
@@ -248,7 +257,7 @@ export async function contorno(el) {
           h('input', { value: r.nome, 'aria-label': 'Nome da máquina', onchange: (e) => leve(() => patch(`/recursos/${r.id}`, { nome: e.target.value })) }),
           h('button', { type: 'button', class: 'sm dng', title: 'Remover', 'aria-label': `Remover ${r.nome}`, onclick: () => estrutural(() => patch(`/recursos/${r.id}`, { ativo: false })) }, '✕')),
         h('div', { class: 'muted small' }, 'Para que serve?'),
-        h('div', { class: 'pilulas', role: 'group', 'aria-label': `Para que serve ${r.nome}` }, FUNCOES_PILULA.map(([v, t]) =>
+        h('div', { class: 'pilulas', role: 'group', 'aria-label': `Para que serve ${r.nome}` }, pilulas().map(([v, t]) =>
           h('button', { type: 'button', class: `pilula${r.funcao === v ? ' on' : ''}`, 'aria-pressed': r.funcao === v ? 'true' : 'false',
             onclick: () => estrutural(() => patch(`/recursos/${r.id}`, { funcao: r.funcao === v ? '' : v })) }, t))),
         c.locais.length ? h('div', null, h('div', { class: 'muted small' }, 'Em que local fica?'), seletor(c.locais, r.espaco_id, 'Escolha…', (v) => estrutural(() => patch(`/recursos/${r.id}`, { espaco_id: v })))) : null))) : null,

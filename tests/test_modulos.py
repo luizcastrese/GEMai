@@ -160,7 +160,10 @@ def test_ia_nao_tem_onde_escrever_tempo_e_so_escolhe_do_catalogo():
     assert set(es.PassoIA.model_fields) == {"nome", "modulo", "grupo", "final", "componentes", "recurso", "espaco_origem",
                                            "espaco_destino", "pessoas", "observacao"}
     with pytest.raises(Exception):
-        es.PassoIA(nome="x", modulo="inventado")
+        es.PassoIA(nome="x", modulo="Inventado; DROP")  # chave malformada é recusada no esquema
+    # chave bem formada mas fora do catálogo DA EMPRESA: o passo é descartado e vira lacuna declarada (nunca tempo inventado)
+    fora = es.sanear_plano(es.PlanoProposta(passos=[es.PassoIA(nome="Lixar", modulo="inventado")]))
+    assert fora.passos == [] and fora.atividades_sem_modulo == ["Lixar"]
     prop = es.sanear_plano(es.PlanoProposta(passos=[es.PassoIA(nome="a", modulo="conferencia", pessoas=9999)]))
     assert prop.passos[0].pessoas == 20
 
@@ -268,8 +271,11 @@ def test_ia_externa_so_escolhe_chave_do_catalogo(gestor, unidade_id, monkeypatch
     assert d["modulo"] == "corte" and len(d["justificativa"]) == 400 and "\x00" not in d["justificativa"] and d["provedor"].startswith("claude")
     monkeypatch.setattr(ia.claude, "sugerir_modulo", lambda ctx: es.SugestaoModulo(modulo=None))
     assert gestor.post(f"/operacoes/{op['id']}/modulo/sugerir", {}).json()["modulo"] is None
+    # chave fora do catálogo da empresa: a sugestão é anulada no saneamento (o esquema só barra chave malformada)
+    monkeypatch.setattr(ia.claude, "sugerir_modulo", lambda ctx: es.SugestaoModulo(modulo="executar_codigo"))
+    assert gestor.post(f"/operacoes/{op['id']}/modulo/sugerir", {}).json()["modulo"] is None
     with pytest.raises(Exception):
-        es.SugestaoModulo.model_validate({"modulo": "executar_codigo"})
+        es.SugestaoModulo.model_validate({"modulo": "rm -rf /"})
 
 
 def test_entradas_de_tempo_obsoletas_estao_marcadas(gestor, unidade_id):

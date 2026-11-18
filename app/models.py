@@ -402,6 +402,9 @@ class Componente(Base):
     # Fórmulas que ligam a peça às medidas do pedido: {campo da peça: "={Altura} - 0.036"} (sem o "="). O valor numérico
     # do campo é o de partida; a fórmula, quando existe, manda (services/formulas.py).
     formulas: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Atributos LIVRES da peça (qualquer segmento): {"cor": "branco", "demaos": 2, "area_pintura_m2": 1.2}. Os módulos da empresa
+    # os usam na fórmula do driver; nenhum é tempo.
+    atributos: Mapped[dict] = mapped_column(JSON, default=dict)
     ordem: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -502,6 +505,33 @@ class PlanoPasso(Base):
     fim_prev: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
     plano: Mapped[PlanoTrabalho] = relationship(back_populates="passos")
+
+
+class ModuloEmpresa(Base):
+    """Módulo de tempo criado pela EMPRESA (por necessidade): uma especificação de arquétipo, nunca minutos digitados.
+
+    Nasce `pendente` (proposto pela IA ou por uma pessoa); só entra no cálculo depois que uma pessoa o valida. Cada edição é uma
+    nova versão; a versão validada mais recente é a vigente. A especificação (`espec`) segue `modulos.arquetipos.EspecModulo`.
+    """
+
+    __tablename__ = "modulos_empresa"
+    __table_args__ = (UniqueConstraint("empresa_id", "chave", "versao"), Index("ix_modulo_empresa", "empresa_id", "chave"))
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    chave: Mapped[str] = mapped_column(String(30))
+    titulo: Mapped[str] = mapped_column(String(120))
+    arquetipo: Mapped[str] = mapped_column(String(30))
+    espec: Mapped[dict] = mapped_column(JSON, default=dict)
+    versao: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="pendente")  # pendente | validado | rejeitado
+    vigente: Mapped[bool] = mapped_column(Boolean, default=False)
+    origem: Mapped[str] = mapped_column(String(20), default="manual")  # ia | manual
+    provedor: Mapped[str] = mapped_column(String(80), default="")
+    justificativa: Mapped[str] = mapped_column(Text, default="")
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+    validado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
 class CalibracaoModulo(Base):

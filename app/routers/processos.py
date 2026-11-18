@@ -17,6 +17,7 @@ from ..deps import Ctx, get_ctx
 from ..models import Espaco, Etapa, ModeloTempo, Operacao, Parametro, PerfilMaoDeObra, Processo, Recurso
 from ..schemas import (DecisaoIn, EtapaIn, EtapaOut, EtapaUpdate, OperacaoIn, OperacaoOut, OperacaoUpdate,
                        ParametroIn, ParametroOut, ProcessoIn, ProcessoOut, ProcessoUpdate)
+from ..services.modulos import catalogo
 from ..services.modulos import ficha as ficha_catalogo
 from ..services import estimativa
 from ..services.dashboard import alerta_ergonomia
@@ -307,11 +308,19 @@ def _campos_operacao(dados) -> dict:
     return campos
 
 
+def _modulo_existe(ctx: Ctx, campos: dict) -> None:
+    """O módulo escolhido precisa estar no catálogo da EMPRESA (embutidos + módulos validados)."""
+    chave = campos.get("modulo")
+    if chave and catalogo.obter(chave, ctx.db, ctx.empresa_id) is None:
+        raise HTTPException(422, f"Módulo '{chave}' não existe no catálogo da empresa (ou ainda não foi validado).")
+
+
 @router.post("/etapas/{eid}/operacoes", response_model=OperacaoOut, status_code=201)
 def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(get_ctx)):
     e, p = _etapa(ctx, eid)
     _rascunho(p)
     campos = _campos_operacao(dados)
+    _modulo_existe(ctx, campos)
     _recurso_da_unidade(ctx, campos.get("recurso_padrao_id"), p.unidade_id)
     _espacos_da_unidade(ctx, campos, p.unidade_id)
     _perfil_da_unidade(ctx, campos, p.unidade_id)
@@ -330,6 +339,7 @@ def criar_operacao(eid: int, dados: OperacaoIn, ctx: Ctx = Depends(get_ctx)):
 def atualizar_operacao(oid: int, dados: OperacaoUpdate, ctx: Ctx = Depends(get_ctx)):
     op, e, p = _operacao(ctx, oid)
     campos = _campos_operacao(dados)
+    _modulo_existe(ctx, campos)
     if p.status == "rascunho":
         pass
     elif not set(campos) <= CAMPOS_CONTORNO:
@@ -427,10 +437,11 @@ def criar_parametro(dados: ParametroIn, ctx: Ctx = Depends(get_ctx)):
         # ficha técnica do meio: só parâmetros do catálogo, em unidade e faixa plausíveis (características, nunca tempos)
         if dados.valor_num is None:
             raise HTTPException(422, "Informe valor_num para um parâmetro da ficha técnica.")
-        valor, motivo = ficha_catalogo.validar_valor(dados.nome, dados.valor_num, dados.unidade or None)
+        extras = catalogo.parametros_ficha_extras(ctx.db, ctx.empresa_id)
+        valor, motivo = ficha_catalogo.validar_valor(dados.nome, dados.valor_num, dados.unidade or None, extras)
         if valor is None:
             raise HTTPException(422, f"Parâmetro de ficha técnica inválido: {motivo}.")
-        campos["valor_num"], campos["unidade"] = valor, ficha_catalogo.PARAMETROS_FICHA[dados.nome].unidade
+        campos["valor_num"], campos["unidade"] = valor, ficha_catalogo.unidade_de(dados.nome, extras)
     p = _nova_versao_parametro(ctx, uni, campos, origem=dados.origem, status="validado", vigente=True)
     ctx.auditar("parametro.criar", "parametro", p.id, None, audit.snap(p))
     ctx.db.commit()

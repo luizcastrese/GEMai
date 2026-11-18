@@ -80,11 +80,15 @@ class Modulo:
     versao: int = 1
     precisa_recurso: bool = False
     descricao: str = ""
+    arquetipo: str = ""  # vazio = módulo do pacote embutido; senão, arquétipo genérico (services/modulos/arquetipos.py)
+    funcao_meio: str = ""  # função do meio que executa o passo (só módulos genéricos)
+    pacote: str = "marcenaria"  # pacote de origem; módulos criados pela empresa: "empresa"
+    driver: str = ""  # fórmula do driver por peça (só módulos genéricos)
 
     def resumo(self) -> dict:
         """Descrição para a IA e para a tela: só nomes e unidades, nenhum valor de tempo."""
         return {"chave": self.chave, "titulo": self.titulo, "descricao": self.descricao, "unidade_contagem": self.unidade_contagem,
-                "precisa_recurso": self.precisa_recurso,
+                "precisa_recurso": self.precisa_recurso, "pacote": self.pacote, "arquetipo": self.arquetipo, "funcao_meio": self.funcao_meio, "driver": self.driver,
                 "parametros": [{"nome": p.nome, "unidade": p.unidade, "descricao": p.descricao, "origem": p.origem,
                                 "obrigatorio": p.obrigatorio} for p in self.parametros]}
 
