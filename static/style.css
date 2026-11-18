@@ -364,3 +364,12 @@ nav.side a[href="#/calibracao"]{--ic:url("data:image/svg+xml,%3Csvg xmlns='http:
 .prova.on .prova-l{color:var(--tx);font-weight:600}
 h1+.inline{margin:.6rem 0 1rem}
 .inline+.card{margin-top:1rem}
+
+/* ---------- Início: o ciclo de cada pedido ---------- */
+.ciclo-passos{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem;margin-bottom:1.4rem}
+.etapa-ciclo{display:flex;flex-direction:column;gap:.35rem;padding:1rem 1.1rem;border-radius:14px;background:var(--card,#fffdf8);border:1px solid rgba(0,0,0,.08);text-decoration:none;color:inherit;position:relative}
+.etapa-ciclo:not(:last-child)::after{content:"→";position:absolute;right:-.62rem;top:50%;transform:translateY(-50%);color:var(--gold);font-weight:600}
+.etapa-ciclo.on{border-color:var(--gold)}
+.etapa-ciclo:hover{border-color:var(--pri)}
+.campo-ficha{margin:.55rem 0}.campo-ficha input{max-width:12rem}
+@media(max-width:820px){.ciclo-passos{grid-template-columns:1fr}.etapa-ciclo:not(:last-child)::after{content:"↓";right:auto;left:50%;top:auto;bottom:-.85rem;transform:translateX(-50%)}}

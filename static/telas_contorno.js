@@ -186,14 +186,26 @@ export async function contornoAvancado(el) {
 const SUG_LOCAL = [['Estoque de chapas', 'estoque'], ['Bancada de corte', 'area'], ['Montagem', 'montagem'], ['Expedição', 'expedicao']];
 const SUG_MAQ = [['Seccionadora', 'corte'], ['Coladeira de borda', 'bordo'], ['Furadeira', 'furacao']];
 const DIST_RAPIDAS = [['Lado a lado', 2], ['Mesma sala', 8], ['Outra sala', 20]];
-const PASSOS = ['Locais', 'Máquinas', 'Ritmo', 'Distâncias', 'Pronto'];
+const PASSOS = ['Locais', 'Máquinas', 'Ficha das máquinas', 'Distâncias', 'Pronto'];
+// A ficha técnica em perguntas que o dono entende. O que não está aqui usa a descrição da própria atividade.
+const PERGUNTA_FICHA = {
+  avanco_corte_m_min: 'Quantos metros por minuto a máquina corta?',
+  velocidade_bordo_m_min: 'Quantos metros de borda por minuto ela cola?',
+  cabecotes_furacao: 'Quantas brocas furam de uma vez?',
+  curso_furacao_mm: 'Quanto a broca desce em cada furo?',
+  avanco_furacao_mm_min: 'Com que velocidade a broca desce?',
+  velocidade_meio_m_min: 'Com que velocidade ele anda carregado?',
+  capacidade_carga_kg: 'Quanto peso ele leva de uma vez?',
+  espessura_max_corte_mm: 'Qual a espessura máxima que ela corta?',
+};
+const fichaFalta = (r) => (r.ficha || []).some((p) => p.afeta_tempo && p.valor == null);
 const PASSO_DA_SECAO = { locais: 0, equipamentos: 2, distancias: 3 };
 const pilulas = () => FUNCOES.filter(([v]) => v);
 
 export async function contorno(el) {
   await carregarFuncoes();
   const uid = estado.unidadeId;
-  if (estado.foco === 'tarefas' || estado.foco === 'equipamentos') { location.hash = '#/contorno/avancado'; return undefined; }
+  if (estado.foco === 'tarefas') { location.hash = '#/contorno/avancado'; return undefined; }
   let passo = null; // null: abre no primeiro passo que ainda falta
   const topo = h('div'); const corpo = h('div'); const rodape = h('div', { class: 'assist-nav' });
   montar(el, h('h1', null, 'Local de produção'),
@@ -202,12 +214,12 @@ export async function contorno(el) {
 
   const pend = (c, secao) => c.pendencias.some((p) => p.secao === secao);
   // ✓ só onde há algo realmente preenchido (ou já visitado): evita marcar "Pronto" antes da hora
-  const feito = (c, i) => [c.locais.length > 0, c.equipamentos.length > 0, c.equipamentos.length > 0 && c.equipamentos.every((r) => r.pecas_por_hora != null),
+  const feito = (c, i) => [c.locais.length > 0, c.equipamentos.length > 0, c.equipamentos.length > 0 && c.equipamentos.every((r) => r.funcao && !fichaFalta(r)),
     passo > 3 && !pend(c, 'distancias'), false][i];
   const primeiroIncompleto = (c) => {
     if (!c.locais.length) return 0;
     if (!c.equipamentos.length) return 1;
-    if (c.equipamentos.some((r) => r.pecas_por_hora == null)) return 2; // ritmo (capacidade) é opcional, mas oferecemos o passo
+    if (c.equipamentos.some((r) => !r.funcao || fichaFalta(r))) return 2;
     if (pend(c, 'distancias')) return 3;
     return 4;
   };
@@ -264,13 +276,29 @@ export async function contorno(el) {
       h('div', { class: 'row' }, novo, h('button', { type: 'button', onclick: () => add(novo.value) }, '+ Adicionar')));
   };
 
-  // 3. Ritmo (peças por hora): medido ou estimado pela IA
-  const passoRitmo = (c) => pergunta('Quantas peças cada máquina faz por hora?',
-    'Opcional: o tempo de máquina vem da ficha técnica (avanço, velocidade), não deste número. Se quiser registrar uma medição ou uma estimativa da IA (rotulada nas premissas do plano), preencha aqui.',
-    c.equipamentos.length ? h('div', { class: 'itens' }, c.equipamentos.map((r) => h('div', { class: 'item maq' },
-      h('div', { class: 'linha' }, h('strong', null, r.nome), h('span', { class: 'muted small' }, (FUNCOES.find((f) => f[0] === r.funcao) || [])[1] || '')),
-      celulaCapacidade(r, desenhar, leve))))
-      : h('p', { class: 'muted' }, 'Nenhuma máquina cadastrada: nada a informar aqui. Pode continuar.'));
+  // 3. Ficha das máquinas: só o que as atividades em uso precisam para calcular o tempo, em perguntas simples
+  const passoFicha = (c) => {
+    const campo = (r, p) => {
+      const i = h('input', { type: 'number', step: 'any', min: '0', value: p.valor ?? '', placeholder: p.unidade, inputmode: 'decimal',
+        'aria-label': `${PERGUNTA_FICHA[p.nome] || p.descricao} (${p.unidade})` });
+      i.addEventListener('change', () => {
+        if (i.value === '') return;
+        leve(() => post('/parametros', { escopo_tipo: 'recurso', escopo_id: r.id, nome: p.nome, valor_num: Number(String(i.value).replace(',', '.')), unidade: p.unidade, origem: 'informado' }));
+      });
+      return h('div', { class: 'campo-ficha' }, h('label', null, PERGUNTA_FICHA[p.nome] || p.descricao, p.afeta_tempo ? null : h('span', { class: 'muted small' }, ' (opcional)')),
+        h('div', { class: 'inline' }, i, h('span', { class: 'muted small' }, p.unidade)));
+    };
+    const maqs = c.equipamentos.filter((r) => r.funcao);
+    return pergunta('O que suas máquinas fazem por minuto?',
+      'É daqui que sai o tempo de máquina. Veja no manual ou na etiqueta; se não souber, cronometre uma vez (ex.: corte 1 metro e veja quantos segundos leva).',
+      c.equipamentos.some((r) => !r.funcao) ? h('div', { class: 'aviso' }, 'Algumas máquinas ainda não dizem para que servem: volte ao passo anterior e toque na função.') : null,
+      maqs.length ? h('div', { class: 'itens' }, maqs.map((r) => h('div', { class: 'item maq' },
+        h('div', { class: 'linha' }, h('strong', null, r.nome), h('span', { class: 'muted small' }, (FUNCOES.find((f) => f[0] === r.funcao) || [])[1] || '')),
+        (r.ficha || []).length ? [...r.ficha.filter((p) => p.afeta_tempo), ...r.ficha.filter((p) => !p.afeta_tempo)].map((p) => campo(r, p))
+          : h('p', { class: 'muted small' }, 'Esta máquina não precisa de dado para o cálculo.'))))
+        : h('p', { class: 'muted' }, 'Nenhuma máquina com função: nada a informar aqui. Trabalho manual? Pode continuar.'),
+      h('p', { class: 'small muted' }, 'Prefere que a IA procure no manual do fabricante? Use ', h('a', { href: '#/contorno/avancado' }, 'a tela completa'), '.'));
+  };
 
   // 4. Distâncias: toque numa opção (ou digite os metros)
   const passoDistancias = (c) => pergunta('Qual a distância entre os locais?',
@@ -293,13 +321,13 @@ export async function contorno(el) {
         h('a', { class: 'btn pri big', href: '#/planos' }, 'Ir para os planos de trabalho'))
       : h('div', { class: 'card pergunta' }, h('h2', null, 'Quase lá'), h('p', { class: 'muted' }, `Faltam ${faltas.length} informação(ões) para o plano ficar completo. Sem elas, os passos afetados ficam "sem tempo":`),
         h('ul', { class: 'pend' }, faltas.slice(0, 6).map((p) => h('li', null, p.texto, ' ',
-          p.secao === 'tarefas' || p.secao === 'equipamentos' ? h('a', { class: 'btn sm', href: '#/contorno/avancado' }, 'Preencher')
+          p.secao === 'tarefas' ? h('a', { class: 'btn sm', href: '#/contorno/avancado' }, 'Preencher')
             : h('button', { type: 'button', class: 'sm', onclick: () => { passo = PASSO_DA_SECAO[p.secao] ?? 0; desenhar(); } }, 'Preencher'))),
           faltas.length > 6 ? h('li', { class: 'muted' }, `e mais ${faltas.length - 6}…`) : null),
         h('p', { class: 'small muted' }, 'Pode seguir mesmo assim: ', h('a', { href: '#/planos' }, 'ir para os planos de trabalho'), '.'));
   };
 
-  const PASSO_FN = [passoLocais, passoMaquinas, passoRitmo, passoDistancias, passoPronto];
+  const PASSO_FN = [passoLocais, passoMaquinas, passoFicha, passoDistancias, passoPronto];
   async function desenhar() {
     const c = await get(`/contorno${qs({ unidade_id: uid })}`);
     if (passo === null) { passo = PASSO_DA_SECAO[estado.foco] ?? primeiroIncompleto(c); estado.foco = null; }

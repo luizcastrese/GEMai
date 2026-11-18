@@ -20,21 +20,21 @@ let limparTela = null; // permite telas encerrarem timers
 // Um único tipo de usuário: todos veem as mesmas telas.
 const ROTAS = [
   // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
-  // Propósito geral: o que se produz → o que se faz (atividades) → onde e com o quê → plano → medir e melhorar → relatório.
-  [/^#\/inicio$/, inicio.inicio, ['Do produto ao plano', 'Início', '#/inicio']],
-  [/^#\/produtos$/, plano.produtos, ['Do produto ao plano', '1. Produtos', '#/produtos']],
+  // Configurar uma vez (o que se produz → o que se faz → onde e com o quê) e, a cada pedido, o ciclo: plano → medir → ajustar.
+  [/^#\/inicio$/, inicio.inicio, ['Configurar (uma vez)', 'Início', '#/inicio']],
+  [/^#\/produtos$/, plano.produtos, ['Configurar (uma vez)', '1. Produtos', '#/produtos']],
   [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
-  [/^#\/atividades$/, modulos.modulos, ['Do produto ao plano', '2. Atividades', '#/atividades']],
-  [/^#\/contorno$/, contorno.contorno, ['Do produto ao plano', '3. Local de produção', '#/contorno']],
+  [/^#\/atividades$/, modulos.modulos, ['Configurar (uma vez)', '2. Atividades', '#/atividades']],
+  [/^#\/contorno$/, contorno.contorno, ['Configurar (uma vez)', '3. Local de produção', '#/contorno']],
   [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
-  [/^#\/planos$/, plano.planos, ['Do produto ao plano', '4. Planos de trabalho', '#/planos']],
+  [/^#\/planos$/, plano.planos, ['A cada pedido', 'Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
-  [/^#\/ordens$/, prod.ordens, ['Medir e melhorar', '5. Pedidos', '#/ordens']],
+  [/^#\/ordens$/, prod.ordens, ['A cada pedido', 'Pedidos', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
-  [/^#\/fila$/, prod.fila, ['Medir e melhorar', 'Minha fila', '#/fila']],
-  [/^#\/aprovacoes$/, prod.aprovacoes, ['Medir e melhorar', 'Conferir registros', '#/aprovacoes']],
-  [/^#\/calibracao$/, calibracao.calibracao, ['Medir e melhorar', 'Ajustar meus tempos', '#/calibracao']],
-  [/^#\/relatorio$/, relatorio.relatorio, ['Medir e melhorar', '6. Relatório', '#/relatorio']],
+  [/^#\/fila$/, prod.fila, ['A cada pedido', 'Minha fila', '#/fila', false, 'equipe']],
+  [/^#\/aprovacoes$/, prod.aprovacoes, ['A cada pedido', 'Conferir registros', '#/aprovacoes', false, 'equipe']],
+  [/^#\/calibracao$/, calibracao.calibracao, ['A cada pedido', 'Ajustar meus tempos', '#/calibracao']],
+  [/^#\/relatorio$/, relatorio.relatorio, ['A cada pedido', 'Relatório', '#/relatorio']],
   [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/implantacao$/, gestao.implantacao, ['Detalhes técnicos', 'Configurar com a IA', '#/implantacao', true]],
   [/^#\/processos$/, proc.lista, ['Detalhes técnicos', 'Processos', '#/processos', true]],
@@ -66,7 +66,8 @@ async function rotear() {
 
 function casca(conteudo, hash) {
   const grupos = {};
-  ROTAS.filter((r) => r[2] && (!r[2][3] || estado.avancado)).forEach((r) => {
+  // [4] = 'equipe': fila passo a passo e conferência por outra pessoa só aparecem com equipe de 3+ (ou nos detalhes técnicos)
+  ROTAS.filter((r) => r[2] && (!r[2][3] || estado.avancado) && (r[2][4] !== 'equipe' || estado.avancado || estado.equipe > 2)).forEach((r) => {
     const [grupo, rotulo, href] = r[2];
     const ativo = hash === href || (hash.startsWith(`${href}/`));
     (grupos[grupo] ||= []).push(h('a', { href, class: ativo ? 'on' : '' }, rotulo));
