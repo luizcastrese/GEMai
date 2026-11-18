@@ -21,22 +21,24 @@ export async function inicio(el) {
     h('div', { class: 'corpo' }, h('h3', null, titulo), h('p', { class: 'muted' }, texto), extra ? h('p', { class: 'small' }, extra) : null),
     h('a', { class: `btn${feito ? '' : ' pri'}`, href }, rotulo));
 
+  const configurado = prods.length > 0 && atividades.length > 0 && localOk;
+  const etapa = (nome, texto, href, rotulo, ativo) => h('a', { class: `etapa-ciclo${ativo ? ' on' : ''}`, href }, h('strong', null, nome), h('span', { class: 'muted small' }, texto), h('span', { class: 'small' }, `${rotulo} →`));
   montar(el, h('h1', null, `Olá, ${estado.usuario.nome.split(' ')[0]}`),
-    h('p', { class: 'muted' }, 'Do que você produz ao tempo de cada unidade, e o real melhorando o previsto.'),
+    h('p', { class: 'muted' }, configurado ? 'Tudo configurado. A cada pedido: gere o plano, meça e veja o que o real mostrou.' : 'Configure uma vez; depois, a cada pedido, o tempo fica mais certo.'),
     andamento.length ? h('div', null, h('h2', null, `Pedidos em andamento (${andamento.length})`), andamento.slice(0, 5).map((o) => cartaoPedido(o, recarregar))) : null,
+    h('h2', null, 'A cada pedido'),
+    h('div', { class: 'ciclo-passos' },
+      etapa('Plano', 'Prazo, valor e passos do pedido.', '#/planos', planos.length ? 'Ver planos' : 'Gerar o primeiro', true),
+      etapa('Medir', 'Toque em ▶ Comecei e ■ Terminei.', '#/ordens', comOrdem ? `${comOrdem} pedido(s)` : 'Ver pedidos', comOrdem > 0),
+      etapa('O que o real mostrou', 'Ajustar o tempo ou o jeito de fazer.', '#/calibracao', 'Ajustar meus tempos', calibracoes.some((x) => x.vigente))),
+    h('h2', null, configurado ? 'Configuração (feita)' : 'Configurar (uma vez)'),
     passo(1, 'O que você produz', 'Os produtos e seus itens (medidas, peso e outros dados).', prods.length > 0, '#/produtos',
       prods.length ? 'Ver produtos' : 'Cadastrar produto', prods.length ? `${prods.length} produto(s) cadastrado(s).` : null),
     passo(2, 'O que você faz', 'As atividades da sua produção. Falta alguma? A IA monta e você valida.', atividades.length > 0, '#/atividades',
       'Ver atividades', `${atividades.length} atividade(s) disponível(is)${daEmpresa ? `, ${daEmpresa} criada(s) por vocês` : ''}.`),
-    passo(3, 'Onde e com o quê', 'Os locais, a distância entre eles e os equipamentos de cada atividade.',
+    passo(3, 'Onde e com o quê', 'Os locais, a distância entre eles e o que suas máquinas fazem por minuto.',
       localOk, '#/contorno', localOk ? 'Ver local de produção' : 'Preencher',
       c.pendentes ? `Faltam ${c.pendentes} informação(ões): ${c.faltando.slice(0, 2).join('; ')}${c.faltando.length > 2 ? '…' : ''}` : null),
-    passo(4, 'O plano de trabalho', 'O tempo por unidade e o prazo.',
-      planos.length > 0, '#/planos', planos.length ? 'Ver planos' : 'Gerar o primeiro plano', null),
-    passo(5, 'Medir o real', 'Ao confirmar o plano, o pedido abre. Toque em ▶ Comecei e ■ Terminei: é isso que melhora o tempo.',
-      comOrdem > 0, '#/planos', 'Ver pedidos', comOrdem ? `${comOrdem} pedido(s) aberto(s) a partir de planos.` : null),
-    passo(6, 'Ajustar meus tempos', 'O sistema compara o previsto com o que levou e propõe correções; você decide.',
-      calibracoes.some((x) => x.vigente), '#/calibracao', 'Ver ajustes', null),
     planos.length ? h('div', null, h('h2', null, 'Planos recentes'), h('div', { class: 'card' }, tabela([
       { t: 'Plano', f: (p) => h('a', { href: `#/planos/${p.id}` }, p.nome) },
       { t: 'Tempo por unidade', f: (p) => (tempoPorUnidade(p) !== null ? fmtMin(tempoPorUnidade(p)) : '—') },

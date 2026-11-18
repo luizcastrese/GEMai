@@ -103,7 +103,8 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
     for r in equip.values():
         usado = r.id in equip_usados
         validados = entradas_modulo.ficha_do_meio(db, empresa_id, r.id)
-        precisa = ficha_catalogo.aplicaveis(r.funcao, extras_ficha) if r.funcao else []
+        todos = ficha_catalogo.aplicaveis(r.funcao, extras_ficha) if r.funcao else []
+        precisa = [p for p in todos if p.afeta_tempo]  # o que é só alerta (ex.: espessura máxima) não trava o plano
         faltam_ficha = [p for p in precisa if p.nome not in validados]
         cap = modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade)
         if usado:
@@ -112,7 +113,9 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
                 falta("equipamentos", f"Para que serve '{r.nome}' (função)")
             elif faltam_ficha:
                 falta("equipamentos", f"Ficha técnica de '{r.nome}': faltam " + ", ".join(p.descricao.lower() for p in faltam_ficha))
-        equipamentos.append({"id": r.id, "nome": r.nome, "ficha_validada": len(precisa) - len(faltam_ficha), "ficha_total": len(precisa),
+        ficha = [{"nome": p.nome, "descricao": p.descricao, "unidade": p.unidade, "minimo": p.minimo, "maximo": p.maximo,
+                  "valor": validados.get(p.nome), "afeta_tempo": p.afeta_tempo} for p in todos]
+        equipamentos.append({"id": r.id, "nome": r.nome, "ficha_validada": len(precisa) - len(faltam_ficha), "ficha_total": len(precisa), "ficha": ficha,
                              "capacidade": r.capacidade, "capacidade_unidade": r.capacidade_unidade,
                              "pecas_por_hora": cap, "capacidade_origem": r.capacidade_origem,
                              "espaco_id": r.espaco_id, "usado": usado, "funcao": r.funcao, "marca": r.marca, "modelo": r.modelo})

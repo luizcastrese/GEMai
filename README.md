@@ -327,8 +327,9 @@ quais atividades vêm prontas (pacotes) e quais dados de item aparecem.
 
 ```
 Entrar → Início
-  Do produto ao plano:  1. Produtos → 2. Atividades → 3. Local de produção → 4. Plano de trabalho
-  Medir e melhorar:     5. Ordens → Minha fila (▶ / ■) → Conferir registros → Calibração → 6. Relatório
+  Configurar (uma vez):  1. Produtos → 2. Atividades → 3. Local de produção
+  A cada pedido:         Plano de trabalho → Pedido (▶ Comecei / ■ Terminei) → O que o real mostrou → Ajustar meus tempos → Relatório
+  (Minha fila e Conferir registros só aparecem com equipe de 3+ pessoas, ou nos detalhes técnicos.)
 ```
 
 - **Entrada.** O primeiro acesso cria empresa, unidade e usuário. O **segmento** sugere os pacotes de atividades (ex.: "marcenaria"
@@ -343,8 +344,9 @@ Entrar → Início
 - **2. Atividades (o que se faz).** As atividades prontas (pacote base: levar itens, montar, conferir; mais os pacotes ligados) e
   as **criadas por necessidade**. O usuário descreve a atividade e a IA a delimita (arquétipo, como medir, ficha do equipamento,
   movimentos e **quando acontece no roteiro**). O usuário confere o exemplo de cálculo e **valida** (seção 6.6).
-- **3. Local de produção (onde e com o quê).** Assistente de 5 passos: **locais** → **equipamentos** (função = a atividade que
-  executam) → **ritmo** (opcional) → **distâncias** → **pronto**. A lista do que falta **sai das atividades em uso**: cada equipamento
+- **3. Local de produção (onde e com o quê).** Assistente de 5 passos: **locais** → **máquinas** (função = a atividade que
+  executam) → **ficha das máquinas** (só o que as atividades em uso precisam, em perguntas simples como "quantos metros por minuto a
+  máquina corta?"; dado que só gera alerta aparece como opcional e não trava o plano) → **distâncias** → **pronto**. A lista do que falta **sai das atividades em uso**: cada equipamento
   pede a ficha técnica que a sua atividade declara, e uma atividade validada sem equipamento vira pendência.
 - **4. Plano de trabalho.** Antes de gerar, o sistema confere o local de produção e leva ao campo que falta. O pedido informa
   quantidade, início, equipe, jornada, perfil e se inclui a **conferência final** (opcional). A IA, ou o planejador local, monta o
@@ -709,7 +711,7 @@ estatísticos do capítulo de resultados.
 | 5 | Caminho do histórico por operação (`estimativa._pelo_historico`) pode ter o mesmo viés | não verificado | idem | Verificar ao corrigir o item 4 |
 | 6 | Calibrar o ritmo e o módulo juntos pode absorver o nível da equipe | documentado no código | O fator "não é verdade OIT" | Declarar no texto; modo cronoanálise |
 | 7 | Limite de 50 % para tolerâncias e mínimos de amostra são escolhas heurísticas | `LIMITE_TOLERANCIA`, `min_amostras_*` | — | Calcular tamanho de amostra por confiança e erro |
-| 8 | O assistente do local de produção pergunta "peças por hora", dado que o cálculo ignora; a ficha técnica só é editada na tela avançada | `telas_contorno.js` | Confunde o usuário (a checagem já aponta a ficha que falta) | Reordenar o assistente; ficha técnica no passo a passo |
+| 8 | ~~O assistente pergunta "peças por hora", dado que o cálculo ignora; a ficha técnica só na tela avançada~~ **corrigido**: o passo 3 virou "ficha das máquinas" com perguntas simples; dado só de alerta não é pendência | `telas_contorno.js`, `contorno.py` | — | — |
 | 9 | ~~O ciclo "medir e melhorar" fica atrás do interruptor de detalhes técnicos~~ **corrigido**: grupo "Medir e melhorar" no menu principal | `app.js` (rotas com flag) | Quem seguir só o menu principal nunca mede o real | Modo piloto com o ciclo visível |
 | 10 | ~~Catálogo acoplado à marcenaria~~ **corrigido**: pacotes por empresa (base + segmento), atividades da empresa sobre arquétipos, atributos livres, IA delimitando atividades, roteiro pela posição padrão, checagem pelas atividades em uso (6.6, 7.4) | `arquetipos.py`, `catalogo.py`, `routers/modulos.py`, `contorno.py` | Os seis módulos embutidos ainda são código (congelados por teste) | Seção 12.2 |
 

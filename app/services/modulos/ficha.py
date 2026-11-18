@@ -19,11 +19,12 @@ class ParametroFicha:
     maximo: float
     funcoes: tuple[str, ...]  # funções de meio a que se aplica
     inteiro: bool = False
+    afeta_tempo: bool = True  # False = só confere limite/gera alerta: não é pendência quando falta
 
 
 PARAMETROS_FICHA: dict[str, ParametroFicha] = {p.nome: p for p in (
     ParametroFicha("avanco_corte_m_min", "m/min", "Avanço (velocidade) de corte", 0.05, 300, ("corte",)),
-    ParametroFicha("espessura_max_corte_mm", "mm", "Espessura máxima de corte", 1, 300, ("corte",)),
+    ParametroFicha("espessura_max_corte_mm", "mm", "Espessura máxima de corte", 1, 300, ("corte",), afeta_tempo=False),
     ParametroFicha("velocidade_bordo_m_min", "m/min", "Velocidade de alimentação da coladeira de borda", 0.1, 100, ("bordo",)),
     ParametroFicha("cabecotes_furacao", "un", "Cabeçotes de furação", 1, 200, ("furacao",), inteiro=True),
     ParametroFicha("curso_furacao_mm", "mm", "Curso do ciclo de furação", 1, 500, ("furacao",)),

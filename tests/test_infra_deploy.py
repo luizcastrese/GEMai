@@ -33,16 +33,16 @@ def test_fluxo_simplificado_e_o_padrao_do_front(client):
     """Fluxo de propósito geral: o que se produz → atividades → local de produção → plano → medir e melhorar → relatório.
     O teste impede que um merge traga de volta o nav antigo (Dia a dia, Oficina) ou esconda o ciclo de medição."""
     appjs = client.get("/static/app.js").text
-    assert "['Do produto ao plano', '1. Produtos'" in appjs
-    assert "['Do produto ao plano', '2. Atividades'" in appjs
-    assert "['Do produto ao plano', '3. Local de produção'" in appjs
-    assert "['Do produto ao plano', '4. Planos de trabalho'" in appjs
-    assert "['Medir e melhorar', 'Minha fila', '#/fila']" in appjs  # sem a marca de "detalhes técnicos"
-    assert "['Medir e melhorar', 'Ajustar meus tempos', '#/calibracao']" in appjs
+    assert "['Configurar (uma vez)', '1. Produtos'" in appjs
+    assert "['Configurar (uma vez)', '2. Atividades'" in appjs
+    assert "['Configurar (uma vez)', '3. Local de produção'" in appjs
+    assert "['A cada pedido', 'Planos de trabalho'" in appjs
+    assert "['A cada pedido', 'Minha fila', '#/fila', false, 'equipe']" in appjs  # só com equipe de 3+, nunca "detalhes técnicos"
+    assert "['A cada pedido', 'Ajustar meus tempos', '#/calibracao']" in appjs
     assert "Dia a dia" not in appjs and "Oficina'" not in appjs
     assert "Contorno físico" not in appjs
     inicio = client.get("/static/telas_inicio.js").text
-    assert "O que você produz" in inicio and "O que você faz" in inicio and "Medir o real" in inicio
+    assert "O que você produz" in inicio and "O que você faz" in inicio and "A cada pedido" in inicio and "Configurar (uma vez)" in inicio
     assert "Ordens em andamento" not in inicio
     assert "O que precisa da sua atenção" not in inicio
     assert "Posso prometer esta data?" in client.get("/static/telas_plano.js").text

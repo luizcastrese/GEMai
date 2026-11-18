@@ -52,13 +52,14 @@ def _estado_da_ficha(ctx: Ctx, r: Recurso) -> FichaMeioOut:
         Parametro.empresa_id == ctx.empresa_id, Parametro.escopo_tipo == "recurso", Parametro.escopo_id == r.id,
         (Parametro.vigente.is_(True)) | (Parametro.status_validacao == "pendente")).order_by(Parametro.nome, Parametro.versao.desc())))
     linhas, pendencias = [], []
-    for c in catalogo_ficha.aplicaveis(r.funcao):
+    from ..services.modulos import catalogo as _catalogo
+    for c in catalogo_ficha.aplicaveis(r.funcao, _catalogo.parametros_ficha_extras(ctx.db, ctx.empresa_id)):
         vigente = next((p for p in params if p.nome == c.nome and p.vigente and p.status_validacao == "validado"), None)
         sugestao = next((p for p in params if p.nome == c.nome and p.status_validacao == "pendente"), None)
-        linhas.append({"nome": c.nome, "unidade": c.unidade, "descricao": c.descricao, "minimo": c.minimo, "maximo": c.maximo,
+        linhas.append({"nome": c.nome, "unidade": c.unidade, "descricao": c.descricao, "minimo": c.minimo, "maximo": c.maximo, "afeta_tempo": c.afeta_tempo,
                        "vigente": ParametroOut.model_validate(vigente) if vigente else None,
                        "sugestao_pendente": ParametroOut.model_validate(sugestao) if sugestao else None})
-        if vigente is None:
+        if vigente is None and c.afeta_tempo:
             pendencias.append(f"{c.descricao} ({c.nome}): " + ("validar a sugestão encontrada" if sugestao else "informar ou buscar na ficha técnica"))
     if not r.funcao:
         pendencias.insert(0, "Escolha para que serve o meio (função) para ver os parâmetros que ele precisa.")

@@ -4,7 +4,7 @@ const KA = 'erp.avancado';
 let avancadoInicial = false;
 try { avancadoInicial = localStorage.getItem(KA) === '1'; } catch { /* ignore */ }
 // `avancado` = "modo especialista": mostra detalhes técnicos que o usuário comum não precisa ver.
-export const estado = { usuario: null, empresa: null, unidades: [], unidadeId: null, avancado: avancadoInicial,
+export const estado = { usuario: null, empresa: null, unidades: [], unidadeId: null, avancado: avancadoInicial, equipe: 1,
   foco: null }; // `foco`: bloco da tela da Oficina para rolar até ele ao abrir (usado ao mandar o usuário resolver uma pendência)
 export function definirAvancado(v) {
   estado.avancado = !!v;
@@ -13,8 +13,9 @@ export function definirAvancado(v) {
 const KU = 'erp.unidade';
 
 export async function carregarBase() {
-  const [u, e, un] = await Promise.all([get('/auth/eu'), get('/empresa'), get('/unidades')]);
+  const [u, e, un, us] = await Promise.all([get('/auth/eu'), get('/empresa'), get('/unidades'), get('/usuarios').catch(() => [])]);
   estado.usuario = u; estado.empresa = e; estado.unidades = un.filter((x) => x.ativa);
+  estado.equipe = Math.max(us.filter((x) => x.ativo !== false).length, 1);
   let salva = null;
   try { salva = Number(sessionStorage.getItem(KU)); } catch { /* ignore */ }
   estado.unidadeId = estado.unidades.find((x) => x.id === salva)?.id ?? estado.unidades[0]?.id ?? null;

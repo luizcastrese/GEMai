@@ -14,7 +14,8 @@ from .avaliar import Avaliador, Config, Resultado, cronograma, melhores
 
 def _rotulo(r: Resultado) -> str:
     c = r.config
-    return f"{c.pessoas} pessoa(s), {c.lotes} lote(s), regra {c.regra}" + (f", meio {r.meio_nome}" if r.meio_nome else "")
+    regra = {"plano": "na ordem do plano", "critico": "o caminho mais longo primeiro"}.get(c.regra, c.regra)
+    return f"{c.pessoas} pessoa(s), {c.lotes} lote(s), {regra}" + (f", com {r.meio_nome}" if r.meio_nome else "")
 
 
 def _candidato(base, r: Resultado, inicio_local) -> dict:

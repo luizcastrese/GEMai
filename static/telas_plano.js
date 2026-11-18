@@ -328,6 +328,9 @@ function pecasDoPedido(est) {
     h('p', { class: 'muted small' }, 'ƒ = valor calculado pelas medidas do pedido (passe o mouse para ver a fórmula).'));
 }
 
+// tipo de passo de uma atividade da empresa (ex.: lixar_pecas → Lixar pecas)
+const legivel = (t) => (t ? (t.charAt(0).toUpperCase() + t.slice(1)).replace(/_/g, ' ') : '');
+
 export async function planoDetalhe(el, id) {
   const p = await get(`/planos/${id}`);
   const ordem = p.ordem_id ? await get(`/ordens/${p.ordem_id}`).catch(() => null) : null;
@@ -350,7 +353,7 @@ export async function planoDetalhe(el, id) {
     const quem = [`${s.pessoas} pessoa${s.pessoas > 1 ? 's' : ''}`, s.recurso_nome, s.origem_nome && s.destino_nome && s.origem_nome !== s.destino_nome ? `${s.origem_nome} → ${s.destino_nome}` : (s.destino_nome || s.origem_nome)].filter(Boolean).join(' · ');
     linhas.push(h('tr', { class: s.tempo_padrao_min === null ? 'semtempo' : '' },
       h('td', null, s.sequencia),
-      h('td', null, h('strong', null, s.nome), h('div', { class: 'muted small' }, `${TIPO_PASSO[s.tipo] || s.tipo} · ${quem}`),
+      h('td', null, h('strong', null, s.nome), h('div', { class: 'muted small' }, `${TIPO_PASSO[s.tipo] || legivel(s.tipo)} · ${quem}`),
         s.faltantes.length ? h('div', { class: 'warn-l small' }, `Falta: ${s.faltantes.join('; ')}`) : null,
         s.alertas.map((a) => h('div', { class: `small ${a.categoria === 'seguranca' ? 'seg-l' : 'warn-l'}` }, a.msg)),
         null),

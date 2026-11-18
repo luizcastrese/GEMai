@@ -33,14 +33,16 @@ def test_lista_o_que_falta_e_o_progresso_sobe_ate_completar(gestor, unidade_id):
     assert gestor.patch(f"/recursos/{serra['id']}", {"funcao": "corte"}).status_code == 200
     r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
     assert any("Ficha técnica de 'Serra'" in f and "avanço" in f for f in r["faltando"])  # a função pede a ficha, não uma taxa
-    for nome, v in (("avanco_corte_m_min", 30), ("espessura_max_corte_mm", 40)):
-        assert gestor.post("/parametros", {"escopo_tipo": "recurso", "escopo_id": serra["id"], "nome": nome, "valor_num": v}).status_code == 201
+    assert not any("espessura" in f.lower() for f in r["faltando"])  # dado só de alerta (espessura máxima) não é pendência
+    assert gestor.post("/parametros", {"escopo_tipo": "recurso", "escopo_id": serra["id"], "nome": "avanco_corte_m_min", "valor_num": 30}).status_code == 201
     for op in ops:
         assert gestor.patch(f"/operacoes/{op}", {"item_peso_kg": 8}).status_code == 200
     r = gestor.get(f"/contorno?unidade_id={unidade_id}").json()
     assert r["pendentes"] == 0 and r["completo"] is True and r["progresso_pct"] == 100 > antes
     assert r["distancias"][0]["metros"] == 25 and r["tarefas"][0]["distancia_m"] == 25
-    assert (r["equipamentos"][0]["ficha_validada"], r["equipamentos"][0]["ficha_total"]) == (2, 2)
+    assert (r["equipamentos"][0]["ficha_validada"], r["equipamentos"][0]["ficha_total"]) == (1, 1)
+    ficha = {p["nome"]: p for p in r["equipamentos"][0]["ficha"]}
+    assert ficha["avanco_corte_m_min"]["valor"] == 30 and ficha["espessura_max_corte_mm"]["afeta_tempo"] is False
 
     # e com o contorno completo a IA já consegue prever o tempo (sem inventar nada além do declarado)
     m = gestor.post(f"/operacoes/{ops[0]}/modelo-tempo/gerar").json()
