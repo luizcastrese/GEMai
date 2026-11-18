@@ -19,26 +19,26 @@ let limparTela = null; // permite telas encerrarem timers
 // Um único tipo de usuário: todos veem as mesmas telas.
 const ROTAS = [
   // [padrão, função, menu: [grupo, rótulo, href, soComDetalhesTecnicos?]]
-  // Caminho principal: Produto → Oficina → Plano de trabalho. O restante (execução, análises) fica em "Detalhes técnicos".
-  [/^#\/inicio$/, inicio.inicio, ['Plano de trabalho', 'Início', '#/inicio']],
-  [/^#\/produtos$/, plano.produtos, ['Plano de trabalho', '1. Produtos', '#/produtos']],
+  // Propósito geral: o que se produz → o que se faz (atividades) → onde e com o quê → plano → medir e melhorar → relatório.
+  [/^#\/inicio$/, inicio.inicio, ['Do produto ao plano', 'Início', '#/inicio']],
+  [/^#\/produtos$/, plano.produtos, ['Do produto ao plano', '1. Produtos', '#/produtos']],
   [/^#\/produtos\/(\d+)$/, plano.produtoDetalhe],
-  [/^#\/contorno$/, contorno.contorno, ['Plano de trabalho', '2. Oficina', '#/contorno']],
+  [/^#\/atividades$/, modulos.modulos, ['Do produto ao plano', '2. Atividades', '#/atividades']],
+  [/^#\/contorno$/, contorno.contorno, ['Do produto ao plano', '3. Local de produção', '#/contorno']],
   [/^#\/contorno\/avancado$/, contorno.contornoAvancado],
-  [/^#\/atividades$/, modulos.modulos, ['Plano de trabalho', 'Atividades', '#/atividades']],
-  [/^#\/planos$/, plano.planos, ['Plano de trabalho', '3. Planos de trabalho', '#/planos']],
+  [/^#\/planos$/, plano.planos, ['Do produto ao plano', '4. Planos de trabalho', '#/planos']],
   [/^#\/planos\/(\d+)$/, plano.planoDetalhe],
-  [/^#\/relatorio$/, relatorio.relatorio, ['Plano de trabalho', '4. Relatório', '#/relatorio']],
-  [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
-  [/^#\/ordens$/, prod.ordens, ['Detalhes técnicos', 'Ordens de produção', '#/ordens', true]],
+  [/^#\/ordens$/, prod.ordens, ['Medir e melhorar', '5. Ordens', '#/ordens']],
   [/^#\/ordens\/(\d+)$/, prod.ordemDetalhe],
-  [/^#\/fila$/, prod.fila, ['Detalhes técnicos', 'Minha fila', '#/fila', true]],
-  [/^#\/aprovacoes$/, prod.aprovacoes, ['Detalhes técnicos', 'Conferir registros', '#/aprovacoes', true]],
+  [/^#\/fila$/, prod.fila, ['Medir e melhorar', 'Minha fila', '#/fila']],
+  [/^#\/aprovacoes$/, prod.aprovacoes, ['Medir e melhorar', 'Conferir registros', '#/aprovacoes']],
+  [/^#\/calibracao$/, calibracao.calibracao, ['Medir e melhorar', 'Calibração', '#/calibracao']],
+  [/^#\/relatorio$/, relatorio.relatorio, ['Medir e melhorar', '6. Relatório', '#/relatorio']],
+  [/^#\/configuracoes$/, config.configuracoes, ['Conta', 'Configurações', '#/configuracoes']],
   [/^#\/implantacao$/, gestao.implantacao, ['Detalhes técnicos', 'Configurar com a IA', '#/implantacao', true]],
   [/^#\/processos$/, proc.lista, ['Detalhes técnicos', 'Processos', '#/processos', true]],
   [/^#\/processos\/(\d+)$/, proc.detalhe],
   [/^#\/cadastros$/, proc.cadastros],
-  [/^#\/calibracao$/, calibracao.calibracao, ['Detalhes técnicos', 'Calibração', '#/calibracao', true]],
   [/^#\/analises$/, gestao.painel, ['Detalhes técnicos', 'Análises completas', '#/analises', true]],
   [/^#\/painel$/, gestao.painel],
   [/^#\/ia$/, admin.recomendacoes, ['Detalhes técnicos', 'Sugestões da IA', '#/ia', true]],
@@ -102,7 +102,7 @@ function telaAuth() {
     h('p', null, h('button', { class: 'pri', type: 'submit' }, modo === 'login' ? 'Entrar' : 'Criar empresa e entrar')));
     f.segmento && (f.segmento.required = false);
     const painel = h('aside', { class: 'auth-brand' }, h('div', { class: 'brand' }, 'GEM', h('span', null, 'ai')),
-      h('p', { class: 'lede' }, 'Prazo ', h('em', null, 'realista'), ', calculado da sua oficina.'),
+      h('p', { class: 'lede' }, 'Prazo ', h('em', null, 'realista'), ', calculado da sua produção.'),
       h('ul', null,
         h('li', null, 'Do produto ao roteiro: o sistema monta as etapas e o tempo padrão por unidade.'),
         h('li', null, 'Tempos vêm da ficha técnica e do histórico, nunca de um número digitado no escuro.'),

@@ -1,6 +1,7 @@
 // Variante do pedido: o produto é a família ("Armário"); tamanho, tipo e as peças/parafusos de CADA pedido ficam no plano.
 import { patch } from './api.js';
 import { confirmar, h, montar, tentar, toast } from './ui.js';
+import { atributoDoPacote } from './estado.js';
 
 const num = (v) => (v === '' || v === null || v === undefined ? null : Number(String(v).replace(',', '.')));
 const METODOS = [['parafuso', 'Parafuso'], ['cavilha', 'Cavilha'], ['minifix', 'Minifix'], ['dobradica', 'Dobradiça'], ['corredica', 'Corrediça'],
@@ -81,7 +82,7 @@ export function editorEstrutura(inicial) {
     const linhas = est.componentes.map((c, i) => h('tr', null,
       h('td', null, h('strong', null, c.nome)), h('td', null, campoNum(c, 'quantidade')), h('td', null, c.material || '—'),
       h('td', null, h('div', { class: 'inline nw' }, campoNum(c, 'comprimento_m', 'comp. (m)'), campoNum(c, 'largura_m', 'larg. (m)'), campoNum(c, 'espessura_m', 'esp. (m)'))),
-      h('td', null, campoNum(c, 'peso_kg', 'kg')), h('td', null, campoNum(c, 'furos', '', true)),
+      h('td', null, campoNum(c, 'peso_kg', 'kg')), atributoDoPacote('furos') ? h('td', null, campoNum(c, 'furos', '', true)) : null,
       h('td', null, h('button', { class: 'sm dng', title: 'Tirar esta peça do pedido', onclick: () => {
         est.componentes.splice(i, 1);
         est.ligacoes = est.ligacoes.filter((l) => l.componente !== c.nome && l.ligado_a !== c.nome);
@@ -91,9 +92,9 @@ export function editorEstrutura(inicial) {
       h('span', { class: 'inline' }, h('span', { class: 'small muted' }, 'quantidade'), campoNum(l, 'fixadores', '', true)),
       h('button', { class: 'sm dng', onclick: () => { est.ligacoes.splice(i, 1); desenhar(); } }, '✕')));
     montar(area,
-      h('p', { class: 'muted small' }, 'Ajuste para este pedido: quantidade, medidas (em metros) e quantos parafusos, cavilhas etc. Isso não muda o produto, só este pedido.'),
-      est.componentes.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Peça', 'Qtd.', 'Material', 'Medidas (m)', 'Peso (kg)', 'Furos', ''].map((t) => h('th', null, t)))), h('tbody', null, linhas)))
-        : h('p', { class: 'aviso' }, 'Sem peças: o plano não pode ser calculado.'),
+      h('p', { class: 'muted small' }, 'Ajuste para este pedido: quantidade, medidas (em metros) e quantidade de fixadores. Isso não muda o produto, só este pedido.'),
+      est.componentes.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Item', 'Qtd.', 'Material', 'Medidas (m)', 'Peso (kg)', atributoDoPacote('furos') ? 'Furos' : null, ''].filter((t) => t !== null).map((t) => h('th', null, t)))), h('tbody', null, linhas)))
+        : h('p', { class: 'aviso' }, 'Sem itens: o plano não pode ser calculado.'),
       h('div', { class: 'row' }, nova.nome, nova.qtd, h('button', { onclick: () => {
         const nome = nova.nome.value.trim();
         if (!nome) return toast('Dê um nome à peça.', true);

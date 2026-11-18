@@ -60,7 +60,7 @@ def montar(e: EntradaModulo) -> Montagem:
 
 
 MODULO = Modulo(
-    chave="movimentacao", titulo="Movimentação de peças", tipo_passo="movimentacao", unidade_contagem="peca", versao=1,
+    chave="movimentacao", titulo="Movimentação de itens", tipo_passo="movimentacao", unidade_contagem="peca", versao=1, ordem=1, pacote="base",
     descricao="Leva peças entre dois locais cadastrados, a pé ou com um meio de movimentação.",
     parametros=(
         ParametroModulo("distancia_m", "m", "Distância entre os locais de origem e destino", "ambiente"),

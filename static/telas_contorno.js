@@ -58,7 +58,7 @@ function estimarComIA(r, recarregar) {
     btn.disabled = false;
     if (!e) return;
     const valor = h('input', { type: 'number', min: '0', step: 'any', value: e.pecas_por_hora ?? '' });
-    montar(area, avisoIA('É uma estimativa, não uma medição. Confira se faz sentido para a sua oficina; se puder cronometrar depois, substitua pelo valor medido.'),
+    montar(area, avisoIA('É uma estimativa, não uma medição. Confira se faz sentido para o seu local de produção; se puder cronometrar depois, substitua pelo valor medido.'),
       e.pecas_por_hora == null ? h('div', { class: 'aviso' }, 'A IA não conseguiu estimar com o que foi enviado.')
         : h('div', null, h('strong', null, `Cerca de ${fmtNum(e.pecas_por_hora, 0)} peças por hora`),
           e.minimo != null && e.maximo != null && e.maximo > e.minimo ? ` (entre ${fmtNum(e.minimo, 0)} e ${fmtNum(e.maximo, 0)})` : '', ` · confiança ${e.confianca}`),
@@ -82,15 +82,15 @@ export async function contornoAvancado(el) {
   await carregarFuncoes();
   const uid = estado.unidadeId;
   const topo = h('div'); const secoes = h('div');
-  montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/contorno' }, '← Voltar ao passo a passo')), h('h1', null, 'Oficina: ajustes avançados'),
-    h('p', { class: 'muted' }, 'Todos os dados da oficina numa tela só: locais, distâncias, máquinas, ficha técnica, tarefas, pesos e ambiente. O tempo nunca é digitado. Tudo é salvo ao preencher.'),
+  montar(el, h('p', { class: 'noprint' }, h('a', { href: '#/contorno' }, '← Voltar ao passo a passo')), h('h1', null, 'Local de produção: ajustes avançados'),
+    h('p', { class: 'muted' }, 'Todos os dados do local de produção numa tela só: locais, distâncias, máquinas, ficha técnica, tarefas, pesos e ambiente. O tempo nunca é digitado. Tudo é salvo ao preencher.'),
     topo, secoes);
 
   const progresso = async () => {
     const c = await get(`/contorno${qs({ unidade_id: uid })}`);
     const barra = h('div', { class: 'bar' }, h('i')); barra.firstChild.style.width = `${c.progresso_pct}%`;
     montar(topo, h('div', { class: c.completo ? 'card ok-box' : 'card' },
-      c.completo ? h('div', null, h('strong', null, '✓ Oficina completa.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), estado.avancado ? [' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos')] : null)
+      c.completo ? h('div', null, h('strong', null, '✓ Local de produção completo.'), ' A IA já consegue prever o tempo. ', h('a', { class: 'btn', href: '#/planos' }, 'Ir para os planos de trabalho'), estado.avancado ? [' ', h('a', { class: 'btn', href: '#/processos' }, 'Ir para os processos')] : null)
         : h('div', null, h('strong', null, `${c.progresso_pct}% preenchido`), c.tarefas.length || c.pendentes ? ` — faltam ${c.pendentes} informação(ões):` : ' — cadastre os locais, as distâncias e as máquinas.',
           c.faltando.length ? h('ul', null, c.faltando.slice(0, 6).map((f) => h('li', null, f)), c.faltando.length > 6 ? h('li', { class: 'muted' }, `e mais ${c.faltando.length - 6}…`) : null) : null),
       barra));
@@ -104,7 +104,7 @@ export async function contornoAvancado(el) {
 
     // ---- 1. locais
     const novoLocal = h('input', { placeholder: 'ex.: Estoque de chapas' });
-    const sLocais = h('div', { class: 'card', id: 'oficina-locais' }, h('h2', null, '1. Locais por onde a peça passa'),
+    const sLocais = h('div', { class: 'card', id: 'oficina-locais' }, h('h2', null, '1. Locais por onde o item passa'),
       locais.length ? locais.map((l) => h('div', { class: 'row' }, h('input', { value: l.nome, onchange: (e) => salvar(() => patch(`/espacos/${l.id}`, { nome: e.target.value })) }),
         (() => { const t = h('select', { 'aria-label': 'Tipo do local', onchange: async (e) => { if (await tentar(() => patch(`/espacos/${l.id}`, { tipo: e.target.value }))) desenhar(); } },
           TIPOS_LOCAL.map(([v, r]) => h('option', { value: v }, r))); t.value = l.tipo; return t; })(),
@@ -196,8 +196,8 @@ export async function contorno(el) {
   if (estado.foco === 'tarefas' || estado.foco === 'equipamentos') { location.hash = '#/contorno/avancado'; return undefined; }
   let passo = null; // null: abre no primeiro passo que ainda falta
   const topo = h('div'); const corpo = h('div'); const rodape = h('div', { class: 'assist-nav' });
-  montar(el, h('h1', null, 'Oficina'),
-    h('p', { class: 'muted' }, 'Vamos montar a sua oficina em poucos passos. Tudo é salvo ao preencher e você pode voltar quando quiser.'),
+  montar(el, h('h1', null, 'Local de produção'),
+    h('p', { class: 'muted' }, 'Vamos montar o seu local de produção em poucos passos. Tudo é salvo ao preencher e você pode voltar quando quiser.'),
     topo, corpo, rodape);
 
   const pend = (c, secao) => c.pendencias.some((p) => p.secao === secao);
@@ -212,7 +212,7 @@ export async function contorno(el) {
     return 4;
   };
 
-  const desenharTopo = (c) => montar(topo, h('ol', { class: 'passos', 'aria-label': 'Passos da oficina' }, PASSOS.map((nome, i) =>
+  const desenharTopo = (c) => montar(topo, h('ol', { class: 'passos', 'aria-label': 'Passos do local de produção' }, PASSOS.map((nome, i) =>
     h('li', { class: i === passo ? 'on' : feito(c, i) ? 'ok' : '' },
       h('button', { type: 'button', 'aria-current': i === passo ? 'step' : undefined, onclick: () => { passo = i; desenhar(); } },
         h('span', { class: 'bolha' }, feito(c, i) && i !== passo ? '✓' : i + 1), h('span', { class: 'rot' }, nome))))));
@@ -234,7 +234,7 @@ export async function contorno(el) {
     const add = (nome, tipo = 'area') => (nome.trim() ? estrutural(() => post('/espacos', { unidade_id: uid, nome: nome.trim(), tipo })) : toast('Digite o nome do local.', true));
     const jaTem = (n) => c.locais.some((l) => l.nome.toLowerCase() === n.toLowerCase());
     const sug = SUG_LOCAL.filter(([n]) => !jaTem(n));
-    return pergunta('Onde você trabalha?', 'Os lugares por onde a peça passa. Toque nos que existem na sua oficina.',
+    return pergunta('Onde você trabalha?', 'Os lugares por onde o item passa. Toque nos que existem no seu local de produção.',
       sug.length ? h('div', { class: 'chips' }, sug.map(([n, t]) => h('button', { type: 'button', class: 'chip', onclick: () => add(n, t) }, `+ ${n}`))) : null,
       c.locais.length ? h('div', { class: 'itens' }, c.locais.map((l) => h('div', { class: 'item' },
         h('input', { value: l.nome, 'aria-label': 'Nome do local', onchange: (e) => leve(() => patch(`/espacos/${l.id}`, { nome: e.target.value })) }),
@@ -289,7 +289,7 @@ export async function contorno(el) {
   const passoPronto = (c) => {
     const faltas = [...c.pendencias];
     return faltas.length === 0
-      ? h('div', { class: 'card ok-box pergunta' }, h('h2', null, '✓ Oficina pronta'), h('p', null, 'Agora a IA já consegue prever o tempo. Falta só gerar o plano de trabalho.'),
+      ? h('div', { class: 'card ok-box pergunta' }, h('h2', null, '✓ Local de produção pronto'), h('p', null, 'Agora a IA já consegue prever o tempo. Falta só gerar o plano de trabalho.'),
         h('a', { class: 'btn pri big', href: '#/planos' }, 'Ir para os planos de trabalho'))
       : h('div', { class: 'card pergunta' }, h('h2', null, 'Quase lá'), h('p', { class: 'muted' }, `Faltam ${faltas.length} informação(ões) para o plano ficar completo. Sem elas, os passos afetados ficam "sem tempo":`),
         h('ul', { class: 'pend' }, faltas.slice(0, 6).map((p) => h('li', null, p.texto, ' ',

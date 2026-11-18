@@ -53,7 +53,7 @@ def montar(e: EntradaModulo) -> Montagem:
 
 
 MODULO = Modulo(
-    chave="montagem", titulo="Montagem", tipo_passo="montagem", unidade_contagem="unidade_produto", versao=1,
+    chave="montagem", titulo="Montagem", tipo_passo="montagem", unidade_contagem="unidade_produto", versao=1, ordem=60, pacote="base",
     descricao="Montagem de um subconjunto ou final: pegar/posicionar as peças e fixar conforme os métodos de ligação.",
     parametros=(
         ParametroModulo("metodo_ligacao", "—", "Método de ligação de cada fixação", "produto"),

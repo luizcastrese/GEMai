@@ -481,7 +481,7 @@ def planejar(ctx: dict) -> PlanoProposta:
 
     estoque, montagem = achar_local("estoque", "estoque"), achar_local("montagem", "montag")
     if not estoque:
-        faltam.append("Local de estoque (onde as peças ficam antes de cortar)")
+        faltam.append("Local de estoque (onde os itens ficam antes de começar)")
     if not montagem:
         faltam.append("Local de montagem")
 
@@ -503,50 +503,52 @@ def planejar(ctx: dict) -> PlanoProposta:
         elif c.get("peso_kg") is None and (c.get("comp") and c.get("larg")):
             faltam.append(f"Peso de '{c['nome']}' (informe o peso ou o material e a espessura)")
 
-    # --- usinagem: cortar, colar borda, furar (nessa ordem), com a movimentação entre os locais
+    # --- processamento: as atividades do catálogo DA EMPRESA, na posição padrão de cada uma (antes da montagem), com a
+    # movimentação entre os locais. Atividades de pacote de segmento (ex.: corte, borda e furação da marcenaria) só entram se o
+    # pacote estiver ativo; as da empresa entram quando a peça tem os dados do driver e ele dá > 0.
     local_atual = estoque
-    etapas_maq = (("corte", "Cortar", lambda c: True), ("bordo", "Colar borda", lambda c: (c.get("bordas_m") or 0) > 0),
-                  ("furacao", "Furar", lambda c: (c.get("furos") or 0) > 0))
-    for modulo, verbo, filtro in etapas_maq:
-        alvo = [c for c in paineis if filtro(c)]
-        if not alvo:
-            continue
-        pecas = sum(c["qtd"] for c in alvo) * N
-        nomes = [c["nome"] for c in alvo]
-        eq = equip(modulo)
-        if eq is None:
-            faltam.append(f"Equipamento para '{verbo.lower()}' (em Contorno físico, marque em 'Para que serve?')")
-            passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", modulo=modulo, componentes=nomes))
-            continue
-        mover(local_atual, eq.get("espaco"), nomes, f"Levar peças até {eq.get('espaco')} ({verbo.lower()})")
-        local_atual = eq.get("espaco") or local_atual
-        passos.append(PassoIA(nome=f"{verbo} {pecas:g} peça(s)", modulo=modulo, componentes=nomes, recurso=eq["nome"],
-                              espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq))
-    # --- módulos da EMPRESA (criados por necessidade): a peça entra no passo quando tem os dados do driver e ele dá > 0
-    genericos = [m for m in ctx.get("modulos", []) if m.get("pacote") == "empresa" and m.get("arquetipo") != "deslocamento"]
+    catalogo = {m["chave"]: m for m in ctx.get("modulos", [])}
+    filtros_embutidos = {"corte": ("Cortar", lambda c: True, paineis), "bordo": ("Colar borda", lambda c: (c.get("bordas_m") or 0) > 0, paineis),
+                         "furacao": ("Furar", lambda c: (c.get("furos") or 0) > 0, paineis)}
+    genericos = [m for m in catalogo.values() if m.get("pacote") == "empresa" and m.get("arquetipo") != "deslocamento"]
 
     def alvo_de(m):
         return [c for c in comps if _driver_positivo(m.get("driver") or "{qtd}", c)]
 
-    for m in [g for g in genericos if g.get("arquetipo") in ("processamento_meio", "espera")]:
-        alvo = alvo_de(m)
+    antes = sorted([m for m in catalogo.values() if m["chave"] in filtros_embutidos]
+                   + [g for g in genericos if (g.get("ordem") or 40) < 60 and (g.get("unidade_contagem") == "peca" or g.get("arquetipo") != "manual")],
+                   key=lambda m: (m.get("ordem") or 40, m["chave"]))
+    movidas: list[str] = []
+    for m in antes:
+        if m["chave"] in filtros_embutidos:
+            verbo, filtro, base_pecas = filtros_embutidos[m["chave"]]
+            alvo = [c for c in base_pecas if filtro(c)]
+            titulo = None
+        else:
+            alvo, verbo, titulo = alvo_de(m), None, m["titulo"]
         if not alvo:
             continue
         nomes = [c["nome"] for c in alvo]
-        eq = equip(m.get("funcao_meio")) if m.get("funcao_meio") else None
-        if eq is None:
-            faltam.append(f"Equipamento para '{m['titulo']}' (cadastre um meio com a função '{m.get('funcao_meio') or '?'}')")
-            passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=nomes))
+        movidas += [n for n in nomes if n not in movidas]
+        nome_passo = f"{verbo} {sum(c['qtd'] for c in alvo) * N:g} peça(s)" if verbo else titulo
+        if m.get("arquetipo") == "manual":
+            passos.append(PassoIA(nome=nome_passo, modulo=m["chave"], componentes=nomes, pessoas=pessoas_eq))
             continue
-        mover(local_atual, eq.get("espaco"), nomes, f"Levar peças até {eq.get('espaco')} ({m['titulo'].lower()})")
+        funcao = m["chave"] if verbo else m.get("funcao_meio")
+        eq = equip(funcao) if funcao else None
+        if eq is None:
+            faltam.append(f"Equipamento para '{(verbo or titulo).lower()}' (em Local de produção, marque em 'Para que serve?')"
+                          if verbo else f"Equipamento para '{titulo}' (cadastre um meio com a função '{funcao or '?'}')")
+            passos.append(PassoIA(nome=nome_passo, modulo=m["chave"], componentes=nomes))
+            continue
+        rotulo = (verbo or titulo).lower()
+        mover(local_atual, eq.get("espaco"), nomes, f"Levar peças até {eq.get('espaco')} ({rotulo})")
         local_atual = eq.get("espaco") or local_atual
-        passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=nomes, recurso=eq["nome"],
+        passos.append(PassoIA(nome=nome_passo, modulo=m["chave"], componentes=nomes, recurso=eq["nome"],
                               espaco_origem=eq.get("espaco"), espaco_destino=eq.get("espaco"), pessoas=pessoas_eq))
-    for m in [g for g in genericos if g.get("arquetipo") == "manual" and g.get("unidade_contagem") == "peca"]:
-        alvo = alvo_de(m)
-        if alvo:
-            passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=[c["nome"] for c in alvo], pessoas=pessoas_eq))
-    mover(local_atual, montagem, [c["nome"] for c in paineis], "Levar peças até a montagem")
+    levar = [c["nome"] for c in paineis] if any(m["chave"] in filtros_embutidos for m in antes) else movidas
+    if levar:
+        mover(local_atual, montagem, levar, "Levar peças até a montagem")
 
     # --- montagem por subconjunto e final (a derivação das ligações e quantidades é do sistema)
     grupo_de = {c["nome"]: c.get("grupo") or "Corpo" for c in comps}
@@ -562,10 +564,18 @@ def planejar(ctx: dict) -> PlanoProposta:
     if l_final or len(grupos) > 1:
         passos.append(PassoIA(nome="Montagem final", modulo="montagem", grupo="Final", final=True, componentes=[c["nome"] for c in comps],
                               espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
-    for m in [g for g in genericos if g.get("arquetipo") == "manual" and g.get("unidade_contagem") == "unidade_produto"]:
-        passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=[c["nome"] for c in alvo_de(m)],
-                              espaco_origem=montagem, espaco_destino=montagem, pessoas=pessoas_eq))
-    passos.append(PassoIA(nome="Conferência final", modulo="conferencia", espaco_origem=montagem, espaco_destino=montagem, pessoas=1))
+    # --- depois da montagem: atividades da empresa com posição ≥ 60 (ou manuais por unidade do produto), e a conferência (opcional)
+    depois = sorted([g for g in genericos if g not in antes], key=lambda m: (m.get("ordem") or 40, m["chave"]))
+    for m in depois:
+        alvo = alvo_de(m)
+        eq = equip(m.get("funcao_meio")) if m.get("arquetipo") != "manual" and m.get("funcao_meio") else None
+        if m.get("arquetipo") != "manual" and eq is None:
+            faltam.append(f"Equipamento para '{m['titulo']}' (cadastre um meio com a função '{m.get('funcao_meio') or '?'}')")
+        passos.append(PassoIA(nome=m["titulo"], modulo=m["chave"], componentes=[c["nome"] for c in alvo], recurso=eq["nome"] if eq else None,
+                              espaco_origem=(eq or {}).get("espaco") or montagem, espaco_destino=(eq or {}).get("espaco") or montagem,
+                              pessoas=pessoas_eq))
+    if ctx.get("incluir_conferencia", True) and "conferencia" in catalogo:
+        passos.append(PassoIA(nome="Conferência final", modulo="conferencia", espaco_origem=montagem, espaco_destino=montagem, pessoas=1))
     prem.append("Pressupõe uma equipe executando os passos em sequência (sem trabalho em paralelo entre passos).")
     prem.append("Cada passo é um módulo do catálogo: os tempos saem das condições do produto e da ficha técnica validada dos meios, "
                 "com coeficientes de referência genéricos do catálogo (rotulados) até a calibração com o seu histórico.")

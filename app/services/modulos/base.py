@@ -84,11 +84,12 @@ class Modulo:
     funcao_meio: str = ""  # função do meio que executa o passo (só módulos genéricos)
     pacote: str = "marcenaria"  # pacote de origem; módulos criados pela empresa: "empresa"
     driver: str = ""  # fórmula do driver por peça (só módulos genéricos)
+    ordem: int = 50  # posição padrão no roteiro (1–99): o planejador local ordena os passos por ela
 
     def resumo(self) -> dict:
         """Descrição para a IA e para a tela: só nomes e unidades, nenhum valor de tempo."""
         return {"chave": self.chave, "titulo": self.titulo, "descricao": self.descricao, "unidade_contagem": self.unidade_contagem,
-                "precisa_recurso": self.precisa_recurso, "pacote": self.pacote, "arquetipo": self.arquetipo, "funcao_meio": self.funcao_meio, "driver": self.driver,
+                "precisa_recurso": self.precisa_recurso, "pacote": self.pacote, "arquetipo": self.arquetipo, "funcao_meio": self.funcao_meio, "driver": self.driver, "ordem": self.ordem,
                 "parametros": [{"nome": p.nome, "unidade": p.unidade, "descricao": p.descricao, "origem": p.origem,
                                 "obrigatorio": p.obrigatorio} for p in self.parametros]}
 

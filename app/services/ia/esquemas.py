@@ -428,6 +428,7 @@ class PropostaModuloIA(BaseModel):
     taxa: ParametroTecnico | None = None
     preparacao: Literal["maquina", "posto", "nenhuma"] = "nenhuma"
     acoes: list[AcaoManual] = Field(default_factory=list)
+    ordem: int = 40  # posição padrão no roteiro: < 60 antes da montagem, > 60 depois (a conferência é 90)
     premissas: list[str] = Field(default_factory=list)
     dados_faltantes: list[str] = Field(default_factory=list)
     confianca: Literal["baixa", "media"] = "baixa"
@@ -448,7 +449,7 @@ def sanear_proposta_modulo(p: PropostaModuloIA, chave: str) -> tuple[dict | None
              "unidade_contagem": p.unidade_contagem, "driver": _t(p.driver, 200) or "{qtd}", "unidade_driver": _t(p.unidade_driver, 20) or "un",
              "funcao_meio": _re.sub(r"[^a-z0-9_]", "_", _t(p.funcao_meio, 40).lower()), "taxa": taxa, "preparacao": p.preparacao,
              "acoes": [{**a.model_dump(), "nome": _t(a.nome, 120) or "ação"} for a in p.acoes[:12]],
-             "premissas": [_t(x, 400) for x in p.premissas[:10] if _t(x, 400)]}
+             "premissas": [_t(x, 400) for x in p.premissas[:10] if _t(x, 400)], "ordem": min(max(int(p.ordem or 40), 2), 89)}
     try:
         e = EspecModulo.model_validate(bruto)
     except Exception as exc:  # pydantic.ValidationError / FormulaErro

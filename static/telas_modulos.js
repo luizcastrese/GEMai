@@ -34,6 +34,13 @@ function cartao(m, depois) {
     e.acoes && e.acoes.length ? h('p', { class: 'small muted' }, 'Movimentos: ', e.acoes.map((a) => a.nome).join(', '), '.') : null,
     m.problemas && m.problemas.length ? h('div', { class: 'aviso' }, 'Falta corrigir: ', m.problemas.join('; ')) : null,
     m.dados_faltantes && m.dados_faltantes.length ? h('div', { class: 'aviso' }, 'Para o tempo ficar bom: ', m.dados_faltantes.join('; ')) : null,
+    m.status === 'pendente' ? h('label', { class: 'small' }, 'Quando acontece no roteiro: ', (() => {
+      const s = h('select', { onchange: async (ev) => {
+        if (await tentar(() => post('/modulos/empresa', { espec: { ...e, ordem: Number(ev.target.value) } }), 'Posição ajustada.')) depois();
+      } }, [[20, 'No começo'], [40, 'Antes da montagem'], [70, 'Depois da montagem'], [85, 'No fim, antes da conferência']].map(([v, t]) => h('option', { value: v }, t)));
+      s.value = String([20, 40, 70, 85].reduce((a, b) => (Math.abs(b - (e.ordem ?? 40)) < Math.abs(a - (e.ordem ?? 40)) ? b : a)));
+      return s;
+    })()) : null,
     m.status === 'pendente' ? h('div', { class: 'inline' },
       h('button', { class: 'pri', disabled: !!(m.problemas && m.problemas.length), onclick: () => decidir(m, 'validar', depois) }, 'Validar'),
       h('button', { onclick: () => decidir(m, 'rejeitar', depois) }, 'Descartar')) : null,
@@ -67,7 +74,8 @@ export async function modulos(el) {
       pendentes.length ? [h('h2', null, `Para conferir (${pendentes.length})`), pendentes.map((m) => cartao(m, carregar))] : null,
       emUso.length ? [h('h2', null, 'Em uso'), emUso.map((m) => cartao(m, carregar))] : null,
       detalhes(`Atividades que já vêm prontas (${embutidos.length})`,
-        h('ul', null, embutidos.map((m) => h('li', { class: 'small' }, h('strong', null, m.titulo), ` — ${m.descricao}`)))));
+        h('ul', null, embutidos.map((m) => h('li', { class: 'small' }, h('strong', null, m.titulo), ` — ${m.descricao}`))),
+        h('p', { class: 'muted small' }, 'Levar itens, montar e conferir valem para qualquer produção. Pacotes de segmento (ex.: marcenaria) são ligados em Configurações › Empresa.')));
   };
   await carregar();
 }

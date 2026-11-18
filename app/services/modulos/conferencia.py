@@ -14,6 +14,6 @@ def montar(e: EntradaModulo) -> Montagem:
 
 
 MODULO = Modulo(
-    chave="conferencia", titulo="Conferência final", tipo_passo="inspecao", unidade_contagem="unidade_produto", versao=1,
+    chave="conferencia", titulo="Conferência final", tipo_passo="inspecao", unidade_contagem="unidade_produto", versao=1, ordem=90, pacote="base",
     descricao="Conferência de cada unidade do produto antes da expedição.",
     parametros=(ParametroModulo("unidades", "un", "Unidades do produto", "pedido"),), montar=montar)

@@ -40,7 +40,7 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
     equip_usados: set[int] = set()
     total = 0
     if not locais:
-        falta("locais", "Cadastre os locais por onde a peça passa (ex.: estoque, bancada, montagem).")
+        falta("locais", "Cadastre os locais por onde o item passa (ex.: estoque, bancada, expedição).")
         total += 1
     for op, et, pr in rows:
         pend = []
@@ -65,8 +65,13 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
                         "nome": op.nome if et.nome == op.nome else f"{et.nome} › {op.nome}",
                         "recurso_padrao_id": op.recurso_padrao_id, "espaco_origem_id": o, "espaco_destino_id": d,
                         "distancia_m": dist, "item_peso_kg": op.item_peso_kg, "pendente": pend})
-    # Produtos com componentes: a peça percorre estoque → equipamentos (corte, borda, furação) → montagem.
+    # Produtos com itens: o item percorre estoque → equipamentos das ATIVIDADES em uso (na posição padrão de cada uma) → montagem.
+    # As atividades vêm do catálogo da empresa (pacote base, pacotes de segmento ativos e atividades validadas): é delas que sai
+    # quais equipamentos o plano usa e qual ficha técnica cada um precisa.
     usa_produtos = bool(db.scalar(select(Componente.id).where(Componente.empresa_id == empresa_id).limit(1)))
+    cat = catalogo.da_empresa(db, empresa_id)
+    com_meio = [m for m in cat.values() if m.precisa_recurso]
+    funcoes = {(m.funcao_meio or m.chave): m.titulo for m in com_meio}
     if usa_produtos:
         def local_de(tipo=None, funcao=None):
             if funcao:
@@ -74,10 +79,14 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
                 return r.espaco_id if r else None
             e = next((e for e in locais if e.tipo == tipo), None)
             return e.id if e else None
-        rota = [local_de("estoque"), local_de(funcao="corte"), local_de(funcao="bordo"), local_de(funcao="furacao"), local_de("montagem")]
+        rota = [local_de("estoque")] + [local_de(funcao=m.funcao_meio or m.chave) for m in com_meio] + [local_de("montagem")]
         rota = [x for x in rota if x]
-        # o plano usa os equipamentos de corte, borda e furação: sem ficha técnica o passo fica sem tempo
-        equip_usados |= {r.id for r in equip.values() if r.funcao in ("corte", "bordo", "furacao")}
+        # o plano usa os equipamentos das atividades em uso: sem ficha técnica o passo fica sem tempo
+        equip_usados |= {r.id for r in equip.values() if r.funcao in funcoes}
+        for m in com_meio:  # atividade criada pela empresa sem equipamento que a execute
+            if m.pacote == "empresa" and not any(r.funcao == m.funcao_meio for r in equip.values()):
+                total += 1
+                falta("equipamentos", f"Equipamento para a atividade '{m.titulo}' (cadastre e marque 'Para que serve?': {m.titulo})")
         for a, b in zip(rota, rota[1:]):
             if a == b:
                 continue
