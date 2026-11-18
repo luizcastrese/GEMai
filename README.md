@@ -1,4 +1,4 @@
-# GEMai — ERP de Produção com IA
+# Tempora — ERP de Produção com IA
 
 > **Especificação do sistema e documento-fonte do TCC.** Descreve o **sistema-alvo**: um ERP de produção de **propósito geral**,
 > amparado por IA, que **delimita qualquer processo de forma modular, conforme a necessidade**, e atribui a cada atividade um
@@ -34,7 +34,7 @@ deve, portanto, distinguir **o que o trabalho propõe** (desenho completo) do **
    (processamento por meio, manual, deslocamento, espera), que correspondem às categorias clássicas do gráfico de fluxo de processo
    (operação, transporte, inspeção, espera). As atividades vêm de **pacotes** (o pacote base vale para todos; o de marcenaria é o
    primeiro de segmento) ou são **delimitadas pela IA conforme a necessidade** e validadas por uma pessoa (seções 6.6 e 7.4.1).
-   A **marcenaria é o caso de validação**, não o limite do sistema. Ao escrever, não apresente o GEMai como "sistema para marcenaria".
+   A **marcenaria é o caso de validação**, não o limite do sistema. Ao escrever, não apresente o Tempora como "sistema para marcenaria".
 7. **Idioma e norma:** português, ABNT (NBR 6023 referências, NBR 10520 citações, NBR 14724 estrutura).
 
 **Mapa sugerido: capítulo do TCC ← seção deste documento**
@@ -64,7 +64,7 @@ deve, portanto, distinguir **o que o trabalho propõe** (desenho completo) do **
 ## 1. Resumo (rascunho)
 
 Profissionais que produzem sob encomenda costumam estimar prazos de forma heurística, sem **tempo padrão**, e aceitam datas sem saber
-quanto o trabalho leva. Este trabalho apresenta o **GEMai**, um ERP de produção multiempresa e de **propósito geral**, concebido como
+quanto o trabalho leva. Este trabalho apresenta o **Tempora**, um ERP de produção multiempresa e de **propósito geral**, concebido como
 **gêmeo digital** da operação, em que o **tempo padrão é uma saída calculada** das condições do trabalho (estrutura do produto,
 atividades, equipamentos com ficha técnica, distâncias, jornada e perfil de mão de obra) e não um número digitado. O processo produtivo
 é **delimitado de forma modular**: cada atividade é instância de um de quatro **arquétipos** de cálculo (processamento por meio, trabalho
@@ -158,7 +158,7 @@ FT = 1 / (1 − p),    p = fração de tolerâncias sobre o tempo total       (t
 ### 5.1.1 Gráfico de fluxo de processo e a classificação das atividades
 O estudo de métodos registra o processo em **gráficos de fluxo**, com símbolos padronizados para **operação, transporte, inspeção,
 espera e armazenagem** (Gilbreth; padronização ASME, 1947; Barnes, 1980) `[VERIFICAR]`. Essa classificação é a base dos **arquétipos**
-do GEMai: operação com equipamento (`processamento_meio`), operação manual (`manual`), transporte (`deslocamento`), espera (`espera`) e
+do Tempora: operação com equipamento (`processamento_meio`), operação manual (`manual`), transporte (`deslocamento`), espera (`espera`) e
 inspeção (a atividade de conferência do pacote base). Armazenagem não gera tempo de trabalho e fica fora do cálculo. É essa
 correspondência que permite dizer que **qualquer** processo é delimitável com poucos arquétipos.
 
@@ -171,7 +171,7 @@ tempo (TMU) = Σ índices × 10        1 TMU = 0,00001 h = 0,0006 min = 0,036 s
 ```
 
 Os índices dependem de cartões **certificados** (licenciados); o sistema **não os reproduz** (ver 5.9, item 10). Nas atividades manuais,
-o GEMai usa a **estrutura** da Sequência de Movimento Geral com **categorias** (alcance, movimento do corpo, pegar, posicionar) e
+o Tempora usa a **estrutura** da Sequência de Movimento Geral com **categorias** (alcance, movimento do corpo, pegar, posicionar) e
 **índices ilustrativos** rotulados como tais (Apêndice B); a conferência no cartão certificado ou a calibração com o tempo real é
 obrigatória antes de tratar esses tempos como padrão.
 
@@ -192,11 +192,11 @@ perímetro, quantidade, ou um atributo livre) e a taxa é um parâmetro técnico
 - O sistema é **triagem de apoio à decisão**; não substitui a Análise Ergonômica do Trabalho (NR-17) nem um estudo de tempos feito por profissional.
 
 ### 5.5 ERP e sistemas de apoio à produção
-ERP integra informação de produção, estoque, vendas e finanças. O GEMai trata o recorte **planejamento e controle da produção** (PCP): roteiros,
+ERP integra informação de produção, estoque, vendas e finanças. O Tempora trata o recorte **planejamento e controle da produção** (PCP): roteiros,
 tempos, ordens, apontamentos, desvios. Escopo excluído: seção 12.3.
 
 ### 5.6 Gêmeo digital
-Representação virtual de um sistema físico, alimentada por dados do real (Grieves, 2014; Grieves e Vickers, 2017). No GEMai, o "gêmeo" é o modelo
+Representação virtual de um sistema físico, alimentada por dados do real (Grieves, 2014; Grieves e Vickers, 2017). No Tempora, o "gêmeo" é o modelo
 **blocos → elementos de tempo → minutos**, contrastado com o apontado e recalibrado.
 
 ### 5.7 IA generativa com fronteira de confiança
@@ -212,7 +212,7 @@ Longley-Cook, 1962), em que a estimativa com n observações recebe peso Z = √
 no tamanho de amostra considerado suficiente `[VERIFICAR as duas fontes]`.
 
 ### 5.8.1 Custeio padrão da mão de obra
-O tempo padrão é a base do **custo padrão** da mão de obra: horas-homem padrão × taxa horária (Martins, 2003) `[VERIFICAR]`. O GEMai
+O tempo padrão é a base do **custo padrão** da mão de obra: horas-homem padrão × taxa horária (Martins, 2003) `[VERIFICAR]`. O Tempora
 usa a taxa que o próprio dono informa ("quanto quer ganhar por hora") e mostra o resultado como **valor mínimo da mão de obra**, sem
 material nem despesas fixas. É apoio ao preço, não apuração contábil.
 
@@ -747,6 +747,7 @@ Em desenvolvimento as tabelas são criadas automaticamente (SQLite). Em produç�
 | `POSTGRES_PASSWORD`, `FORWARDED_ALLOW_IPS` | — / `127.0.0.1` | `docker-compose` e proxy reverso |
 
 ### 13.3 Produção
+- **Nome técnico:** o produto se chama **Tempora**; o repositório, o serviço e o banco no Render mantêm o nome técnico anterior (`gemai`, `gemai-db`), porque renomeá-los no `render.yaml` criaria um serviço e um banco novos.
 - **Docker:** `cp .env.example .env`; preencha `ERP_SECRET_KEY` e `POSTGRES_PASSWORD`; `docker compose up -d`; ponha um proxy reverso com HTTPS na frente e ajuste `FORWARDED_ALLOW_IPS` (senão o limitador de tentativas vê todos como um IP).
 - **Render:** *Blueprint* (`render.yaml`): serviço Docker + PostgreSQL, `healthCheckPath: /api/v1/saude`, segredo gerado.
 - **Primeiro acesso:** o `render.yaml` sobe com `ERP_PERMITIR_CADASTRO_PUBLICO=true` para criar a primeira empresa; **depois, mude para `false`**. No `docker-compose.yml` o padrão é `false` e **não existe comando** para criar a primeira empresa: defina `true`, cadastre a empresa, volte para `false` e reinicie.
