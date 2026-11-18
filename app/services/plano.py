@@ -208,6 +208,7 @@ class Base:
     pesos: dict
     distancias: list[dict]
     espacos: list
+    catalogo: dict  # catálogo efetivo da empresa: pacote embutido + módulos validados
 
 
 def preparar(ctx: Ctx, produto: Produto, unidade_id: int, cfg: dict) -> Base:
@@ -228,7 +229,8 @@ def preparar(ctx: Ctx, produto: Produto, unidade_id: int, cfg: dict) -> Base:
         fichas={r.id: entradas.ficha_do_meio(db, ctx.empresa_id, r.id) for r in recursos}, perfil=perfil,
         ritmo=perfil.ritmo_pct if perfil else 100.0, blocos=_blocos(cfg), pessoas_cfg=max(int(cfg.get("pessoas") or 1), 1), pesos=pesos,
         distancias=[{"a": esp_id[d.origem_id].nome, "b": esp_id[d.destino_id].nome, "metros": d.metros}
-                    for d in dist_rows if d.origem_id in esp_id and d.destino_id in esp_id], espacos=espacos)
+                    for d in dist_rows if d.origem_id in esp_id and d.destino_id in esp_id], espacos=espacos,
+        catalogo=catalogo.da_empresa(db, ctx.empresa_id))
 
 
 def propor(base: Base, quantidade: float):
@@ -240,13 +242,13 @@ def propor(base: Base, quantidade: float):
         "produto": {"nome": base.produto.nome, "quantidade": quantidade, "especificacoes": base.cfg.get("especificacoes") or {}},
         "componentes": [{"nome": c["nome"], "qtd": c["qtd"], "material": c["material"], "grupo": c["grupo"], "comp": c["comp"],
                          "larg": c["larg"], "esp": c["esp"], "peso_kg": c["peso_kg"], "peso_origem": base.pesos[c["nome"]][1],
-                         "furos": c["furos"], "bordas_m": c["bordas_m"]} for c in base.comps_d],
+                         "furos": c["furos"], "bordas_m": c["bordas_m"], "atributos": c.get("atributos") or {}} for c in base.comps_d],
         "ligacoes": base.ligs_d,
         "recursos": [{"nome": r.nome, "funcao": r.funcao, "tipo": r.tipo, "ficha_tecnica": sorted(base.fichas[r.id]),
                       "capacidade_origem": r.capacidade_origem or "",
                       "espaco": base.esp_id[r.espaco_id].nome if r.espaco_id in base.esp_id else None} for r in base.recursos],
         "espacos": [{"nome": e.nome, "tipo": e.tipo, "temperatura_c": e.temperatura_c, "ruido_db": e.ruido_db} for e in base.espacos],
-        "distancias": base.distancias, "pessoas": base.pessoas_cfg, "modulos": catalogo.resumo_para_ia(),
+        "distancias": base.distancias, "pessoas": base.pessoas_cfg, "modulos": [m.resumo() for m in base.catalogo.values()],
     }
     return ia.planejar(ctx.empresa, contexto)
 
@@ -256,7 +258,7 @@ def calcular_linha(base: Base, p, quantidade: float, *, recurso=None, pessoas_cf
     proposto (usado ao avaliar arranjos; com `fixar_recurso`, `recurso=None` significa "sem meio", não "o proposto"); `pessoas_cfg` troca o
     mínimo de pessoas do passo."""
     ctx, db = base.ctx, base.ctx.db
-    modulo = catalogo.obter(p.modulo)
+    modulo = base.catalogo.get(p.modulo)
     rec = recurso if (recurso is not None or fixar_recurso) else base.rec_nome.get((p.recurso or "").lower())
     o, d = base.esp_nome.get((p.espaco_origem or "").lower()), base.esp_nome.get((p.espaco_destino or "").lower())
     distancia = None
@@ -361,7 +363,9 @@ def persistir(base: Base, quantidade: float, plano: PlanoTrabalho | None, propos
     fim_geral = max((f for (_, f, e) in ag if e is not None), default=None)
     inicio_geral = min((i for (i, _, e) in ag if e is not None), default=None)
     dias = len({f.date() for (_, f, e) in ag if e is not None} | {i.date() for (i, _, e) in ag if e is not None})
-    lacunas = cobertura_do_plano(base, linhas)
+    lacunas = cobertura_do_plano(base, linhas) + [
+        f"Atividade sem módulo de tempo: «{a}» (crie o módulo em Módulos: a IA propõe, uma pessoa valida)"
+        for a in getattr(proposta, "atividades_sem_modulo", [])]
     faltantes = list(dict.fromkeys(proposta.dados_faltantes + [f"{l['p'].nome}: {x}" for l in linhas for x in l["falt"]] + lacunas))
     plano.config = cfg_guardada
     # sem histórico medido do plano, nunca "alta": a confiança da IA é só um rótulo, o sistema limita

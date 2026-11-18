@@ -91,7 +91,7 @@ def estrutura_do_produto(componentes: list[Componente], ligacoes: list[Ligacao])
     return {
         "componentes": [{"nome": c.nome, "quantidade": c.quantidade, "material": c.material, "grupo": c.grupo, "comprimento_m": c.comprimento_m,
                          "largura_m": c.largura_m, "espessura_m": c.espessura_m, "peso_kg": c.peso_kg, "furos": c.furos, "bordas_m": c.bordas_m,
-                         "formulas": dict(c.formulas or {})} for c in componentes],
+                         "formulas": dict(c.formulas or {}), "atributos": dict(c.atributos or {})} for c in componentes],
         "ligacoes": [{"componente": nome[l.componente_id], "ligado_a": nome.get(l.ligado_a_id), "metodo": l.metodo, "fixadores": l.fixadores,
                       "formula_fixadores": l.formula_fixadores or ""} for l in ligacoes if l.componente_id in nome],
     }
@@ -104,7 +104,7 @@ def estrutura_transiente(estrutura: dict, empresa_id: int, produto_id: int) -> t
         obj = Componente(id=i, empresa_id=empresa_id, produto_id=produto_id, ordem=i, nome=c["nome"], quantidade=c.get("quantidade", 1.0),
                          material=c.get("material", ""), grupo=c.get("grupo") or "Corpo", comprimento_m=c.get("comprimento_m"),
                          largura_m=c.get("largura_m"), espessura_m=c.get("espessura_m"), peso_kg=c.get("peso_kg"),
-                         furos=c.get("furos", 0), bordas_m=c.get("bordas_m"))
+                         furos=c.get("furos", 0), bordas_m=c.get("bordas_m"), atributos=dict(c.get("atributos") or {}))
         comps.append(obj)
         por_nome[c["nome"].casefold()] = i
     ligs = [Ligacao(id=i, empresa_id=empresa_id, produto_id=produto_id, ordem=i, componente_id=por_nome[l["componente"].casefold()],

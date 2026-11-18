@@ -105,7 +105,7 @@ def atualizar_componente(pid: int, cid: int, dados: ComponenteUpdate, ctx: Ctx =
         for campo, texto in dados.formulas.items():
             especificacao.validar_formula(ctx.obter(Produto, pid), texto, f"«{c.nome}» ({campo})")
     for k, v in dados.model_dump(exclude_unset=True).items():
-        if v is None and k in ("nome", "quantidade", "furos", "grupo", "material", "formulas"):
+        if v is None and k in ("nome", "quantidade", "furos", "grupo", "material", "formulas", "atributos"):
             continue
         setattr(c, k, v)
     try:

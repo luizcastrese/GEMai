@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Componente, Distancia, Espaco, Etapa, Operacao, Processo, Produto, Recurso
 from . import modelo_tempo
-from .modulos import entradas as entradas_modulo, ficha as ficha_catalogo
+from .modulos import catalogo, entradas as entradas_modulo, ficha as ficha_catalogo
 
 
 def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
@@ -90,10 +90,11 @@ def resumo(db: Session, empresa_id: int, unidade_ids: list[int]) -> dict:
         if par["metros"] is None:
             falta("distancias", f"Distância entre {par['origem']} e {par['destino']}")
     equipamentos = []
+    extras_ficha = catalogo.parametros_ficha_extras(db, empresa_id)
     for r in equip.values():
         usado = r.id in equip_usados
         validados = entradas_modulo.ficha_do_meio(db, empresa_id, r.id)
-        precisa = ficha_catalogo.aplicaveis(r.funcao) if r.funcao else []
+        precisa = ficha_catalogo.aplicaveis(r.funcao, extras_ficha) if r.funcao else []
         faltam_ficha = [p for p in precisa if p.nome not in validados]
         cap = modelo_tempo.capacidade_por_hora(r.capacidade, r.capacidade_unidade)
         if usado:

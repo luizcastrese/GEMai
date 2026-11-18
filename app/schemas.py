@@ -392,7 +392,8 @@ class DecisaoIn(In):
 
 
 # ------------------------------------------------------------------ recursos e cadastros
-FuncaoMeio = Literal["", "corte", "furacao", "bordo", "movimentacao", "acabamento", "montagem", "outro"]
+# Função do meio: as do pacote embutido (corte, furacao, bordo, movimentacao…) ou a que um módulo da empresa declarar (ex.: lixamento).
+FuncaoMeio = Annotated[str, Field(max_length=40, pattern=r"^[a-z0-9_]*$")]
 
 
 class RecursoIn(In):
@@ -1012,6 +1013,24 @@ def _formulas_ok(m: dict | None):
 Formulas = Annotated[dict[str, str], Field(max_length=10), AfterValidator(_formulas_ok)]
 
 
+def _atributos_ok(v: dict) -> dict:
+    import re as _re
+    for k, x in v.items():
+        if not _re.match(r"^[a-z][a-z0-9_]{0,39}$", k):
+            raise ValueError(f"Atributo «{k}»: use minúsculas, números e _ (ex.: area_pintura_m2).")
+        if isinstance(x, bool) or not isinstance(x, (int, float, str)):
+            raise ValueError(f"Atributo «{k}»: valor precisa ser número ou texto.")
+        if isinstance(x, str) and len(x) > 120:
+            raise ValueError(f"Atributo «{k}»: texto longo demais.")
+        if isinstance(x, (int, float)) and not (-1e9 < x < 1e9):
+            raise ValueError(f"Atributo «{k}»: número fora do limite.")
+    return v
+
+
+# Atributos LIVRES da peça (qualquer segmento): usados pelas fórmulas de driver dos módulos da empresa; nunca tempo.
+Atributos = Annotated[dict[str, float | int | str], Field(max_length=30), AfterValidator(_atributos_ok)]
+
+
 class ComponenteIn(In):
     nome: Nome
     quantidade: float = Field(1.0, gt=0, le=100000)
@@ -1024,6 +1043,7 @@ class ComponenteIn(In):
     furos: int = Field(0, ge=0, le=10000)
     bordas_m: float | None = Field(None, ge=0, le=1000)
     formulas: Formulas = Field(default_factory=dict)
+    atributos: Atributos = Field(default_factory=dict)
 
 
 class ComponenteUpdate(In):
@@ -1038,6 +1058,7 @@ class ComponenteUpdate(In):
     furos: int | None = Field(None, ge=0, le=10000)
     bordas_m: float | None = Field(None, ge=0, le=1000)
     formulas: Formulas | None = None
+    atributos: Atributos | None = None
 
 
 class ComponenteOut(Out):
@@ -1055,6 +1076,7 @@ class ComponenteOut(Out):
     furos: int
     bordas_m: float | None
     formulas: dict = {}
+    atributos: dict = {}
 
 
 class LigacaoIn(In):

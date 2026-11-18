@@ -184,7 +184,7 @@ def tolerancias_da_operacao(db: Session, empresa_id: int, operacao, peso_kg: flo
 def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, unidade_id: int | None = None):
     """(ResultadoModulo, EntradaModulo) da operação que escolheu um módulo; None se não escolheu/inexistente.
     Aplica a calibração VALIDADA do módulo na unidade, se houver (rotulada `calibrado`)."""
-    modulo = catalogo.obter(operacao.modulo) if getattr(operacao, "modulo", None) else None
+    modulo = catalogo.obter(operacao.modulo, db, empresa_id) if getattr(operacao, "modulo", None) else None
     if modulo is None:
         return None
     ent, _ = entradas.entrada_da_operacao(db, empresa_id, operacao, quantidade, produto, recurso)
@@ -197,7 +197,7 @@ def _resultado_do_modulo(db: Session, empresa_id: int, operacao, quantidade: flo
 
 def _base_de_tempo(db: Session, empresa_id: int, operacao, quantidade: float, produto, recurso, avisos: list[str]) -> BaseDeTempo | None:
     s = get_settings()
-    modulo = catalogo.obter(operacao.modulo) if getattr(operacao, "modulo", None) else None
+    modulo = catalogo.obter(operacao.modulo, db, empresa_id) if getattr(operacao, "modulo", None) else None
     if modulo is not None:
         ent, _ = entradas.entrada_da_operacao(db, empresa_id, operacao, quantidade, produto, recurso)
         mo = modulo.montar(ent)

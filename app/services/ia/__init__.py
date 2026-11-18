@@ -65,7 +65,12 @@ def interpretar_produto(empresa: Empresa, ctx: dict) -> tuple[EstruturaProdutoIA
 
 def planejar(empresa: Empresa, ctx: dict) -> tuple[PlanoProposta, str, str]:
     r, prov, aviso = _executar(empresa, "planejar", ctx)
-    return sanear_plano(r), prov, aviso
+    return sanear_plano(r, _chaves(ctx)), prov, aviso
+
+
+def _chaves(ctx: dict):
+    """Chaves do catálogo efetivo enviado no contexto (embutidos + módulos validados da empresa)."""
+    return [m["chave"] for m in ctx["modulos"]] if ctx.get("modulos") else None
 
 
 def externa_disponivel(empresa: Empresa) -> bool:
@@ -85,7 +90,7 @@ def buscar_ficha(empresa: Empresa, ctx: dict) -> tuple[FichaTecnicaIA, str, str]
 
 def sugerir_modulo(empresa: Empresa, ctx: dict) -> tuple[SugestaoModulo, str, str]:
     r, prov, aviso = _executar(empresa, "sugerir_modulo", ctx)
-    return sanear_sugestao_modulo(r), prov, aviso
+    return sanear_sugestao_modulo(r, _chaves(ctx)), prov, aviso
 
 
 def explicar_arranjos(empresa: Empresa, fatos: dict) -> tuple[ExplicacaoArranjos, str, str]:
@@ -96,3 +101,15 @@ def explicar_arranjos(empresa: Empresa, fatos: dict) -> tuple[ExplicacaoArranjos
 def estimar_capacidade(empresa: Empresa, ctx: dict, imagem: tuple[bytes, str] | None = None) -> tuple[CapacidadeIA, str, str]:
     r, prov, aviso = _executar(empresa, "estimar_capacidade", ctx, imagem)
     return sanear_capacidade(r), prov, aviso
+
+
+def propor_modulo(empresa: Empresa, ctx: dict, chave: str):
+    """(especificação | None, problemas, PropostaModuloIA, provedor, aviso). A especificação só vale depois de validada por uma pessoa."""
+    from .esquemas import sanear_proposta_modulo
+    r, prov, aviso = _executar(empresa, "propor_modulo", ctx)
+    espec, problemas = sanear_proposta_modulo(r, chave)
+    if espec is None and prov != heuristica.NOME:  # saída externa inválida: recai na regra local
+        r = heuristica.propor_modulo(ctx)
+        espec, problemas = sanear_proposta_modulo(r, chave)
+        prov, aviso = heuristica.NOME, "A proposta da IA externa não passou na validação; foi usada a regra local."
+    return espec, problemas, r, prov, aviso

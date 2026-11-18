@@ -204,7 +204,8 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
     """Sugestões gerais (por módulo) e por família (produto × módulo). Não grava."""
     cfg = get_settings()
     minimo, min_fam = max(cfg.min_amostras_calibracao, 1), max(cfg.min_amostras_familia, 2)
-    todas = [a for a in amostras(db, empresa_id, unidade_ids) if a.modulo in catalogo.CATALOGO]
+    validos = catalogo.da_empresa(db, empresa_id)
+    todas = [a for a in amostras(db, empresa_id, unidade_ids) if a.modulo in validos]
     gerais: dict[tuple[int, str], list[float]] = {}
     familias: dict[tuple[int, str, int], list[Amostra]] = {}
     for a in todas:

@@ -235,8 +235,9 @@ class SugestaoModulo(BaseModel):
     justificativa: str = ""
 
 
-def sanear_sugestao_modulo(x: SugestaoModulo) -> SugestaoModulo:
-    return SugestaoModulo(modulo=x.modulo if x.modulo in CHAVES_MODULOS else None, justificativa=_limpo(x.justificativa, 400))
+def sanear_sugestao_modulo(x: SugestaoModulo, chaves=None) -> SugestaoModulo:
+    chaves = set(chaves) if chaves is not None else set(CHAVES_MODULOS)
+    return SugestaoModulo(modulo=x.modulo if x.modulo in chaves else None, justificativa=_limpo(x.justificativa, 400))
 
 
 class AlternativaArranjo(BaseModel):
@@ -340,6 +341,9 @@ def sanear_ficha(f: FichaTecnicaIA, funcao: str = "") -> tuple[list[dict], list[
 
 class PlanoProposta(BaseModel):
     passos: list[PassoIA] = Field(default_factory=list)
+    # Atividades que o produto exige e que NÃO têm módulo no catálogo da empresa (a IA não inventa tempo: aponta a lacuna,
+    # e a empresa cria o módulo por necessidade em "Módulos").
+    atividades_sem_modulo: list[str] = Field(default_factory=list)
     premissas: list[str] = Field(default_factory=list)
     dados_faltantes: list[str] = Field(default_factory=list)
     confianca: Literal["baixa", "media", "alta"] = "baixa"
@@ -369,12 +373,16 @@ def sanear_estrutura_produto(e: EstruturaProdutoIA) -> EstruturaProdutoIA:
                               dados_faltantes=[_t(x, 300) for x in e.dados_faltantes[:30] if _t(x, 300)])
 
 
-def sanear_plano(p: PlanoProposta) -> PlanoProposta:
-    passos = []
+def sanear_plano(p: PlanoProposta, chaves=None) -> PlanoProposta:
+    """`chaves`: catálogo efetivo da empresa (embutidos + módulos validados). Passo com módulo fora dele é descartado e vira
+    atividade sem módulo (lacuna declarada), nunca um tempo inventado."""
+    chaves = set(chaves) if chaves is not None else set(CHAVES_MODULOS)
+    passos, sem_modulo = [], [_t(x, 200) for x in p.atividades_sem_modulo[:30] if _t(x, 200)]
     for ps in p.passos[:120]:
         if not _t(ps.nome, 300):
             continue
-        if ps.modulo not in CHAVES_MODULOS:  # o catálogo é fechado
+        if ps.modulo not in chaves:  # o catálogo é fechado (por empresa)
+            sem_modulo.append(_t(ps.nome, 200))
             continue
         passos.append(PassoIA(
             nome=_t(ps.nome, 300), modulo=ps.modulo, grupo=_t(ps.grupo, 80), final=bool(ps.final),
@@ -383,6 +391,7 @@ def sanear_plano(p: PlanoProposta) -> PlanoProposta:
             pessoas=min(max(int(ps.pessoas or 1), 1), 20), observacao=_t(ps.observacao, 1000)))
     return PlanoProposta(passos=passos, premissas=[_t(x, 400) for x in p.premissas[:30] if _t(x, 400)],
                          dados_faltantes=[_t(x, 300) for x in p.dados_faltantes[:30] if _t(x, 300)],
+                         atividades_sem_modulo=list(dict.fromkeys(sem_modulo)),
                          confianca=p.confianca, justificativa=_t(p.justificativa, 3000))
 
 
@@ -397,3 +406,51 @@ def sanear_capacidade(c: CapacidadeIA) -> CapacidadeIA:
     return CapacidadeIA(pecas_por_hora=pph, minimo=mn, maximo=mx, confianca="baixa" if pph is None else c.confianca,
                         premissas=[_t(x, 400) for x in c.premissas[:15] if _t(x, 400)],
                         dados_faltantes=[_t(x, 300) for x in c.dados_faltantes[:15] if _t(x, 300)])
+
+
+# ---------------------------------------------------------------- proposta de MÓDULO novo (por necessidade)
+from ..modulos.arquetipos import AcaoManual, Arquetipo, ParametroTecnico  # noqa: E402
+
+
+class PropostaModuloIA(BaseModel):
+    """A IA DELIMITA uma atividade nova como módulo: escolhe o arquétipo de cálculo, a fórmula do driver sobre os atributos
+    da peça, o parâmetro técnico da ficha do meio e as ações manuais por CATEGORIAS. Não há campo de minutos: o sistema calcula,
+    e o módulo só vale depois de validado por uma pessoa."""
+
+    titulo: str
+    descricao: str = ""
+    arquetipo: Arquetipo
+    tipo_passo: str = "processamento"
+    unidade_contagem: Literal["peca", "unidade_produto"] = "peca"
+    driver: str = "{qtd}"
+    unidade_driver: str = "un"
+    funcao_meio: str = ""
+    taxa: ParametroTecnico | None = None
+    preparacao: Literal["maquina", "posto", "nenhuma"] = "nenhuma"
+    acoes: list[AcaoManual] = Field(default_factory=list)
+    premissas: list[str] = Field(default_factory=list)
+    dados_faltantes: list[str] = Field(default_factory=list)
+    confianca: Literal["baixa", "media"] = "baixa"
+    justificativa: str = ""
+
+
+def sanear_proposta_modulo(p: PropostaModuloIA, chave: str) -> tuple[dict | None, list[str]]:
+    """(especificação válida como dict, problemas). Nada fora do vocabulário passa; a fórmula do driver é compilada."""
+    from ..modulos.arquetipos import EspecModulo
+    import re as _re
+    taxa = p.taxa.model_dump() if p.taxa else None
+    if taxa:
+        taxa["nome"] = _re.sub(r"[^a-z0-9_]", "_", (taxa["nome"] or "").lower())[:60]
+        taxa["descricao"] = _t(taxa["descricao"], 200) or taxa["nome"]
+        taxa["unidade"] = _t(taxa["unidade"], 20) or "un/min"
+    bruto = {"chave": chave, "titulo": _t(p.titulo, 120) or chave, "descricao": _t(p.descricao, 1000), "arquetipo": p.arquetipo,
+             "tipo_passo": (_re.sub(r"[^a-z0-9_]", "_", _t(p.tipo_passo, 30).lower()) or "processamento")[:30],
+             "unidade_contagem": p.unidade_contagem, "driver": _t(p.driver, 200) or "{qtd}", "unidade_driver": _t(p.unidade_driver, 20) or "un",
+             "funcao_meio": _re.sub(r"[^a-z0-9_]", "_", _t(p.funcao_meio, 40).lower()), "taxa": taxa, "preparacao": p.preparacao,
+             "acoes": [{**a.model_dump(), "nome": _t(a.nome, 120) or "ação"} for a in p.acoes[:12]],
+             "premissas": [_t(x, 400) for x in p.premissas[:10] if _t(x, 400)]}
+    try:
+        e = EspecModulo.model_validate(bruto)
+    except Exception as exc:  # pydantic.ValidationError / FormulaErro
+        return None, [f"proposta inválida: {str(exc)[:300]}"]
+    return e.model_dump(), e.problemas()

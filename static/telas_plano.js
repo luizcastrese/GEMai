@@ -56,18 +56,34 @@ export async function produtoDetalhe(el, id) {
       });
       return i;
     };
+    // Outros dados (atributos livres, qualquer segmento): "demaos=2; cor=branco". As atividades da empresa os usam para medir o trabalho.
+    const txtAtr = (a) => Object.entries(a || {}).map(([k, v]) => `${k}=${v}`).join('; ');
+    const celulaAtr = (c) => {
+      const i = entrada('text', txtAtr(c.atributos), { placeholder: 'ex.: demaos=2', title: 'Outros dados da peça, no formato nome=valor; separados por ;' });
+      i.addEventListener('change', async () => {
+        const atributos = {};
+        for (const par of i.value.split(';').map((x) => x.trim()).filter(Boolean)) {
+          const [k, ...resto] = par.split('=');
+          const v = resto.join('=').trim();
+          const n = Number(v.replace(',', '.'));
+          atributos[k.trim().toLowerCase()] = v !== '' && !Number.isNaN(n) ? n : v;
+        }
+        await salvar(c, { atributos });
+      });
+      return i;
+    };
     const linhas = comps.map((c) => h('tr', null,
       h('td', null, celula(c, 'nome', 'text')), h('td', null, celulaF(c, 'quantidade', 'qtd.')), h('td', null, celula(c, 'material', 'text', 'ex.: MDF')),
       h('td', null, celula(c, 'grupo', 'text')),
       h('td', null, h('div', { class: 'inline nw' }, celulaF(c, 'comprimento_m', 'comp.'), celulaF(c, 'largura_m', 'larg.'), celulaF(c, 'espessura_m', 'esp.'))),
       h('td', { class: 'pk' }, celulaF(c, 'peso_kg', c.peso_estimado_kg ? `~${fmtNum(c.peso_estimado_kg)} est.` : 'kg')),
-      h('td', null, celulaF(c, 'furos', '')), h('td', null, celulaF(c, 'bordas_m', '')),
+      h('td', null, celulaF(c, 'furos', '')), h('td', null, celulaF(c, 'bordas_m', '')), h('td', null, celulaAtr(c)),
       h('td', null, h('button', { class: 'sm dng', title: 'Remover', onclick: () => confirmar(`Remover "${c.nome}" e suas ligações?`, async () => { if (await tentar(() => del(`/produtos/${id}/componentes/${c.id}`))) desenhar(); }, 'Remover') }, '✕'))));
     const novo = { nome: h('input', { placeholder: 'ex.: Lateral' }), qtd: h('input', { type: 'number', min: '0', step: 'any', value: '1' }), mat: h('input', { placeholder: 'material (ex.: MDF)' }) };
     const sComps = h('div', { class: 'card' }, h('h2', null, 'Peças'),
       h('p', { class: 'muted small' }, 'Medidas em metros. Sem o peso, o sistema estima pelo material e pelas medidas.'),
       ajudaFormulas(p, comps, est.ligacoes),
-      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', ''].map((t) => h('th', null, t)))),
+      comps.length ? h('div', { class: 'tw' }, h('table', null, h('thead', null, h('tr', null, ['Componente', 'Qtd.', 'Material', 'Subconjunto', 'Medidas (m)', 'Peso (kg)', 'Furos', 'Borda (m)', 'Outros dados', ''].map((t) => h('th', null, t)))),
         h('tbody', null, linhas))) : h('p', { class: 'muted' }, 'Nenhum componente ainda. Adicione abaixo ou use "Descrever com a IA".'),
       h('div', { class: 'row' }, novo.nome, novo.qtd, novo.mat, h('button', { onclick: async () => {
         if (!novo.nome.value.trim()) return toast('Digite o nome do componente.', true);
