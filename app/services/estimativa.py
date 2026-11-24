@@ -80,6 +80,8 @@ class Registro:
     tipo: str
     duracao_min: float  # bruta
     quantidade: float  # boa + refugo
+    inicio: object = None  # datetime: para o tempo CORRIDO (pessoas juntas no mesmo intervalo contam uma vez)
+    fim: object = None
 
 
 @dataclass
@@ -107,7 +109,7 @@ def carregar_historico(db: Session, empresa_id: int, operacao_id: int,
         Apontamento.fim.is_not(None), Apontamento.tipo.in_(("execucao", "preparacao"))))
     return Historico(plan, [
         Registro(a.ordem_operacao_id, a.pessoa_id, a.tipo, timecalc.duracao_min(a.inicio, a.fim) or 0.0,
-                 a.quantidade_boa + a.quantidade_refugo) for a in apts])
+                 a.quantidade_boa + a.quantidade_refugo, a.inicio, a.fim) for a in apts])
 
 
 def amostras_do_historico(registros: list[Registro], plano: dict[int, float], formula: str,
@@ -115,18 +117,33 @@ def amostras_do_historico(registros: list[Registro], plano: dict[int, float], fo
                           fator: Callable[[Registro], float] | None = None) -> tuple[list[float], list[float]]:
     """(amostras de execução por unidade/lote/execução, amostras de preparação), uma por ordem_operacao.
 
-    `fator` multiplica a duração de CADA apontamento antes de somar por ordem_operacao (normalização pelo
-    ritmo de quem executou); sem ele, a duração é a bruta."""
+    Tempo CORRIDO por ordem_operacao e tipo: a união dos intervalos (duas pessoas no mesmo intervalo contam uma vez, como na
+    calibração), multiplicada pela média de `fator` ponderada pela duração (normalização pelo ritmo de quem executou). Sem
+    sobreposição, dá exatamente a soma de antes. Com sobreposição (equipe junta), a quantidade não passa da planejada: duas pessoas
+    que anotam a mesma peça não viram duas peças."""
+    grupos: dict[tuple[int, str], list[Registro]] = {}
+    for r in registros:
+        if r.tipo in ("execucao", "preparacao"):
+            grupos.setdefault((r.ordem_operacao_id, r.tipo), []).append(r)
     exec_min: dict[int, float] = {}
     qtd: dict[int, float] = {}
     prep_min: dict[int, float] = {}
-    for r in registros:
-        d = r.duracao_min * (fator(r) if fator else 1.0)
-        if r.tipo == "execucao":
-            exec_min[r.ordem_operacao_id] = exec_min.get(r.ordem_operacao_id, 0.0) + d
-            qtd[r.ordem_operacao_id] = qtd.get(r.ordem_operacao_id, 0.0) + r.quantidade
-        elif r.tipo == "preparacao":
-            prep_min[r.ordem_operacao_id] = prep_min.get(r.ordem_operacao_id, 0.0) + d
+    for (oo_id, tipo), lista in grupos.items():
+        soma = sum(r.duracao_min for r in lista)
+        if soma <= 0:
+            continue
+        com_intervalo = all(r.inicio is not None and r.fim is not None for r in lista)
+        corrido = timecalc.uniao_minutos((r.inicio, r.fim) for r in lista) if com_intervalo else soma
+        media_fator = sum(r.duracao_min * (fator(r) if fator else 1.0) for r in lista) / soma
+        d = corrido * media_fator
+        if tipo == "execucao":
+            exec_min[oo_id] = d
+            q = sum(r.quantidade for r in lista)
+            if corrido < soma - 1e-6 and plano.get(oo_id):  # houve sobreposição: equipe trabalhando junta
+                q = min(q, plano[oo_id])
+            qtd[oo_id] = q
+        else:
+            prep_min[oo_id] = d
     amostras = []
     for oo_id, dur in exec_min.items():
         if dur <= 0:

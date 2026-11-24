@@ -26,5 +26,8 @@ export async function pesquisa(el) {
     h('h2', null, 'Atividades delimitadas pela IA (QP4)'),
     h('div', { class: 'grid g4' }, kpi('Validadas sem edição', a.ia_validadas_sem_edicao || 0), kpi('Validadas com edição', a.ia_validadas_com_edicao || 0),
       kpi('Rejeitadas', a.ia_rejeitadas || 0), kpi('Criadas por pessoa', a.criadas_por_pessoa || 0)),
+    h('h2', null, 'Ajustes de método (antes × depois)'),
+    h('div', { class: 'grid g4' }, kpi('Registrados', d.intervencoes.registradas), kpi('Com dados antes e depois', d.intervencoes.conclusivas),
+      kpi('Melhoraram', d.intervencoes.melhoraram), kpi('Variação mediana do erro', d.intervencoes.variacao_mediana_erro_pp === null ? '—' : `${fmtNum(d.intervencoes.variacao_mediana_erro_pp, 1)} p.p.`)),
     detalhes('Método', h('p', { class: 'small muted' }, d.metodo)));
 }

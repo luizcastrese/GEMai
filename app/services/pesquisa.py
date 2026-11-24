@@ -81,6 +81,10 @@ def indicadores(db: Session, empresa_id: int) -> dict:
             ativ["ia_validadas_com_edicao"] += 1
 
     cal = Counter(c.status for c in db.scalars(select(CalibracaoModulo).where(CalibracaoModulo.empresa_id == empresa_id)))
+    from ..models import Intervencao
+    from . import intervencoes as interv
+    efeitos = [interv.efeito(db, i) for i in db.scalars(select(Intervencao).where(Intervencao.empresa_id == empresa_id))]
+    conclusivos = [e for e in efeitos if e["conclusivo"]]
     primeiro_plano = planos[0].criado_em if planos else None
     abertos = len(ordens)
     medidos = len(pedidos)
@@ -99,6 +103,9 @@ def indicadores(db: Session, empresa_id: int) -> dict:
                                  "pedidos": pedidos},
         "atividades": dict(ativ),
         "calibracoes": dict(cal),
+        "intervencoes": {"registradas": len(efeitos), "conclusivas": len(conclusivos),
+                         "melhoraram": sum(1 for e in conclusivos if e["variacao_erro_pp"] < 0),
+                         "variacao_mediana_erro_pp": round(timecalc.mediana([e["variacao_erro_pp"] for e in conclusivos]), 1) if conclusivos else None},
         "metodo": ("Erro de um pedido = |ln(realizado ÷ previsto)|; erro típico = mediana convertida em %. Previsto = tempo padrão da "
                    "ordem; realizado = tempo corrido apontado e aprovado. 'Com calibração' = pedido cujo plano usou fator validado."),
     }

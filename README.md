@@ -75,7 +75,7 @@ sequência de movimentos das ações manuais; **não escreve tempo**. Uma pessoa
 clássica do estudo de tempos (tempo normal, tolerâncias, tempo padrão), com tempos de máquina derivados de parâmetros técnicos,
 elementos manuais por sequências de movimento e tolerâncias por fontes plugáveis (OIT, NIOSH, Murrell). Os tempos reais apontados na
 execução são contrastados com os planejados e alimentam uma **calibração por atividade e por produto**, validada por uma pessoa e
-testada com dados reservados. O sistema conta com 357 testes automatizados; a validação de campo está planejada em uma marcenaria,
+testada com dados reservados. O sistema conta com 363 testes automatizados; a validação de campo está planejada em uma marcenaria,
 primeiro pacote de atividades. Discutem-se a generalidade do método, a convergência entre o sistema proposto e o implementado e as
 limitações do piloto.
 
@@ -245,8 +245,10 @@ Princípio: todo componente tem **fonte na literatura ou medição da empresa**.
 | 14 | Divisão do trabalho entre pessoas | Balanceamento com perdas de coordenação e curva de aprendizagem | Niebel e Freivalds | `[PARCIAL]` | Hoje caso ideal `÷ n`, declarado |
 | 15 | Calibração por atividade (módulo) | `fator = mediana(TN observado ÷ TN previsto)` em **tempo corrido**, 0,5–2,0, validado por pessoa; vale também para atividades criadas pela empresa | Estatística robusta | `[IMPLEMENTADO]` | Falta o mesmo tratamento no histórico por operação (11.2, item 5) |
 | 16 | Calibração por família | Theil–Sen sobre ln(razão) × ln(porte); *leave-one-out*; ganho ≥ 10 % | Theil; Sen; Stone | `[IMPLEMENTADO]` | Mesmo pré-requisito de dados do item 15 |
-| 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | Limites fixos (3, 5, 10, 8); abaixo do mínimo, proposta **preliminar** com credibilidade Z = √(n/10) em vez de nada |
+| 17 | Nº mínimo de amostras | Calculado por confiança e erro | Niebel (tamanho de amostra) | `[PARCIAL]` | N' clássico (95 %, ±5 %) mostrado como "pedidos recomendados"; os mínimos que liberam a proposta continuam fixos (3 e 10) |
 | 26 | Robustez a registros absurdos | Identificador de Hampel sobre ln(razão) antes da mediana | Hampel (1974) | `[IMPLEMENTADO]` | — |
+| 29 | Decompor o erro entre atividades e entre preparo e execução | Ridge com prior no padrão sobre pedidos de composições diferentes; colunas colineares agrupadas | Hoerl e Kennard (1970); Bühlmann (1967) | `[IMPLEMENTADO]` | Só separa o que a variação dos pedidos permite; λ e limiares são escolhas do projeto |
+| 30 | Efeito de um ajuste de método | Pedidos antes × depois da intervenção registrada (erro típico) | Estudo de métodos (Barnes) | `[IMPLEMENTADO]` | Comparação antes/depois sem grupo de controle: ameaça à validade declarada |
 | 28 | Corrigir o padrão ou o fluxo | Desvio estável → padrão (calibração); irregular ou concentrado → fluxo (ECRS), com alternativas recalculadas | Shewhart; Barnes (ECRS) | `[IMPLEMENTADO]` | Limiares (±10 %, s = 0,15, 60 % do excesso) são escolhas do projeto |
 | 27 | Medição do pedido no total | Tempo corrido total distribuído pelo previsto de cada passo; rotulado; informa só o nível geral | Premissa do projeto (declarada) | `[IMPLEMENTADO]` | Não separa o erro de cada atividade: a calibração avisa |
 | 18 | Fadiga ao longo do turno | Aprendida de dados reais | — | `[NÃO IMPLEMENTADO]` | Fora do cálculo, declarado |
@@ -284,11 +286,11 @@ relatório previsto × realizado por variante; auditoria.
 **Não funcionais:** multiempresa com isolamento rígido; reprodutibilidade (todo coeficiente com valor, unidade, fonte, status e versão); rastreabilidade; LGPD; execução em Docker e Render; PostgreSQL em produção.
 
 ### 6.3 Arquitetura e tecnologias
-- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (17 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
+- **Back-end:** Python 3.13; FastAPI; SQLAlchemy 2; Alembic (18 migrações); Pydantic 2; Argon2id; JWT; SQLite (desenvolvimento) e PostgreSQL (produção, driver `psycopg`).
 - **Front-end:** JavaScript puro (módulos ES), sem *build*; rotas por `hash`; sem `innerHTML`.
 - **IA:** provedor externo opcional (Anthropic, modelo configurável, padrão `claude-opus-5-5`) e **provedor local por regras** como padrão e contingência.
 - **Implantação:** `Dockerfile`, `docker-compose.yml`, `render.yaml` (aplicação + PostgreSQL), `start.sh` (migra e sobe a API).
-- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 30 entidades, 134 *endpoints*, 357 testes.
+- **Dimensão (2026-11-18):** ~13 mil linhas de Python na aplicação, ~4,9 mil de testes, ~2,7 mil de JavaScript, 31 entidades, 136 *endpoints*, 363 testes.
 
 ```
  navegador (JS puro)  ──HTTPS──►  FastAPI (routers)  ──►  services (regras, motor de tempo)  ──►  SQLAlchemy ──► SQLite/PostgreSQL
@@ -304,7 +306,7 @@ app/            API (routers/), regras (services/), IA (services/ia/), modelos e
   services/arranjo/      recomendação de arranjo
 static/         interface web
 migrations/     Alembic
-tests/          pytest (357 testes)
+tests/          pytest (363 testes)
 ```
 
 ### 6.4 Modelo de dados (principais entidades, `app/models.py`)
@@ -513,7 +515,9 @@ Precedência: `pessoa.ritmo_pct` > `perfil.ritmo_pct` > 100 (sinalizado como "pa
 > É um ritmo **relativo à equipe** (mediana = 100), **não** a avaliação de ritmo da OIT por observação. Uma equipe toda lenta ainda dá ritmos próximos de 100.
 
 ### 7.7 Histórico normalizado (fluxo de processos)
-Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 + 1 − f)`; mediana das amostras; `× FT` do modelo; sem modelo, **não se inventa tolerância** (resultado é tempo normal, avisado).
+Por ordem e tipo (preparo ou execução), o observado é o **tempo corrido** (união dos intervalos aprovados e não anulados: pessoas
+juntas no mesmo intervalo contam uma vez) × a média, ponderada pela duração, de `f · ritmo/100 + 1 − f`; com sobreposição, a
+quantidade não passa da planejada. Sem sobreposição, dá a soma de antes. Mediana das amostras; `× FT` do modelo; sem modelo, **não se inventa tolerância** (resultado é tempo normal, avisado).
 **Prioridade do tempo planejado:** histórico aprovado > módulo (com calibração validada) > modelo da IA (legado, rotulado) > sem base. Parâmetro de tempo digitado **não é mais fonte**.
 
 ### 7.8 Calibração por módulo e por família (`calibracao_modulos.py`)
@@ -522,6 +526,20 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
   **Especificação:** o observado é o **tempo corrido** da operação (união dos intervalos dos apontamentos, ponderada pelo ritmo médio), coerente com o previsto, que também é tempo corrido;
   assim o fator não depende de quantas pessoas registram o apontamento. **Estado:** `[IMPLEMENTADO]` — observado = união dos intervalos × ritmo médio ponderado pela duração; duas pessoas no mesmo intervalo contam uma vez (testes de regressão; 11.2, item 4).
 - **Fator geral do módulo:** mediana das razões, ≥ 10 amostras por (unidade, módulo), limitado a 0,5–2,0.
+- **Janela dos pedidos recentes:** só os 30 pedidos mais recentes de cada atividade entram (`ERP_CALIBRACAO_JANELA`), porque a equipe
+  aprende (curva de aprendizagem; Wright, 1936 `[VERIFICAR]`) e o passado distante não deve pesar igual. A proposta diz quantos ficaram de fora.
+- **Pedidos recomendados:** a proposta mostra o tamanho de amostra clássico do estudo de tempos, `N' = (40·√(n·Σx² − (Σx)²) ÷ Σx)²`
+  (95 % de confiança, ±5 %), sobre as razões observadas. É informativo: os mínimos de 3 (preliminar) e 10 (pleno) continuam.
+- **Decomposição entre atividades e entre preparo e execução** (`services/decomposicao.py`): com pedidos medidos só no total, a
+  mediana dá apenas o nível geral. Pedidos com **composições diferentes** (mais corte em um, lotes maiores em outro) carregam a
+  informação de onde está o erro. Modelo `realizado_o ≈ Σ_j k_j · previsto_oj`, `j = (atividade, preparo | execução)`, por mínimos
+  quadrados ponderados (peso 1 ÷ previsto², erro relativo) com **regularização em direção ao padrão** (ridge com prior k = 1; Hoerl e
+  Kennard, 1970 `[VERIFICAR]`). Para uma coluna isolada, `k = 1 + Z·(k̂ − 1)` com `Z = n ÷ (n + λ)`: a forma da credibilidade de
+  Bühlmann (1967) `[VERIFICAR]`, com λ = 1 pedido fictício no padrão. Colunas **colineares** (parcelas com correlação ≥ 0,98, como as
+  execuções que crescem todas com a quantidade) viram um grupo com fator único e ficam marcadas como **não separáveis**; uma coluna só
+  é identificável com ≥ 4 pedidos e parcela variando (CV ≥ 0,10). Quando os pedidos foram medidos no total e a atividade é separável,
+  a proposta de calibração usa o fator da decomposição e diz isso; o ciclo (7.8.1) passa a dizer se a diferença está **no preparo ou
+  na execução**.
 - **Robustez e poucos pedidos:** antes da mediana, o **identificador de Hampel** retira razões discrepantes (|ln r − mediana| > 3 ×
   1,4826 × MAD; com menos de 4 amostras ou MAD nulo, nada sai), e o nº retirado é declarado. Entre 3 e 9 amostras a proposta é
   **preliminar**: `fator = 1 + Z · (mediana − 1)`, `Z = √(n ÷ 10)` (credibilidade de flutuação limitada); com 10 ou mais, Z = 1 e vale
@@ -547,6 +565,11 @@ Por apontamento aprovado e não anulado: `normal = duração · (f · ritmo/100 
   alcance, gabarito), espera (adiantar outra etapa), inspeção (conferir durante, não só no fim). São para verificar no local.
 - **Alternativas recalculadas:** equipe, lotes e meio de movimentação avaliados pelo **mesmo motor** (arranjo com recursos limitados);
   o dono escolhe e **gera o plano ajustado**, que vira o novo padrão do próximo pedido.
+- **Intervenção registrada e efeito antes × depois** (`services/intervencoes.py`, `POST /planos/{id}/intervencoes`): o ajuste de
+  método (princípio ECRS, atividade, o que mudou) vira um **marco**; gerar o plano ajustado já o registra. Os pedidos concluídos do
+  mesmo produto são comparados antes e depois do marco: desvio típico (mediana de ln r) e **erro típico** (mediana de |ln r|), por
+  atividade quando há medição passo a passo, senão pelo pedido. Com menos de 2 pedidos de cada lado, o resultado é **inconclusivo**
+  (nenhum efeito é declarado sem dado). É a evidência de que o ajuste do fluxo aproximou o real do padrão.
 
 ### 7.9 Agenda e prazo (`plano.py`)
 - **Roteiro:** os passos seguem a posição padrão das atividades (7.4); a **conferência final é opcional** por pedido (o recálculo mantém a escolha).
@@ -622,7 +645,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 ## 10. Verificação e validação
 
 ### 10.1 Testes automatizados `[IMPLEMENTADO]`
-**357 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
+**363 testes** passam (SQLite), `pytest`. A integração contínua roda os testes e `alembic upgrade head` + `alembic check` (sem migração pendente). Áreas cobertas:
 
 | Arquivo(s) | O que verifica |
 |---|---|
@@ -634,6 +657,7 @@ Antes de declarar o plano **completo**, o sistema confere que (i) toda peça do 
 | `test_capacidade_ia`, `test_simples`, `test_variantes_relatorio` | IA com resposta simulada, fluxo simples, relatório |
 | `test_infra_deploy` | configuração de produção e migrações |
 | `test_modulos_empresa` | módulos da empresa por necessidade (IA delimita, pessoa valida), arquétipos, atributos livres, regressão da marcenaria |
+| `test_tempo_preciso` | histórico em tempo corrido, janela dos recentes, N' clássico, decomposição (preparo × execução, colinearidade), intervenções antes × depois |
 | `test_ciclo` | leitura padrão × fluxo, etapa crítica, ECRS, alternativas recalculadas, aviso na calibração |
 | `test_piloto` | pedido em dois toques, preço pela hora, Hampel, credibilidade parcial, indicadores do piloto |
 | `test_fluxo_geral` | pacotes por empresa, roteiro pela posição padrão, conferência opcional, checagem do local pelas atividades |
@@ -666,8 +690,9 @@ de 2 segmentos (marcenaria como caso principal; um segundo segmento sem pacote p
    (b) QP2: erro típico previsto × realizado nos pedidos **sem** e **com** ajuste validado (e a evolução pedido a pedido);
    (c) QP4: atividades propostas pela IA validadas sem edição, com edição ou rejeitadas; atividades que couberam em um arquétipo;
    (d) uso do resultado: "você usaria o prazo e o valor sugeridos?" (sim / não / ajustado), perguntado ao fim de cada pedido;
-   (e) ciclo padrão ↔ fluxo: quantas leituras deram padrão, fluxo ou manter; quando o dono ajustou o fluxo, se o pedido seguinte
-   voltou para dentro de ±10 % do padrão (efeito do ajuste de método).
+   (e) ciclo padrão ↔ fluxo: quantas leituras deram padrão, fluxo ou manter; para cada **ajuste de método registrado**, o erro típico
+   dos pedidos antes × depois (indicador "Ajustes de método" e `GET /produtos/{id}/intervencoes`). Ameaça: sem grupo de controle, a
+   melhora pode vir de outro fator (aprendizagem, produto diferente); declarar.
 4. **Barreiras como resultado:** onde o dono travou, o que não entendeu, o que se recusou a informar, quantos pedidos esqueceu de
    medir. Registrar em diário de campo.
 5. **Ameaças à validade:** poucos pedidos por negócio (mitigado pela credibilidade parcial, mas declarado); medição no total só informa
@@ -708,7 +733,7 @@ estatísticos do capítulo de resultados.
 | 2 | **NIOSH e Murrell não recebem dados no fluxo do plano** | `plano.py`: o contexto de tolerâncias só tem local e perfil | Só 9 % (FT ≈ 1,099) entra; o README anterior dizia o contrário | Atributos de condição de trabalho por passo (frequência, altura, gasto energético) |
 | 3 | ~~Nenhuma checagem de cobertura do plano~~ **corrigido parcialmente** (peça fora dos passos e falta de montagem; teste de regressão) | `plano.persistir`: `completo` só olha dado faltante | Se a IA omitir um passo, o plano sai "completo" e mais curto | Validar que toda peça está em algum passo e que existe montagem |
 | 4 | ~~Viés da calibração com equipe de 2+ pessoas~~ **corrigido** (união dos intervalos; 2 testes de regressão) | **Reproduzido em teste**: montagem de 2 pessoas, previsto 10 min corridos, real 10 min; razão = 1,0 se uma pessoa aponta e **2,0** se as duas apontam | Fator inflado até o teto de 2,0; pune quem aponta melhor | `observado = união dos intervalos × média ponderada do ritmo` (`timecalc.uniao_minutos` já existe); 3 testes de regressão |
-| 5 | Caminho do histórico por operação (`estimativa._pelo_historico`) pode ter o mesmo viés | não verificado | idem | Verificar ao corrigir o item 4 |
+| 5 | ~~Caminho do histórico por operação pode ter o mesmo viés~~ **corrigido**: tempo corrido por ordem e tipo, quantidade limitada à planejada com sobreposição (teste de regressão) | `estimativa.amostras_do_historico` | — | — |
 | 6 | Calibrar o ritmo e o módulo juntos pode absorver o nível da equipe | documentado no código | O fator "não é verdade OIT" | Declarar no texto; modo cronoanálise |
 | 7 | Limite de 50 % para tolerâncias e mínimos de amostra são escolhas heurísticas | `LIMITE_TOLERANCIA`, `min_amostras_*` | — | Calcular tamanho de amostra por confiança e erro |
 | 8 | ~~O assistente pergunta "peças por hora", dado que o cálculo ignora; a ficha técnica só na tela avançada~~ **corrigido**: o passo 3 virou "ficha das máquinas" com perguntas simples; dado só de alerta não é pendência | `telas_contorno.js`, `contorno.py` | — | — |
@@ -716,7 +741,7 @@ estatísticos do capítulo de resultados.
 | 10 | ~~Catálogo acoplado à marcenaria~~ **corrigido**: pacotes por empresa (base + segmento), atividades da empresa sobre arquétipos, atributos livres, IA delimitando atividades, roteiro pela posição padrão, checagem pelas atividades em uso (6.6, 7.4) | `arquetipos.py`, `catalogo.py`, `routers/modulos.py`, `contorno.py` | Os seis módulos embutidos ainda são código (congelados por teste) | Seção 12.2 |
 
 ### 11.3 Outras limitações
-README anterior citava 306 testes (hoje 357). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
+README anterior citava 306 testes (hoje 363). O sistema é triagem de apoio à decisão e **não** substitui estudo de tempos por profissional nem a AET.
 
 ---
 
@@ -845,7 +870,7 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 - **Convenções de tempo:** realizado = preparação + execução + retrabalho (soma bruta dos apontamentos); total = realizado + espera; desvio = realizado − estimado (positivo = demorou mais); eficiência = estimado ÷ realizado.
   **Atenção:** o previsto do plano é **tempo padrão** (com tolerâncias), e o realizado é tempo bruto: trabalhar exatamente no tempo normal aparece como desvio negativo. A calibração compara tempo **normal** observado com o previsto.
 
-### Apêndice D — Mapa de endpoints (134 rotas)
+### Apêndice D — Mapa de endpoints (136 rotas)
 | Área | Rotas principais |
 |---|---|
 | Autenticação e equipe | `/auth/registrar`, `/auth/login`, `/auth/renovar`, `/auth/eu`, `/usuarios` |
@@ -858,6 +883,7 @@ ajuste leve (3) + sem retorno (0) = 13 índices = 130 TMU ≈ 0,078 min ≈ 4,7 
 | Pedido em dois toques | `POST /ordens/{id}/comecar`, `POST /ordens/{id}/terminar` (`horas` opcional), `POST /planos/{id}/confirmar?abrir_pedido=true` |
 | Indicadores do piloto | `GET /pesquisa/indicadores`, `GET /pesquisa/pedidos.csv` |
 | Ciclo padrão ↔ fluxo | `GET /planos/{id}/ciclo` (`alternativas=true` recalcula equipe, lotes e meio) |
+| Intervenções | `POST /planos/{id}/intervencoes`, `GET /produtos/{id}/intervencoes` |
 | Execução | `/ordens`, `/operador/fila`, `/apontamentos` (iniciar, finalizar, aprovar, rejeitar, anular), `/ocorrencias` |
 | Calibração | `/calibracao/modulos` (prévia, aplicar, validar, rejeitar), `/pessoas/calibrar-ritmo` |
 | Análise | `/relatorios/desempenho(.csv)`, `/dashboard`, `/analise/comparacao`, `/auditoria` |
@@ -884,6 +910,8 @@ AMERICAN SOCIETY OF MECHANICAL ENGINEERS (ASME). **ASME Standard 101: Operation 
 
 BARNES, R. M. **Motion and time study: design and measurement of work**. 7. ed. New York: Wiley, 1980.
 
+BÜHLMANN, H. Experience rating and credibility. **ASTIN Bulletin**, v. 4, n. 3, p. 199–207, 1967. `[VERIFICAR]`
+
 HAMPEL, F. R. The influence curve and its role in robust estimation. **Journal of the American Statistical Association**, v. 69, n. 346, p. 383–393, 1974. `[VERIFICAR]`
 
 LONGLEY-COOK, L. H. An introduction to credibility theory. **Proceedings of the Casualty Actuarial Society**, v. 49, p. 194–221, 1962. `[VERIFICAR]`
@@ -907,6 +935,8 @@ GRIEVES, M.; VICKERS, J. Digital twin: mitigating unpredictable, undesirable eme
 GROOVER, M. P. **Fundamentals of modern manufacturing: materials, processes, and systems**. 4. ed. Hoboken: Wiley, 2010.
 
 HEVNER, A. R.; MARCH, S. T.; PARK, J.; RAM, S. Design science in information systems research. **MIS Quarterly**, v. 28, n. 1, p. 75–105, 2004.
+
+HOERL, A. E.; KENNARD, R. W. Ridge regression: biased estimation for nonorthogonal problems. **Technometrics**, v. 12, n. 1, p. 55–67, 1970. `[VERIFICAR]`
 
 IIDA, I.; BUARQUE, L. **Ergonomia: projeto e produção**. 3. ed. São Paulo: Blucher, 2016.
 
@@ -935,6 +965,8 @@ THEIL, H. A rank-invariant method of linear and polynomial regression analysis. 
 WATERS, T. R.; PUTZ-ANDERSON, V.; GARG, A.; FINE, L. J. Revised NIOSH equation for the design and evaluation of manual lifting tasks. **Ergonomics**, v. 36, n. 7, p. 749–776, 1993.
 
 WATERS, T. R.; PUTZ-ANDERSON, V.; GARG, A. **Applications manual for the revised NIOSH lifting equation**. Cincinnati: DHHS (NIOSH), 1994. (Publication n. 94-110).
+
+WRIGHT, T. P. Factors affecting the cost of airplanes. **Journal of the Aeronautical Sciences**, v. 3, n. 4, p. 122–128, 1936. `[VERIFICAR]`
 
 ZANDIN, K. B. **MOST work measurement systems**. 3. ed. New York: Marcel Dekker, 2003.
 

@@ -119,14 +119,30 @@ def classificar(razoes: list[float], totais: int) -> dict:
 
 def atividades_do_plano(db: Session, empresa_id: int, plano: PlanoTrabalho) -> list[dict]:
     """Leitura de cada atividade do plano com o histórico de pedidos medidos na unidade."""
+    from . import decomposicao
     amostras = calibracao_modulos.amostras(db, empresa_id, [plano.unidade_id])
     modulos = list(dict.fromkeys(p.modulo for p in plano.passos if p.modulo))
     titulo = {p.modulo: p.nome for p in plano.passos}
+    colunas = decomposicao.da_unidade(db, empresa_id, plano.unidade_id)
     out = []
     for m in modulos:
         am = [a for a in amostras if a.modulo == m]
         c = classificar([a.razao for a in am], sum(1 for a in am if a.total))
-        out.append({"modulo": m, "etapa": titulo.get(m, m), **c})
+        partes = {col.parte: col for col in colunas if col.modulo == m}
+        dec = {parte: {"fator": col.fator, "identificavel": col.identificavel, "peso_dos_dados": col.peso_dos_dados}
+               for parte, col in partes.items()}
+        k = decomposicao.fator_da_atividade(colunas, m)
+        if c["leitura"] == "nivel_geral" and k is not None:
+            # medido no total, mas a decomposição entre pedidos de composições diferentes separa esta atividade
+            onde = max(partes.values(), key=lambda col: abs(math.log(col.fator)) if col.identificavel else -1)
+            nome = {"preparo": "no preparo", "execucao": "na execução"}[onde.parte]
+            if abs(math.log(k)) <= LIMIAR_DESVIO:
+                c = {**c, "leitura": "no_padrao", "texto": "Pela decomposição entre pedidos, esta atividade está dentro de ±10 % do padrão."}
+            else:
+                c = {**c, "leitura": "corrigir_padrao", "desvio_tipico_pct": round((k - 1) * 100, 1),
+                     "texto": f"Pela decomposição entre pedidos de composições diferentes, a diferença está {nome} (× {onde.fator:.2f}). "
+                              "Ajuste o tempo (calibração)."}
+        out.append({"modulo": m, "etapa": titulo.get(m, m), **c, "decomposicao": dec})
     return out
 
 
@@ -201,7 +217,9 @@ def ciclo_do_plano(ctx, plano: PlanoTrabalho, produto, *, alternativas: bool = F
     d = decisao(pedido, atividades)
     sugestoes = sugestoes_ecrs(plano, d["foco"], catalogo.da_empresa(ctx.db, ctx.empresa_id)) if d["acao"] == "corrigir_fluxo" else []
     alt = alternativas_recalculadas(ctx, plano, produto) if alternativas and d["acao"] == "corrigir_fluxo" else []
+    from . import intervencoes
     return {"pedido": pedido, "atividades": atividades, "decisao": d, "sugestoes": sugestoes, "alternativas": alt,
+            "intervencoes": intervencoes.do_produto(ctx.db, ctx.empresa_id, plano.produto_id),
             "metodo": ("Leitura por atividade: desvio típico = mediana de ln(realizado ÷ previsto); variabilidade = 1,4826 × MAD. "
                        "Estável (≤ 0,15) e fora de ±10 % → corrigir o padrão; irregular e acima do padrão → corrigir o fluxo "
                        "(causas especiais, Shewhart). Limiares são escolhas do projeto.")}

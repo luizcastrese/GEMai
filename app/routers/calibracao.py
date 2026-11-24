@@ -72,6 +72,7 @@ def calibrar(dados: CalibrarModulosIn, ctx: Ctx = Depends(get_ctx)):
             erro_com_pct=sg.erro_com_pct, nota=sg.nota, amostras=sg.amostras, minimo=sg.minimo,
             mediana_bruta=sg.mediana_bruta, fator_sugerido=sg.fator, limitado=sg.limitado, status=sg.status,
             descartadas=sg.descartadas, credibilidade=sg.credibilidade, total_do_pedido=sg.total_do_pedido,
+            recomendadas=sg.recomendadas, fora_da_janela=sg.fora_da_janela,
             vigente=svc.como_dict(vig, vig.porte_ref if vig else None), proposta_id=proposta_id))
     ctx.db.commit()
     return CalibrarModulosOut(aplicado=dados.aplicar, aviso=AVISO, propostas=criadas, modulos=linhas,

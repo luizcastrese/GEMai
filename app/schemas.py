@@ -1420,6 +1420,8 @@ class SugestaoModuloCalibOut(BaseModel):
     descartadas: int = 0  # registros discrepantes retirados (identificador de Hampel)
     credibilidade: float = 1.0  # Z da credibilidade de flutuação limitada (1 = pleno)
     total_do_pedido: int = 0  # registros vindos do apontamento no total do pedido
+    recomendadas: int | None = None  # pedidos recomendados (95 %, ±5 %) pela fórmula clássica de tamanho de amostra
+    fora_da_janela: int = 0  # pedidos antigos fora da janela dos mais recentes
     vigente: dict | None = None  # {fator, amostras, versao} da calibração validada em uso
     proposta_id: int | None = None  # id da proposta pendente criada (aplicar=true)
 

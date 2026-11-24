@@ -538,6 +538,23 @@ class ModuloEmpresa(Base):
     validado_em: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
 
+class Intervencao(Base):
+    """Ajuste de MÉTODO feito no fluxo (ECRS) depois de "o que o real mostrou": o marco para comparar pedidos antes e depois."""
+
+    __tablename__ = "intervencoes"
+    __table_args__ = (Index("ix_intervencao", "empresa_id", "produto_id"),)
+    id: Mapped[int] = _pk()
+    empresa_id: Mapped[int] = _empresa()
+    unidade_id: Mapped[int] = mapped_column(ForeignKey("unidades.id"))
+    produto_id: Mapped[int] = mapped_column(ForeignKey("produtos.id"))
+    plano_id: Mapped[int | None] = mapped_column(ForeignKey("planos_trabalho.id"))  # plano onde o desvio foi visto
+    modulo: Mapped[str | None] = mapped_column(String(30))  # atividade ajustada (None = o pedido todo)
+    principio: Mapped[str] = mapped_column(String(20))  # Eliminar | Combinar | Reorganizar | Simplificar | Outro
+    descricao: Mapped[str] = mapped_column(Text, default="")
+    criado_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(UTCDateTime, default=agora)
+
+
 class CalibracaoModulo(Base):
     """Fator MULTIPLICATIVO de um módulo de tempo, por empresa/unidade: mediana(tempo normal observado ÷ previsto).
 
