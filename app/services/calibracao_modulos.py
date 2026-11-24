@@ -72,6 +72,8 @@ class Sugestao:
     erro_com_pct: float | None = None
     nota: str = ""
     descartadas: int = 0  # razões discrepantes retiradas pelo identificador de Hampel
+    recomendadas: int | None = None  # nº de pedidos para ±5 % com 95 % de confiança (fórmula clássica do estudo de tempos)
+    fora_da_janela: int = 0  # pedidos antigos deixados de fora (só os mais recentes contam)
     credibilidade: float = 1.0  # Z aplicado ao desvio do fator (1 = pleno)
     total_do_pedido: int = 0  # amostras vindas de apontamento no total do pedido (distribuído pelo previsto)
 
@@ -84,6 +86,24 @@ class Amostra:
     porte: float | None  # tempo normal previsto por unidade do pedido
     razao: float  # tempo normal observado ÷ previsto
     total: bool = False  # veio do apontamento no total do pedido: informa o nível geral, não o módulo isolado
+    quando: object = None  # conclusão da operação (para a janela dos pedidos mais recentes)
+
+
+def recentes(am: list, janela: int) -> list:
+    """Só os `janela` pedidos mais recentes: a equipe aprende (curva de aprendizagem) e o passado distante não deve pesar igual."""
+    if janela <= 0 or len(am) <= janela:
+        return am
+    return sorted(am, key=lambda a: (a.quando is not None, a.quando), reverse=True)[:janela]
+
+
+def amostras_recomendadas(rs: list[float]) -> int | None:
+    """Tamanho de amostra clássico do estudo de tempos (95 % de confiança, erro de ±5 %): N' = (40·√(n·Σx² − (Σx)²) ÷ Σx)²."""
+    n = len(rs)
+    if n < 2:
+        return None
+    sx, sx2 = sum(rs), sum(r * r for r in rs)
+    disc = n * sx2 - sx * sx
+    return max(int(math.ceil((40 * math.sqrt(max(disc, 0.0)) / sx) ** 2)), 1) if sx > 0 else None
 
 
 def hampel(razoes: list[float], k: float = HAMPEL_K) -> tuple[list[int], int]:
@@ -145,7 +165,7 @@ def amostras(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Amost
             continue
         oo, uid, pid, qtd = por_oo[oo_id]
         porte = oo.previsto_normal_min / qtd if qtd and qtd > 0 else None
-        out.append(Amostra(uid, oo.modulo, pid, porte, obs / oo.previsto_normal_min, total=oo_id in totais))
+        out.append(Amostra(uid, oo.modulo, pid, porte, obs / oo.previsto_normal_min, total=oo_id in totais, quando=oo.concluida_em))
     return out
 
 
@@ -247,17 +267,32 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
         if a.produto_id is not None:
             familias.setdefault((a.unidade_id, a.modulo, a.produto_id), []).append(a)
     sugestoes = []
+    janela = max(cfg.calibracao_janela, 0)
+    decomps: dict[int, list] = {}
     for (uid, modulo), am in sorted(gerais.items()):
+        n_antes = len(am)
+        am = recentes(am, janela)
+        fora = n_antes - len(am)
         brutas = [a.razao for a in am]
         mantidos, descartadas = hampel(brutas)
         xs = [brutas[i] for i in mantidos]
         n_total = sum(1 for i in mantidos if am[i].total)
         if len(xs) < min_prel:
-            sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, None, None, False, "insuficiente", descartadas=descartadas))
+            sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, None, None, False, "insuficiente", descartadas=descartadas,
+                                      recomendadas=amostras_recomendadas(xs), fora_da_janela=fora))
             continue
         z = credibilidade(len(xs), minimo)
         mediana = timecalc.mediana(xs)
         bruta = 1.0 + z * (mediana - 1.0)
+        dec = None
+        if n_total and n_total * 2 >= len(xs):
+            # medido no total: a mediana só dá o nível geral; se os pedidos têm composições diferentes, a decomposição separa a atividade
+            from . import decomposicao
+            if uid not in decomps:
+                decomps[uid] = decomposicao.da_unidade(db, empresa_id, uid)
+            dec = decomposicao.fator_da_atividade(decomps[uid], modulo)
+            if dec is not None:
+                bruta = dec
         fator = min(max(bruta, FATOR_MIN), FATOR_MAX)
         sem, com = erro_sem_calibracao(xs), erro_constante_loo(xs)
         notas = []
@@ -275,12 +310,20 @@ def previa(db: Session, empresa_id: int, unidade_ids: list[int]) -> list[Sugesta
             if leitura["leitura"] == "corrigir_fluxo":
                 notas.append("Atenção: o desvio varia muito de pedido a pedido; parece ser o FLUXO, não o padrão. Antes de aplicar, veja "
                              "«O que o real mostrou» no plano: calibrar agora esconderia o problema.")
-        if n_total and n_total * 2 >= len(xs):
+        if fora:
+            notas.append(f"Só os {len(am)} pedidos mais recentes contam ({fora} mais antigo(s) ficaram de fora: a equipe aprende).")
+        if dec is not None:
+            partes = {c.parte: c.fator for c in decomps[uid] if c.modulo == modulo}
+            notas.append("Fator obtido pela DECOMPOSIÇÃO entre pedidos de composições diferentes (regressão com prior no padrão): "
+                         + ", ".join(f"{parte} × {f:.2f}" for parte, f in sorted(partes.items())) + ".")
+        elif n_total and n_total * 2 >= len(xs):
             notas.append("A maior parte dos registros foi apontada no total do pedido: o fator mostra o nível geral, não esta atividade isolada.")
         sugestoes.append(Sugestao(uid, modulo, len(xs), minimo, round(bruta, 4), round(fator, 4), fator != bruta,
                                   "sugerido" if z >= 1.0 else "preliminar", erro_sem_pct=sem, erro_com_pct=com, nota=" ".join(notas),
-                                  descartadas=descartadas, credibilidade=round(z, 4), total_do_pedido=n_total))
+                                  descartadas=descartadas, credibilidade=round(z, 4), total_do_pedido=n_total,
+                                  recomendadas=amostras_recomendadas(xs), fora_da_janela=fora))
     for (uid, modulo, pid), am in sorted(familias.items()):
+        am = recentes(am, janela)
         mantidos, _desc = hampel([a.razao for a in am])
         am = [am[i] for i in mantidos]
         pares = [(a.porte, a.razao) for a in am if a.porte]

@@ -84,7 +84,24 @@ export function cartaoCiclo(p, c) {
     const corpo = { produto_id: p.produto_id, unidade_id: p.unidade_id, quantidade: p.quantidade, especificacoes: p.especificacoes || {},
       blocos: cfg.blocos || undefined, so_dias_uteis: cfg.so_dias_uteis ?? true, perfil_id: cfg.perfil_id ?? null, escolha };
     const r = await tentar(() => post('/planos/de-arranjo', corpo), 'Plano ajustado gerado. Confirme e meça o próximo pedido.');
-    if (r) location.hash = `#/planos/${r.id}`;
+    if (r) {
+      // o ajuste vira um marco: os próximos pedidos são comparados com os de antes
+      await tentar(() => post(`/planos/${p.id}/intervencoes`, { modulo: (d.foco || [])[0] || null, principio: escolha.principio || 'Reorganizar',
+        descricao: `Novo arranjo: ${escolha.rotulo || `${escolha.pessoas} pessoa(s), ${escolha.lotes} lote(s)`}` }));
+      location.hash = `#/planos/${r.id}`;
+    }
+  };
+  const registrar = () => {
+    const princ = h('select', null, ['Combinar', 'Reorganizar', 'Simplificar', 'Eliminar', 'Outro'].map((x) => h('option', { value: x }, x)));
+    const desc = h('input', { placeholder: 'Ex.: montagem passou a ser feita a dois' });
+    modal('Que ajuste você fez?', h('div', null, h('p', { class: 'muted' }, 'A partir de agora, os próximos pedidos deste produto são comparados com os de antes.'),
+      h('label', null, 'Tipo de ajuste'), princ, h('label', null, 'O que mudou'), desc), { acoes: (fechar) => [h('button', { onclick: fechar }, 'Cancelar'),
+      h('button', { class: 'pri', onclick: async () => {
+        if (!desc.value.trim()) return toast('Diga em poucas palavras o que mudou.', true);
+        if (await tentar(() => post(`/planos/${p.id}/intervencoes`, { modulo: (d.foco || [])[0] || null, principio: princ.value, descricao: desc.value.trim() }), 'Ajuste registrado.')) {
+          fechar(); window.dispatchEvent(new HashChangeEvent('hashchange'));
+        }
+      } }, 'Registrar')] });
   };
   const verAlternativas = async (ev) => {
     ev.target.disabled = true;
@@ -93,7 +110,7 @@ export function cartaoCiclo(p, c) {
     if (!r) return;
     montar(alt, r.alternativas.length ? h('div', null, h('p', { class: 'small muted' }, 'Calculadas pelo mesmo motor do plano (equipe, lotes, meio de movimentação):'),
       r.alternativas.map((x) => h('div', { class: 'lig' }, h('span', null, h('strong', null, x.principio), ` · ${x.rotulo}: termina em ${fmtMin(x.prazo_min)}, ${fmtNum(x.pessoas_hora, 1)} h de trabalho`),
-        x.principio === 'Atual' ? null : h('button', { class: 'sm', onclick: () => gerarAjustado(x.escolha) }, 'Gerar plano assim'))))
+        x.principio === 'Atual' ? null : h('button', { class: 'sm', onclick: () => gerarAjustado({ ...x.escolha, principio: x.principio, rotulo: x.rotulo }) }, 'Gerar plano assim'))))
       : h('p', { class: 'muted small' }, 'Sem alternativa de equipe, lotes ou meio que o motor consiga calcular com os dados atuais.'));
   };
   return h('div', { class: 'card ciclo noprint' },
@@ -105,9 +122,14 @@ export function cartaoCiclo(p, c) {
     c.sugestoes.length ? h('div', null, h('h3', null, 'Como ajustar o jeito de fazer'),
       h('ul', null, c.sugestoes.map((s) => h('li', null, h('strong', null, `${s.principio}: `), s.texto, h('span', { class: 'muted small' }, ` (${s.etapa})`)))),
       h('p', { class: 'muted small' }, 'Depois de ajustar, meça o próximo pedido: o ciclo mostra se voltou ao padrão.'),
-      h('button', { onclick: verAlternativas }, 'Ver alternativas recalculadas'), alt) : null,
+      h('div', { class: 'inline' }, h('button', { onclick: verAlternativas }, 'Ver alternativas recalculadas'), h('button', { onclick: registrar }, 'Já ajustei: registrar')), alt) : null,
+    (c.intervencoes || []).length ? h('div', null, h('h3', null, 'Ajustes feitos e o efeito'),
+      h('ul', null, c.intervencoes.map((i) => h('li', null, h('strong', null, `${i.principio}: `), i.descricao,
+        h('div', { class: 'small muted' }, `${fmtData(i.criado_em)} · ${i.efeito.texto}`))))) : null,
     c.atividades.length ? h('details', { class: 'det' }, h('summary', null, 'Leitura de cada atividade'),
       h('ul', null, c.atividades.map((a) => h('li', { class: 'small' }, h('strong', null, `${a.etapa}: `), a.texto,
-        a.pedidos ? h('span', { class: 'muted' }, ` · ${a.pedidos} pedido(s)${a.desvio_tipico_pct !== null ? `, desvio típico ${a.desvio_tipico_pct > 0 ? '+' : ''}${fmtNum(a.desvio_tipico_pct, 1)}%` : ''}`) : null))),
+        a.pedidos ? h('span', { class: 'muted' }, ` · ${a.pedidos} pedido(s)${a.desvio_tipico_pct !== null ? `, desvio típico ${a.desvio_tipico_pct > 0 ? '+' : ''}${fmtNum(a.desvio_tipico_pct, 1)}%` : ''}`) : null,
+        Object.keys(a.decomposicao || {}).length ? h('span', { class: 'muted' }, ' · entre pedidos: ' + Object.entries(a.decomposicao)
+          .map(([parte, v]) => `${parte} × ${fmtNum(v.fator, 2)}${v.identificavel ? '' : ' (não separável)'}`).join(', ')) : null))),
       h('p', { class: 'muted small' }, c.metodo)) : null);
 }

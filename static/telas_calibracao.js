@@ -83,7 +83,8 @@ export async function calibracao(el) {
         h('strong', null, titulo(c)), h('span', { class: 'muted' }, `${vezes(c.fator)}${c.expoente ? ', muda com o tamanho' : ''}`))))] : null,
       !pendentes.length && !vigentes.length ? h('div', { class: 'card' }, h('p', { class: 'muted' }, 'Nenhuma correção ainda. Os planos usam os tempos de referência do catálogo.')) : null,
       faltam.length ? detalhes(`Ainda sem dados suficientes (${faltam.length})`,
-        h('ul', null, faltam.map((m) => h('li', { class: 'small' }, `${m.titulo} · ${m.produto_nome || 'todos os produtos'}: ${m.amostras} de ${m.minimo} ordens`))),
+        h('ul', null, faltam.map((m) => h('li', { class: 'small' }, `${m.titulo} · ${m.produto_nome || 'todos os produtos'}: ${m.amostras} de ${m.minimo} pedidos`
+          + (m.recomendadas ? ` (para ±5 % com 95 % de confiança, o ideal são ${m.recomendadas})` : '')))),
         h('p', { class: 'muted small' }, 'Por produto, também é preciso ter pedidos de pelo menos 3 tamanhos diferentes.')) : null);
   };
   await carregar();

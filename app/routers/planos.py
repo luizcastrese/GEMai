@@ -3,6 +3,9 @@ import csv
 import io
 from datetime import datetime, timezone
 
+from typing import Annotated, Literal
+
+from pydantic import Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import delete, select
@@ -12,6 +15,7 @@ from .. import audit
 from ..deps import Ctx, get_ctx
 from ..models import Componente, Espaco, Ligacao, Ordem, PerfilMaoDeObra, PlanoPasso, PlanoTrabalho, Produto, Recurso, ReferenciaTempo
 from ..ratelimit import limite_ia
+from ..schemas import In
 from ..schemas import (AplicarEstruturaIn, ComponenteIn, ComponenteOut, ComponenteUpdate, EstruturaOut, InterpretarProdutoIn,
                        ArranjoIn, ArranjosOut, InterpretarProdutoOut, LigacaoIn, LigacaoOut, OrdemOut, PlanoDeArranjoIn, PlanoGerarIn, PlanoOrdemIn, PlanoOut,
                        MontarIn, PlanoPassoOut, PrazoIn, PrazoOut, ReferenciaIn, ReferenciaOut)
@@ -409,6 +413,36 @@ def ciclo_do_plano(pid: int, alternativas: bool = Query(False), ctx: Ctx = Depen
     if alternativas:
         limite_ia.checar(f"{ctx.empresa_id}")
     return ciclo.ciclo_do_plano(ctx, p, ctx.obter(Produto, p.produto_id), alternativas=alternativas)
+
+
+class IntervencaoIn(In):
+    modulo: Annotated[str, Field(max_length=30)] | None = None
+    principio: Literal["Eliminar", "Combinar", "Reorganizar", "Simplificar", "Outro"]
+    descricao: Annotated[str, Field(min_length=1, max_length=1000)]
+
+
+@router.post("/planos/{pid}/intervencoes", status_code=201)
+def registrar_intervencao(pid: int, dados: IntervencaoIn, ctx: Ctx = Depends(get_ctx)):
+    """Registra o ajuste de método feito no fluxo: a partir daqui, os pedidos do produto são comparados antes × depois."""
+    from ..models import Intervencao
+    from ..services import intervencoes
+    p = _plano(ctx, pid)
+    if dados.modulo and dados.modulo not in {x.modulo for x in p.passos}:
+        raise HTTPException(422, "Esta atividade não faz parte do plano.")
+    i = Intervencao(empresa_id=ctx.empresa_id, unidade_id=p.unidade_id, produto_id=p.produto_id, plano_id=p.id, modulo=dados.modulo,
+                    principio=dados.principio, descricao=dados.descricao, criado_por=ctx.usuario.id)
+    ctx.db.add(i)
+    ctx.db.flush()
+    ctx.auditar("intervencao.registrar", "intervencao", i.id, None, audit.snap(i))
+    ctx.db.commit()
+    return intervencoes.como_dict(ctx.db, i)
+
+
+@router.get("/produtos/{prod_id}/intervencoes")
+def listar_intervencoes(prod_id: int, ctx: Ctx = Depends(get_ctx)):
+    from ..services import intervencoes
+    ctx.obter(Produto, prod_id)
+    return intervencoes.do_produto(ctx.db, ctx.empresa_id, prod_id)
 
 
 @router.post("/planos/{pid}/prazo", response_model=PrazoOut)

@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     min_amostras_familia: int = 8
     # Com menos pedidos que o mínimo, a partir deste nº a calibração já propõe um ajuste PRELIMINAR (credibilidade parcial).
     min_amostras_preliminar: int = 3
+    # Janela móvel: só os N pedidos mais recentes de cada atividade entram na calibração (0 = todos).
+    calibracao_janela: int = 30
     # Se verdadeiro, o modelo de tempo proposto pela IA e ainda não validado já serve de tempo planejado
     # (rotulado como tal). Se falso, só modelos validados por um gestor entram nas estimativas.
     usar_modelo_ia_nao_validado: bool = True
